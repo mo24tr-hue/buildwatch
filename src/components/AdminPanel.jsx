@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { ChevronLeft } from 'lucide-react'
 import { supabase } from '../lib/supabase'
+import { roleLabel } from '../lib/styles'
 
 export default function AdminPanel({ profile, company, onBack, onCompanyUpdate, digest = [], allProjects = [] }) {
   const [users, setUsers] = useState([])
@@ -84,7 +85,7 @@ export default function AdminPanel({ profile, company, onBack, onCompanyUpdate, 
     const admins = users.filter((u) => u.role === 'admin')
     const target = users.find((u) => u.id === userId)
     if (target?.role === 'admin' && newRole !== 'admin' && admins.length <= 1) {
-      if (!confirm('This is the last admin. Change their role anyway?')) return
+      if (!confirm('This is the last contractor. Change their role anyway?')) return
     }
     await supabase.from('profiles').update({ role: newRole }).eq('id', userId)
     load()
@@ -299,7 +300,7 @@ export default function AdminPanel({ profile, company, onBack, onCompanyUpdate, 
         )}
 
         {u.role === 'admin' && (
-          <p className="text-sm text-[#6B6E72]">Admins already have full access to all projects and phases.</p>
+          <p className="text-sm text-[#6B6E72]">Contractors already have full access to all projects and phases.</p>
         )}
       </div>
     )
@@ -310,7 +311,7 @@ export default function AdminPanel({ profile, company, onBack, onCompanyUpdate, 
       <button onClick={onBack} className="flex items-center gap-1 text-sm text-[#6B6E72] mb-4">
         <ChevronLeft size={16} /> Back to projects
       </button>
-      <h2 className="font-display text-2xl mb-1">Admin</h2>
+      <h2 className="font-display text-2xl mb-1">Contractor</h2>
       <p className="text-sm text-[#6B6E72] mb-6">{company?.name}</p>
 
       <div className="bg-white border border-black rounded-md p-4 mb-5 space-y-3">
@@ -353,9 +354,9 @@ export default function AdminPanel({ profile, company, onBack, onCompanyUpdate, 
         <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="email@example.com" className="w-full border border-black rounded px-3 py-2 text-sm" />
         <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Name (optional)" className="w-full border border-black rounded px-3 py-2 text-sm" />
         <select value={role} onChange={(e) => setRole(e.target.value)} className="w-full border border-black rounded px-3 py-2 text-sm bg-white">
-          <option value="team">Team</option>
+          <option value="team">Trade</option>
           <option value="customer">Customer</option>
-          <option value="admin">Admin</option>
+          <option value="admin">Contractor</option>
         </select>
         <button onClick={inviteUser} className="w-full py-2 rounded text-sm text-white bg-black">Save invite</button>
       </div>
@@ -398,7 +399,7 @@ export default function AdminPanel({ profile, company, onBack, onCompanyUpdate, 
               <div key={u.id} className="text-xs border border-[#E5E5E5] rounded px-3 py-2 flex justify-between gap-2">
                 <div className="min-w-0">
                   <div className="font-medium truncate">{u.name || u.email}</div>
-                  <div className="text-[#6B6E72] uppercase font-mono text-[10px]">{u.role}</div>
+                  <div className="text-[#6B6E72] uppercase font-mono text-[10px]">{roleLabel(u.role)}</div>
                 </div>
                 <div className="text-right text-[#6B6E72] flex-shrink-0">
                   {u.role === 'customer' && <div>{customerProjects.length} project{customerProjects.length !== 1 ? 's' : ''}</div>}
@@ -435,8 +436,8 @@ export default function AdminPanel({ profile, company, onBack, onCompanyUpdate, 
             </button>
             <div className="flex items-center gap-2 flex-shrink-0">
               <select value={u.role} onChange={(e) => setUserRole(u.id, e.target.value)} className="text-[11px] border border-black rounded px-2 py-1 bg-white">
-                <option value="admin">Admin</option>
-                <option value="team">Team</option>
+                <option value="admin">Contractor</option>
+                <option value="team">Trade</option>
                 <option value="customer">Customer</option>
               </select>
               {u.id !== profile.id && (

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState, useRef } from 'react'
 import { HardHat, Plus, Image as ImageIcon, MapPin, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Camera, Trash2, Check, FileText, X, Video, Menu, Share2, Bell, Search, Copy, Archive, Printer } from 'lucide-react'
 import { supabase } from '../lib/supabase'
-import { STYLES, PROJECT_STATUS, PHASE_STATUS, nextPhaseStatus, fmtDate, fmtDateTime, isFinishingPhase, FINISHING_PHASES, finishingLabel } from '../lib/styles'
+import { STYLES, PROJECT_STATUS, PHASE_STATUS, nextPhaseStatus, fmtDate, fmtDateTime, isFinishingPhase, FINISHING_PHASES, finishingLabel, roleLabel } from '../lib/styles'
 import AdminPanel from '../components/AdminPanel'
 
 const QUEUE_KEY = 'ay_upload_queue'
@@ -160,7 +160,7 @@ export default function Dashboard({ session, profile, company, onCompanyUpdate, 
         phases: (p.phases || []).slice().sort((a, b) => a.sort_order - b.sort_order),
         tasks: (p.tasks || []).slice().sort((a, b) => new Date(b.created_at) - new Date(a.created_at)),
       }))
-      // Team: if a project has assigned team members, only those team members see it (admins see all)
+      // Team: if a project has assigned trade members, only those trade members see it (admins see all)
       if (profile?.role === 'team') {
         list = list.filter((p) => {
           const phases = p.phases || []
@@ -172,7 +172,7 @@ export default function Dashboard({ session, profile, company, onCompanyUpdate, 
             (ph.phase_team || []).some((m) => m.user_id === profile.id)
           )
           const myPhaseIds = new Set(myPhases.map((ph) => ph.id))
-          // Change orders only for phases this team member is on
+          // Change orders only for phases this trade member is on
           const cos = (p.change_orders || [])
             .filter((co) => co.phase_id && myPhaseIds.has(co.phase_id))
             .map((co) => {
@@ -700,7 +700,7 @@ export default function Dashboard({ session, profile, company, onCompanyUpdate, 
                         setShowNew(false)
                       }}
                     >
-                      Users / Admin
+                      Users / Contractor
                     </button>
                   )}
                   {isAdmin && (
@@ -2121,13 +2121,13 @@ className={`bg-white border border-black rounded-md flex items-stretch overflow-
                               color: st === 'pending' || st === 'quoted' ? '#8A6D00' : st === 'rejected' ? '#B5533C' : '#3F7D58',
                             }}
                           >
-                            {st === 'quoted' ? ((isAdmin || isCustomer) ? 'Offer sent' : 'With customer') : st === 'rejected' ? 'Declined' : st === 'approved' ? 'Approved' : st === 'pending' ? (co.origin === 'team_request' ? 'Awaiting admin price' : (isAdmin || isCustomer ? 'Customer request' : 'Submitted')) : st}
+                            {st === 'quoted' ? ((isAdmin || isCustomer) ? 'Offer sent' : 'With customer') : st === 'rejected' ? 'Declined' : st === 'approved' ? 'Approved' : st === 'pending' ? (co.origin === 'team_request' ? 'Awaiting contractor price' : (isAdmin || isCustomer ? 'Customer request' : 'Submitted')) : st}
                           </span>
                         </div>
                         <div className="text-[10px] font-mono text-[#8A8D91] mt-0.5">
                           {fmtDateTime(co.created_at)}
                           {phaseName ? ` · ${phaseName}` : ''}
-                          {co.origin === 'admin_offer' ? ' · Contractor offer' : co.origin === 'team_request' ? ' · Team request' : ' · Customer request'}
+                          {co.origin === 'admin_offer' ? ' · Contractor offer' : co.origin === 'team_request' ? ' · Trade request' : ' · Customer request'}
                         </div>
                         {(isAdmin || isCustomer) && (
                           <div className="text-[10px] text-[#8A8D91] mt-0.5">
@@ -2158,12 +2158,12 @@ className={`bg-white border border-black rounded-md flex items-stretch overflow-
                     )}
                     {isAdmin && co.team_amount != null && co.team_amount !== '' && (
                       <div className="text-xs mt-2 text-[#6B6E72]">
-                        Team request: ${Number(co.team_amount).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        Trade request: ${Number(co.team_amount).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                       </div>
                     )}
                     {isAdmin && co.admin_fee != null && Number(co.admin_fee) > 0 && (
                       <div className="text-xs text-[#6B6E72]">
-                        Admin fee: ${Number(co.admin_fee).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        Contractor fee: ${Number(co.admin_fee).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                       </div>
                     )}
                     {(isAdmin || isCustomer) && (co.amount != null && co.amount !== '') && (
@@ -2502,7 +2502,7 @@ function ProjectPeoplePage({ project, isAdmin, companyUsers, onBack, onReload })
       </div>
 
       <div className="bg-white border border-black rounded-md p-4 mb-4">
-        <h3 className="text-[11px] font-mono uppercase text-[#6B6E72] mb-1">Team by phase</h3>
+        <h3 className="text-[11px] font-mono uppercase text-[#6B6E72] mb-1">Trade by phase</h3>
         {phases.length > 0 && isAdmin ? (
           <div className="space-y-4">
             {phases.map((ph) => {
@@ -2854,7 +2854,7 @@ function QuoteReplyForm({ changeOrder, profile, logActivity, onDone }) {
       return
     }
     if (feeN < 0) {
-      alert('Admin fee cannot be negative.')
+      alert('Contractor fee cannot be negative.')
       return
     }
     setSaving(true)
@@ -2887,7 +2887,7 @@ function QuoteReplyForm({ changeOrder, profile, logActivity, onDone }) {
   return (
     <form onSubmit={submit} className="mt-3 space-y-2 border-t border-[#E5E5E5] pt-3">
       {teamAmt != null && (
-        <div className="text-xs text-[#6B6E72]">Team requested ${teamAmt.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+        <div className="text-xs text-[#6B6E72]">Trade requested ${teamAmt.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
       )}
       <label className="block text-[11px] font-mono uppercase text-[#6B6E72]">Base amount for customer ($)</label>
       <input
@@ -2900,7 +2900,7 @@ function QuoteReplyForm({ changeOrder, profile, logActivity, onDone }) {
         className="w-full border border-black rounded px-3 py-2 text-sm"
         placeholder="500.00"
       />
-      <label className="block text-[11px] font-mono uppercase text-[#6B6E72]">Admin fee ($)</label>
+      <label className="block text-[11px] font-mono uppercase text-[#6B6E72]">Contractor fee ($)</label>
       <input
         type="number"
         step="0.01"
@@ -2996,7 +2996,7 @@ function ChangeOrderForm({ project, profile, isAdmin, isTeam = false, onDone, lo
       const { error: insErr } = await supabase.from('change_orders').insert(row)
       if (insErr) throw insErr
       await logActivity?.(
-        isAdmin ? 'sent change order offer' : (isTeam ? 'team change order request' : 'requested change order'),
+        isAdmin ? 'sent change order offer' : (isTeam ? 'trade change order request' : 'requested change order'),
         isAdmin
           ? (title.trim() + ' — $' + amountNum.toFixed(2))
           : (isTeam && amountNum != null ? title.trim() + ' — $' + amountNum.toFixed(2) : title.trim())
@@ -3027,7 +3027,7 @@ function ChangeOrderForm({ project, profile, isAdmin, isTeam = false, onDone, lo
   return (
     <form onSubmit={submit} className="border border-dashed border-black rounded p-3 space-y-2 mt-2">
       <div className="text-[11px] font-mono uppercase text-[#6B6E72]">
-        {isAdmin ? 'Send offer to customer' : isTeam ? 'Request change order (to admin)' : 'Request a change'}
+        {isAdmin ? 'Send offer to customer' : isTeam ? 'Request change order (to contractor)' : 'Request a change'}
       </div>
       <input
         value={title}
@@ -3080,7 +3080,7 @@ function ChangeOrderForm({ project, profile, isAdmin, isTeam = false, onDone, lo
       </label>
       {error && <p className="text-xs text-[#B5533C]">{error}</p>}
       <button type="submit" disabled={saving} className="w-full py-2 rounded text-sm text-white bg-black disabled:opacity-50">
-        {saving ? 'Saving…' : isAdmin ? 'Send offer to customer' : isTeam ? 'Send to admin' : 'Submit request'}
+        {saving ? 'Saving…' : isAdmin ? 'Send offer to customer' : isTeam ? 'Send to contractor' : 'Submit request'}
       </button>
     </form>
   )
@@ -3142,7 +3142,7 @@ function AdminPunchList({ phase, value, onChange, onSave }) {
 
   return (
     <div>
-      <label className="block text-[11px] font-mono uppercase text-[#6B6E72] mb-1">Admin punch list (private)</label>
+      <label className="block text-[11px] font-mono uppercase text-[#6B6E72] mb-1">Contractor punch list (private)</label>
       <div className="space-y-2 mb-2">
         {items.length === 0 && <p className="text-xs text-[#8A8D91]">No punch items yet.</p>}
         {items.map((it) => (
@@ -3688,7 +3688,7 @@ function PhaseDetail({ phase, project, isAdmin, canUpload, isCustomer, profile, 
       {(isAdmin || isCustomer || (!isAdmin && !isCustomer)) && (
         <div className="bg-white border border-black rounded-md p-4 mb-4">
           <h3 className="text-[11px] font-mono uppercase text-[#6B6E72] mb-1">
-            {isAdmin ? 'Change order for this phase' : (!isAdmin && !isCustomer) ? 'Request change order (to admin)' : 'Request change for this phase'}
+            {isAdmin ? 'Change order for this phase' : (!isAdmin && !isCustomer) ? 'Request change order (to contractor)' : 'Request change for this phase'}
           </h3>
           <ChangeOrderForm
             project={project}

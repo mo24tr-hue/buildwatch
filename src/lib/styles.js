@@ -102,3 +102,13 @@ export function fmtDateTime(d) {
     return d
   }
 }
+
+
+/** Display label for internal role keys (admin/team stay in DB) */
+export function roleLabel(role) {
+  const r = String(role || '').toLowerCase()
+  if (r === 'admin') return 'Contractor'
+  if (r === 'team') return 'Trade'
+  if (r === 'customer') return 'Customer'
+  return role || ''
+}
