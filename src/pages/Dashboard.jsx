@@ -176,8 +176,8 @@ export default function Dashboard({ session, profile, company, onCompanyUpdate, 
           const cos = (p.change_orders || [])
             .filter((co) => co.phase_id && myPhaseIds.has(co.phase_id))
             .map((co) => {
-              const { amount, admin_reply, ...rest } = co
-              return rest
+              const { amount, admin_reply, admin_fee, ...rest } = co
+              return rest // keep team_amount only
             })
           return { ...p, phases: myPhases, change_orders: cos }
         })
@@ -2156,16 +2156,38 @@ className={`bg-white border border-black rounded-md flex items-stretch overflow-
                         View attachment
                       </a>
                     )}
+                    {isAdmin && co.team_amount != null && co.team_amount !== '' && (
+                      <div className="text-xs mt-2 text-[#6B6E72]">
+                        Team request: ${Number(co.team_amount).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </div>
+                    )}
+                    {isAdmin && co.admin_fee != null && Number(co.admin_fee) > 0 && (
+                      <div className="text-xs text-[#6B6E72]">
+                        Admin fee: ${Number(co.admin_fee).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </div>
+                    )}
                     {(isAdmin || isCustomer) && (co.amount != null && co.amount !== '') && (
+                      <div className="text-sm mt-1 font-medium">
+                        {isCustomer ? 'Amount' : (co.origin === 'admin_offer' ? 'Customer offer' : 'Customer total')}: ${Number(co.amount).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </div>
+                    )}
+                    {!isAdmin && !isCustomer && co.team_amount != null && co.team_amount !== '' && (
                       <div className="text-sm mt-2 font-medium">
-                        {co.origin === 'admin_offer' ? 'Offer amount' : 'Quoted amount'}: ${Number(co.amount).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        Your amount: ${Number(co.team_amount).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                       </div>
                     )}
                     {!isAdmin && !isCustomer && st === 'approved' && (
-                      <div className="text-xs mt-2 text-[#3F7D58]">Customer approved</div>
+                      <div className="text-xs mt-1 text-[#3F7D58]">
+                        Customer approved{co.team_amount != null ? ` — $${Number(co.team_amount).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : ''}
+                      </div>
                     )}
                     {!isAdmin && !isCustomer && st === 'rejected' && (
                       <div className="text-xs mt-2 text-[#B5533C]">Customer declined</div>
+                    )}
+                    {isAdmin && st === 'approved' && (co.amount != null) && (
+                      <div className="text-xs mt-1 text-[#3F7D58]">
+                        Approved at customer total ${Number(co.amount).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </div>
                     )}
                     {(isAdmin || isCustomer) && co.admin_reply && (
                       <p className="text-xs mt-1 text-[#6B6E72] whitespace-pre-wrap">{co.admin_reply}</p>
@@ -2811,20 +2833,34 @@ function ProjectActivity({ projectId }) {
 
 
 function QuoteReplyForm({ changeOrder, profile, logActivity, onDone }) {
-  const [amount, setAmount] = useState(changeOrder.amount != null ? String(changeOrder.amount) : '')
+  const teamAmt = changeOrder.team_amount != null ? Number(changeOrder.team_amount) : null
+  const [baseAmount, setBaseAmount] = useState(
+    changeOrder.amount != null
+      ? String(Number(changeOrder.amount) - (Number(changeOrder.admin_fee) || 0))
+      : (teamAmt != null ? String(teamAmt) : '')
+  )
+  const [adminFee, setAdminFee] = useState(changeOrder.admin_fee != null ? String(changeOrder.admin_fee) : '0')
   const [reply, setReply] = useState(changeOrder.admin_reply || '')
   const [saving, setSaving] = useState(false)
 
+  const baseN = parseFloat(baseAmount)
+  const feeN = parseFloat(adminFee) || 0
+  const totalN = (Number.isFinite(baseN) ? baseN : 0) + (Number.isFinite(feeN) ? feeN : 0)
+
   const submit = async (e) => {
     e.preventDefault()
-    const n = parseFloat(amount)
-    if (Number.isNaN(n) || n < 0) {
-      alert('Enter a valid amount.')
+    if (Number.isNaN(baseN) || baseN < 0) {
+      alert('Enter a valid base amount.')
+      return
+    }
+    if (feeN < 0) {
+      alert('Admin fee cannot be negative.')
       return
     }
     setSaving(true)
     const { error } = await supabase.from('change_orders').update({
-      amount: n,
+      amount: totalN,
+      admin_fee: feeN,
       admin_reply: reply.trim() || null,
       status: 'quoted',
       decided_at: null,
@@ -2835,13 +2871,13 @@ function QuoteReplyForm({ changeOrder, profile, logActivity, onDone }) {
       alert(error.message)
       return
     }
-    await logActivity?.('quoted change order', changeOrder.title + ' — $' + n.toFixed(2))
+    await logActivity?.('quoted change order', changeOrder.title + ' — $' + totalN.toFixed(2))
     try {
       await supabase.rpc('notify_project_customers', {
         p_company_id: profile.company_id,
         p_project_id: changeOrder.project_id,
         p_title: titleCase('Change order quote'),
-        p_body: changeOrder.title + ' — $' + n.toFixed(2),
+        p_body: changeOrder.title + ' — $' + totalN.toFixed(2),
         p_kind: 'change_order_quote',
       })
     } catch (_) {}
@@ -2850,17 +2886,33 @@ function QuoteReplyForm({ changeOrder, profile, logActivity, onDone }) {
 
   return (
     <form onSubmit={submit} className="mt-3 space-y-2 border-t border-[#E5E5E5] pt-3">
-      <label className="block text-[11px] font-mono uppercase text-[#6B6E72]">Price quote ($)</label>
+      {teamAmt != null && (
+        <div className="text-xs text-[#6B6E72]">Team requested ${teamAmt.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+      )}
+      <label className="block text-[11px] font-mono uppercase text-[#6B6E72]">Base amount for customer ($)</label>
       <input
         type="number"
         step="0.01"
         min="0"
-        value={amount}
-        onChange={(e) => setAmount(e.target.value)}
+        value={baseAmount}
+        onChange={(e) => setBaseAmount(e.target.value)}
         required
         className="w-full border border-black rounded px-3 py-2 text-sm"
-        placeholder="1000.00"
+        placeholder="500.00"
       />
+      <label className="block text-[11px] font-mono uppercase text-[#6B6E72]">Admin fee ($)</label>
+      <input
+        type="number"
+        step="0.01"
+        min="0"
+        value={adminFee}
+        onChange={(e) => setAdminFee(e.target.value)}
+        className="w-full border border-black rounded px-3 py-2 text-sm"
+        placeholder="0.00"
+      />
+      <div className="text-sm font-medium">
+        Customer total: ${totalN.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+      </div>
       <textarea
         value={reply}
         onChange={(e) => setReply(e.target.value)}
@@ -2893,12 +2945,17 @@ function ChangeOrderForm({ project, profile, isAdmin, isTeam = false, onDone, lo
       return
     }
     let amountNum = null
-    if (isAdmin) {
+    if (isAdmin || isTeam) {
       amountNum = parseFloat(String(amount).replace(/[^0-9.]/g, ''))
-      if (!Number.isFinite(amountNum) || amountNum < 0) {
+      if (isAdmin && (!Number.isFinite(amountNum) || amountNum < 0)) {
         setError('Enter the dollar amount for this offer to the customer.')
         return
       }
+      if (isTeam && amount.trim() && (!Number.isFinite(amountNum) || amountNum < 0)) {
+        setError('Enter a valid dollar amount.')
+        return
+      }
+      if (isTeam && !amount.trim()) amountNum = null
     }
     setSaving(true)
     try {
@@ -2933,11 +2990,16 @@ function ChangeOrderForm({ project, profile, isAdmin, isTeam = false, onDone, lo
         row.amount = amountNum
         row.admin_reply = description.trim() || null
       }
+      if (isTeam && amountNum != null) {
+        row.team_amount = amountNum
+      }
       const { error: insErr } = await supabase.from('change_orders').insert(row)
       if (insErr) throw insErr
       await logActivity?.(
         isAdmin ? 'sent change order offer' : (isTeam ? 'team change order request' : 'requested change order'),
-        isAdmin ? (title.trim() + ' — $' + amountNum.toFixed(2)) : title.trim()
+        isAdmin
+          ? (title.trim() + ' — $' + amountNum.toFixed(2))
+          : (isTeam && amountNum != null ? title.trim() + ' — $' + amountNum.toFixed(2) : title.trim())
       )
       if (isAdmin) {
         try {
@@ -2980,9 +3042,11 @@ function ChangeOrderForm({ project, profile, isAdmin, isTeam = false, onDone, lo
         rows={3}
         className="w-full border border-black rounded px-3 py-2 text-sm"
       />
-      {isAdmin && (
+      {(isAdmin || isTeam) && (
         <div>
-          <label className="block text-[11px] font-mono uppercase text-[#6B6E72] mb-1">Amount (required)</label>
+          <label className="block text-[11px] font-mono uppercase text-[#6B6E72] mb-1">
+            {isAdmin ? 'Amount (required)' : 'Your amount (optional)'}
+          </label>
           <div className="flex items-center gap-2">
             <span className="text-sm">$</span>
             <input
