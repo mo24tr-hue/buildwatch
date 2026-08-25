@@ -3347,102 +3347,103 @@ function PhaseDetail({ phase, project, isAdmin, canUpload, isCustomer, profile, 
   const uploadMedia = async (e) => {
     const files = Array.from(e.target.files || [])
     e.target.value = ''
-    if (!files.length || !canUpload) return
-
-    // Queue files so uploads continue if you leave the phase
-    const queueItems = []
-    for (const file of files) {
-      if (!file.size) continue
-      const isVideo = (file.type || '').startsWith('video/')
-      const safeName = (file.name || (isVideo ? 'video.mp4' : 'photo.jpg')).replace(/[^a-zA-Z0-9._-]/g, '_')
-      const path = profile.company_id + '/' + project.id + '/' + phase.id + '/' + Date.now() + '-' + Math.random().toString(36).slice(2, 6) + '-' + safeName
-      try {
-        const bytes = await file.arrayBuffer()
-        // base64 for offline queue persistence
-        let binary = ''
-        const bytesArr = new Uint8Array(bytes)
-        const chunk = 0x8000
-        for (let i = 0; i < bytesArr.length; i += chunk) {
-          binary += String.fromCharCode.apply(null, bytesArr.subarray(i, i + chunk))
-        }
-        const b64 = btoa(binary)
-        queueItems.push({
-          path,
-          b64,
-          contentType: file.type || (isVideo ? 'video/mp4' : 'image/jpeg'),
-          phase_id: phase.id,
-          project_id: project.id,
-          caption: caption || null,
-          tag: photoTag || null,
-          media_type: isVideo ? 'video' : 'image',
-        })
-      } catch (err) {
-        console.error(err)
-      }
+    if (!files.length) return
+    if (!canUpload) {
+      alert('You do not have permission to upload photos on this phase.')
+      return
     }
-    if (!queueItems.length) return
-
-    // Merge into global upload queue
-    try {
-      const raw = localStorage.getItem(QUEUE_KEY)
-      const existing = raw ? JSON.parse(raw) : []
-      localStorage.setItem(QUEUE_KEY, JSON.stringify([...(Array.isArray(existing) ? existing : []), ...queueItems]))
-    } catch (_) {}
+    if (!profile?.company_id || !project?.id || !phase?.id) {
+      alert('Missing project or phase — try reopening this phase.')
+      return
+    }
 
     setUploading(true)
+    const cap = caption || null
+    const tag = photoTag || null
     setCaption('')
-    // Process in background — user can leave phase
-    ;(async () => {
-      let ok = 0
-      let left = []
+
+    let ok = 0
+    const errors = []
+
+    for (const file of files) {
+      if (!file.size) {
+        errors.push('Empty file skipped')
+        continue
+      }
+      const isVideo = (file.type || '').startsWith('video/')
+      const safeName = (file.name || (isVideo ? 'video.mp4' : 'photo.jpg')).replace(/[^a-zA-Z0-9._-]/g, '_')
+      const path =
+        String(profile.company_id) +
+        '/' +
+        String(project.id) +
+        '/' +
+        String(phase.id) +
+        '/' +
+        Date.now() +
+        '-' +
+        Math.random().toString(36).slice(2, 6) +
+        '-' +
+        safeName
+      const contentType = file.type || (isVideo ? 'video/mp4' : 'image/jpeg')
       try {
-        const raw = localStorage.getItem(QUEUE_KEY)
-        const q = raw ? JSON.parse(raw) : []
-        const mine = []
-        const others = []
-        for (const item of (Array.isArray(q) ? q : [])) {
-          if (queueItems.some((qi) => qi.path === item.path)) mine.push(item)
-          else others.push(item)
+        let upErr = null
+        // Prefer raw bytes — more reliable on iOS / HEIC / large files than File object quirks
+        try {
+          const bytes = await file.arrayBuffer()
+          const res = await supabase.storage.from('project-photos').upload(path, bytes, {
+            upsert: true,
+            contentType,
+            cacheControl: '3600',
+          })
+          upErr = res.error
+        } catch (inner) {
+          const res2 = await supabase.storage.from('project-photos').upload(path, file, {
+            upsert: true,
+            contentType,
+            cacheControl: '3600',
+          })
+          upErr = res2.error || inner
         }
-        for (const item of mine) {
-          try {
-            const bin = Uint8Array.from(atob(item.b64), (c) => c.charCodeAt(0))
-            const { error: upErr } = await supabase.storage.from('project-photos').upload(item.path, bin, {
-              upsert: false,
-              contentType: item.contentType,
-              cacheControl: '3600',
-            })
-            if (upErr) { left.push(item); continue }
-            const { data: pub } = supabase.storage.from('project-photos').getPublicUrl(item.path)
-            const { error: insErr } = await supabase.from('photos').insert({
-              phase_id: item.phase_id,
-              project_id: item.project_id,
-              storage_path: item.path,
-              public_url: pub.publicUrl,
-              caption: item.caption || null,
-              tag: item.tag || null,
-              media_type: item.media_type || 'image',
-              uploaded_by: profile.id,
-            })
-            if (insErr) { left.push(item); continue }
-            ok++
-          } catch {
-            left.push(item)
-          }
+        if (upErr) {
+          errors.push((upErr.message || String(upErr)) + ' (storage)')
+          continue
         }
-        localStorage.setItem(QUEUE_KEY, JSON.stringify([...others, ...left]))
-        if (ok) {
-          await logActivity('uploaded media', ok + ' file' + (ok > 1 ? 's' : ''), project.id, phase.name)
-          onReload()
+        const { data: pub } = supabase.storage.from('project-photos').getPublicUrl(path)
+        const { error: insErr } = await supabase.from('photos').insert({
+          phase_id: phase.id,
+          project_id: project.id,
+          storage_path: path,
+          public_url: pub.publicUrl,
+          caption: cap,
+          tag: tag,
+          media_type: isVideo ? 'video' : 'image',
+          uploaded_by: profile.id,
+        })
+        if (insErr) {
+          errors.push((insErr.message || 'Could not save photo record') + ' (database)')
+          continue
         }
-        if (left.length) {
-          // remaining will retry on online/flush
-        }
+        ok++
       } catch (err) {
         console.error(err)
+        errors.push(err.message || 'Upload failed')
       }
-      setUploading(false)
-    })()
+    }
+
+    setUploading(false)
+    if (ok) {
+      await logActivity('uploaded media', ok + ' file' + (ok > 1 ? 's' : ''), project.id, phase.name)
+      onReload()
+    }
+    if (errors.length) {
+      alert(
+        (ok ? ok + ' uploaded. ' : '') +
+          'Upload problem: ' +
+          errors.slice(0, 3).join(' · ')
+      )
+    } else if (!ok) {
+      alert('No photos were uploaded.')
+    }
   }
 
 
