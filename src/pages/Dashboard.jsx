@@ -9,19 +9,43 @@ const QUEUE_KEY = 'ay_upload_queue'
 
 
 function SwipeBack({ onBack, children, className = '', disabled = false }) {
-  const touchX = useRef(null)
+  const start = useRef(null)
   const onTouchStart = (e) => {
     if (disabled) return
-    touchX.current = e.touches[0].clientX
+    const t = e.touches[0]
+    // Only start back-gesture near the left edge so vertical scrolling never exits
+    if (t.clientX > 28) {
+      start.current = null
+      return
+    }
+    start.current = { x: t.clientX, y: t.clientY }
+  }
+  const onTouchMove = (e) => {
+    if (!start.current) return
+    const t = e.touches[0]
+    const dx = t.clientX - start.current.x
+    const dy = t.clientY - start.current.y
+    // Cancel if user is clearly scrolling vertically
+    if (Math.abs(dy) > Math.abs(dx) && Math.abs(dy) > 12) {
+      start.current = null
+    }
   }
   const onTouchEnd = (e) => {
-    if (disabled || touchX.current == null) return
-    const dx = e.changedTouches[0].clientX - touchX.current
-    touchX.current = null
-    if (dx > 80) onBack?.()
+    if (disabled || !start.current) return
+    const t = e.changedTouches[0]
+    const dx = t.clientX - start.current.x
+    const dy = t.clientY - start.current.y
+    start.current = null
+    // Require clear horizontal swipe (rightward) and little vertical movement
+    if (dx > 100 && Math.abs(dx) > Math.abs(dy) * 2) onBack?.()
   }
   return (
-    <div className={className} onTouchStart={onTouchStart} onTouchEnd={onTouchEnd}>
+    <div
+      className={className}
+      onTouchStart={onTouchStart}
+      onTouchMove={onTouchMove}
+      onTouchEnd={onTouchEnd}
+    >
       {children}
     </div>
   )
@@ -1756,10 +1780,13 @@ function ProjectDetail({ project, isAdmin, canUpload, isCustomer, profile, onBac
             <>
               <div className="flex justify-between items-start gap-2">
                 <div className="min-w-0">
-                  <div className="flex items-center gap-1 text-sm text-[#6B6E72]">
-                    <MapPin size={13} /> {formatStyleLabel(project.style)}
+                  <div className="text-sm font-semibold text-black">
+                    {formatStyleLabel(project.style)}
                   </div>
-                  <h2 className="font-display text-2xl leading-tight truncate">{project.address}</h2>
+                  <h2 className="font-display text-2xl leading-tight truncate flex items-center gap-1.5">
+                    <MapPin size={16} className="flex-shrink-0 text-[#6B6E72]" />
+                    <span className="truncate">{project.address}</span>
+                  </h2>
                 </div>
                 <StatusBadge status={project.status} map={PROJECT_STATUS} />
               </div>
@@ -3233,18 +3260,25 @@ function PhaseDetail({ phase, project, isAdmin, canUpload, isCustomer, profile, 
     onReload()
   }
 
-  const onTouchStart = (e) => { touchX.current = e.touches[0].clientX }
+  const onTouchStart = (e) => {
+    const t = e.touches[0]
+    touchX.current = { x: t.clientX, y: t.clientY, edge: t.clientX <= 28 }
+  }
   const onTouchEnd = (e) => {
     if (touchX.current == null) return
-    const dx = e.changedTouches[0].clientX - touchX.current
+    const t = e.changedTouches[0]
+    const dx = t.clientX - touchX.current.x
+    const dy = t.clientY - touchX.current.y
+    const fromEdge = touchX.current.edge
     touchX.current = null
     // Swipe photos in lightbox
     if (lightboxIdx != null) {
-      if (dx < -50 && lightboxIdx < photos.length - 1) setLightboxIdx((i) => i + 1)
-      else if (dx > 50 && lightboxIdx > 0) setLightboxIdx((i) => i - 1)
+      if (Math.abs(dx) > Math.abs(dy) && dx < -50 && lightboxIdx < photos.length - 1) setLightboxIdx((i) => i + 1)
+      else if (Math.abs(dx) > Math.abs(dy) && dx > 50 && lightboxIdx > 0) setLightboxIdx((i) => i - 1)
       return
     }
-    if (dx > 90) onBack()
+    // Back only from left edge + clear horizontal swipe
+    if (fromEdge && dx > 100 && Math.abs(dx) > Math.abs(dy) * 2) onBack()
   }
 
   const lbTouchStart = (e) => { touchX.current = e.touches[0].clientX }
