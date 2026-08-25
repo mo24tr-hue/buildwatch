@@ -99,8 +99,8 @@ export default function SetupCompany({ user, profile, onDone }) {
       <div className="flex-1 flex items-center justify-center px-4 py-10">
         <form onSubmit={handleCreate} className="w-full max-w-sm space-y-4">
           <p className="text-sm text-[#6B6E72] text-center mb-2">
-            No invite found for your email. Creating a company makes you the admin of a <strong>new</strong> workspace.
-            If you were invited, sign out and sign up again with the exact invited email and the one-time password from your admin.
+            No invite found for your email. Creating a company makes you the contractor of a <strong>new</strong> workspace.
+            If you were invited, sign out and sign up again with the exact invited email and the one-time password from your contractor.
           </p>
           <div>
             <label className="block text-[11px] font-mono uppercase text-[#6B6E72] mb-1">Company name</label>

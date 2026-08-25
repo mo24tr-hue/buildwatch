@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react'
 import { ChevronLeft } from 'lucide-react'
 import { supabase } from '../lib/supabase'
+import { roleLabel } from '../lib/styles'
 
-export default function AdminPanel({ profile, company, onBack, onCompanyUpdate }) {
+export default function AdminPanel({ profile, company, onBack, onCompanyUpdate, digest = [], allProjects = [] }) {
   const [users, setUsers] = useState([])
   const [invites, setInvites] = useState([])
   const [email, setEmail] = useState('')
@@ -13,12 +14,15 @@ export default function AdminPanel({ profile, company, onBack, onCompanyUpdate }
   const [companyName, setCompanyName] = useState(company?.name || '')
   const [appShareUrl, setAppShareUrl] = useState(company?.app_share_url || (typeof window !== 'undefined' ? window.location.origin : ''))
   const [logoPreview, setLogoPreview] = useState(company?.logo_url || null)
+  const [headerColor, setHeaderColor] = useState(company?.header_color || '#000000')
   const [savingBrand, setSavingBrand] = useState(false)
   const [shareCopied, setShareCopied] = useState('')
   const [lastOtp, setLastOtp] = useState('')
   const [selectedUser, setSelectedUser] = useState(null)
   const [projects, setProjects] = useState([])
   const [assignBusy, setAssignBusy] = useState(false)
+  const [calDate, setCalDate] = useState(() => new Date().toISOString().slice(0, 10))
+  const [calItems, setCalItems] = useState([])
 
   const load = async () => {
     const { data: members } = await supabase
@@ -37,7 +41,7 @@ export default function AdminPanel({ profile, company, onBack, onCompanyUpdate }
   const loadProjects = async () => {
     const { data } = await supabase
       .from('projects')
-      .select('id, address, style, phases(id, name, sort_order, phase_team(user_id)), project_customers(user_id)')
+      .select('id, address, style, start_date, end_date, status, phases(id, name, sort_order, status, start_date, end_date, phase_team(user_id)), project_customers(user_id)')
       .eq('company_id', profile.company_id)
       .order('created_at', { ascending: false })
     const normalized = (data || []).map((p) => ({
@@ -53,13 +57,35 @@ export default function AdminPanel({ profile, company, onBack, onCompanyUpdate }
     setCompanyName(company?.name || '')
     setAppShareUrl(company?.app_share_url || (typeof window !== 'undefined' ? window.location.origin : ''))
     setLogoPreview(company?.logo_url || null)
-  }, [profile.company_id, company?.id])
+    setHeaderColor(company?.header_color || '#000000')
+  }, [profile.company_id, company?.id, company?.header_color])
+
+  useEffect(() => {
+    const src = projects.length ? projects : allProjects
+    const day = calDate
+    const items = []
+    src.forEach((pr) => {
+      if (pr.start_date === day || pr.end_date === day) {
+        items.push({ kind: 'project', label: pr.address, detail: pr.start_date === day && pr.end_date === day ? 'Start & end' : pr.start_date === day ? 'Project start' : 'Project end', status: pr.status })
+      }
+      ;(pr.phases || []).forEach((ph) => {
+        if (ph.start_date === day || ph.end_date === day) {
+          items.push({ kind: 'phase', label: pr.address + ' · ' + ph.name, detail: ph.start_date === day && ph.end_date === day ? 'Phase start & end' : ph.start_date === day ? 'Phase start' : 'Phase target end', status: ph.status })
+        }
+        // ongoing: start <= day <= end
+        if (ph.start_date && ph.end_date && ph.start_date < day && ph.end_date > day && ph.status === 'active') {
+          items.push({ kind: 'ongoing', label: pr.address + ' · ' + ph.name, detail: 'In progress', status: ph.status })
+        }
+      })
+    })
+    setCalItems(items)
+  }, [calDate, projects, allProjects])
 
   const setUserRole = async (userId, newRole) => {
     const admins = users.filter((u) => u.role === 'admin')
     const target = users.find((u) => u.id === userId)
     if (target?.role === 'admin' && newRole !== 'admin' && admins.length <= 1) {
-      if (!confirm('This is the last admin. Change their role anyway?')) return
+      if (!confirm('This is the last contractor. Change their role anyway?')) return
     }
     await supabase.from('profiles').update({ role: newRole }).eq('id', userId)
     load()
@@ -151,6 +177,7 @@ export default function AdminPanel({ profile, company, onBack, onCompanyUpdate }
         name: companyName.trim() || company?.name,
         logo_url: logoPreview,
         app_share_url: (appShareUrl || '').trim() || null,
+        header_color: headerColor || '#000000',
       })
       .eq('id', company.id)
     setSavingBrand(false)
@@ -273,7 +300,7 @@ export default function AdminPanel({ profile, company, onBack, onCompanyUpdate }
         )}
 
         {u.role === 'admin' && (
-          <p className="text-sm text-[#6B6E72]">Admins already have full access to all projects and phases.</p>
+          <p className="text-sm text-[#6B6E72]">Contractors already have full access to all projects and phases.</p>
         )}
       </div>
     )
@@ -284,7 +311,7 @@ export default function AdminPanel({ profile, company, onBack, onCompanyUpdate }
       <button onClick={onBack} className="flex items-center gap-1 text-sm text-[#6B6E72] mb-4">
         <ChevronLeft size={16} /> Back to projects
       </button>
-      <h2 className="font-display text-2xl mb-1">Admin</h2>
+      <h2 className="font-display text-2xl mb-1">Contractor</h2>
       <p className="text-sm text-[#6B6E72] mb-6">{company?.name}</p>
 
       <div className="bg-white border border-black rounded-md p-4 mb-5 space-y-3">
@@ -297,6 +324,13 @@ export default function AdminPanel({ profile, company, onBack, onCompanyUpdate }
             <input type="file" accept="image/*" className="hidden" onChange={handleLogo} />
           </label>
         </div>
+        <div>
+          <label className="block text-[11px] font-mono uppercase text-[#6B6E72] mb-1">Header color</label>
+          <div className="flex items-center gap-3">
+            <input type="color" value={headerColor || '#000000'} onChange={(e) => setHeaderColor(e.target.value)} className="h-10 w-14 border border-black rounded cursor-pointer" />
+            <input value={headerColor || '#000000'} onChange={(e) => setHeaderColor(e.target.value)} className="flex-1 border border-black rounded px-3 py-2 text-sm font-mono" placeholder="#000000" />
+          </div>
+        </div>
         <input value={appShareUrl} onChange={(e) => setAppShareUrl(e.target.value)} className="w-full border border-black rounded px-3 py-2 text-sm" placeholder="https://your-app-url.com" />
         {error && <p className="text-xs text-[#B5533C]">{error}</p>}
         {success && <p className="text-xs text-[#3F7D58]">{success}</p>}
@@ -304,8 +338,7 @@ export default function AdminPanel({ profile, company, onBack, onCompanyUpdate }
           {savingBrand ? 'Saving…' : 'Save branding'}
         </button>
       </div>
-
-      <div className="bg-white border border-black rounded-md p-4 mb-5 space-y-3">
+<div className="bg-white border border-black rounded-md p-4 mb-5 space-y-3">
         <h3 className="text-[11px] font-mono uppercase text-[#6B6E72]">Send app link to customers</h3>
         <div className="text-xs bg-[#F5F5F5] border border-black rounded p-3 whitespace-pre-wrap">{message}</div>
         <button onClick={() => copyText(message, 'message')} className="w-full py-2.5 rounded text-sm text-white bg-black">
@@ -321,9 +354,9 @@ export default function AdminPanel({ profile, company, onBack, onCompanyUpdate }
         <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="email@example.com" className="w-full border border-black rounded px-3 py-2 text-sm" />
         <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Name (optional)" className="w-full border border-black rounded px-3 py-2 text-sm" />
         <select value={role} onChange={(e) => setRole(e.target.value)} className="w-full border border-black rounded px-3 py-2 text-sm bg-white">
-          <option value="team">Team</option>
+          <option value="team">Trade</option>
           <option value="customer">Customer</option>
-          <option value="admin">Admin</option>
+          <option value="admin">Contractor</option>
         </select>
         <button onClick={inviteUser} className="w-full py-2 rounded text-sm text-white bg-black">Save invite</button>
       </div>
@@ -353,7 +386,33 @@ export default function AdminPanel({ profile, company, onBack, onCompanyUpdate }
 
       <div className="bg-white border border-black rounded-md p-4">
         <h3 className="text-[11px] font-mono uppercase text-[#6B6E72] mb-1">Users ({users.length})</h3>
-        {users.map((u) => {
+        
+      <div className="bg-white border border-black rounded-md p-4 mb-4">
+        <h3 className="text-[11px] font-mono uppercase text-[#6B6E72] mb-2">Role checklist</h3>
+        <div className="space-y-2">
+          {users.map((u) => {
+            const customerProjects = projects.filter((pr) => (pr.project_customers || []).some((c) => c.user_id === u.id))
+            const teamPhases = projects.reduce((n, pr) => {
+              return n + (pr.phases || []).filter((ph) => (ph.phase_team || []).some((m) => m.user_id === u.id)).length
+            }, 0)
+            return (
+              <div key={u.id} className="text-xs border border-[#E5E5E5] rounded px-3 py-2 flex justify-between gap-2">
+                <div className="min-w-0">
+                  <div className="font-medium truncate">{u.name || u.email}</div>
+                  <div className="text-[#6B6E72] uppercase font-mono text-[10px]">{roleLabel(u.role)}</div>
+                </div>
+                <div className="text-right text-[#6B6E72] flex-shrink-0">
+                  {u.role === 'customer' && <div>{customerProjects.length} project{customerProjects.length !== 1 ? 's' : ''}</div>}
+                  {u.role === 'team' && <div>{teamPhases} phase{teamPhases !== 1 ? 's' : ''}</div>}
+                  {u.role === 'admin' && <div>All access</div>}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      </div>
+
+      {users.map((u) => {
           let summary = ''
           if (u.role === 'customer') {
             const n = projects.filter((pr) => (pr.project_customers || []).some((c) => c.user_id === u.id)).length
@@ -377,8 +436,8 @@ export default function AdminPanel({ profile, company, onBack, onCompanyUpdate }
             </button>
             <div className="flex items-center gap-2 flex-shrink-0">
               <select value={u.role} onChange={(e) => setUserRole(u.id, e.target.value)} className="text-[11px] border border-black rounded px-2 py-1 bg-white">
-                <option value="admin">Admin</option>
-                <option value="team">Team</option>
+                <option value="admin">Contractor</option>
+                <option value="team">Trade</option>
                 <option value="customer">Customer</option>
               </select>
               {u.id !== profile.id && (

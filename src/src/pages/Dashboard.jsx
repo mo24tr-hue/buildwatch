@@ -1,24 +1,54 @@
 import { useCallback, useEffect, useState, useRef } from 'react'
 import { HardHat, Plus, Image as ImageIcon, MapPin, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Camera, Trash2, Check, FileText, X, Video, Menu, Share2, Bell, Search, Copy, Archive, Printer } from 'lucide-react'
 import { supabase } from '../lib/supabase'
-import { STYLES, PROJECT_STATUS, PHASE_STATUS, nextPhaseStatus, fmtDate } from '../lib/styles'
+import { STYLES, PROJECT_STATUS, PHASE_STATUS, nextPhaseStatus, fmtDate, fmtDateTime, isFinishingPhase, FINISHING_PHASES, finishingLabel, roleLabel } from '../lib/styles'
 import AdminPanel from '../components/AdminPanel'
+import PlatformAdmin from '../components/PlatformAdmin'
+import FeedbackPanel from '../components/FeedbackPanel'
+import { isPlatformAdmin } from '../lib/platform'
 
 const QUEUE_KEY = 'ay_upload_queue'
 
 
 
-function SwipeBack({ onBack, children, className = '' }) {
-  const touchX = useRef(null)
-  const onTouchStart = (e) => { touchX.current = e.touches[0].clientX }
+function SwipeBack({ onBack, children, className = '', disabled = false }) {
+  const start = useRef(null)
+  const onTouchStart = (e) => {
+    if (disabled) return
+    const t = e.touches[0]
+    // Only start back-gesture near the left edge so vertical scrolling never exits
+    if (t.clientX > 28) {
+      start.current = null
+      return
+    }
+    start.current = { x: t.clientX, y: t.clientY }
+  }
+  const onTouchMove = (e) => {
+    if (!start.current) return
+    const t = e.touches[0]
+    const dx = t.clientX - start.current.x
+    const dy = t.clientY - start.current.y
+    // Cancel if user is clearly scrolling vertically
+    if (Math.abs(dy) > Math.abs(dx) && Math.abs(dy) > 12) {
+      start.current = null
+    }
+  }
   const onTouchEnd = (e) => {
-    if (touchX.current == null) return
-    const dx = e.changedTouches[0].clientX - touchX.current
-    touchX.current = null
-    if (dx > 80) onBack?.()
+    if (disabled || !start.current) return
+    const t = e.changedTouches[0]
+    const dx = t.clientX - start.current.x
+    const dy = t.clientY - start.current.y
+    start.current = null
+    // Require clear horizontal swipe (rightward) and little vertical movement
+    if (dx > 100 && Math.abs(dx) > Math.abs(dy) * 2) onBack?.()
   }
   return (
-    <div className={className} onTouchStart={onTouchStart} onTouchEnd={onTouchEnd}>
+    <div
+      className={className}
+      onTouchStart={onTouchStart}
+      onTouchMove={onTouchMove}
+      onTouchEnd={onTouchEnd}
+    >
       {children}
     </div>
   )
@@ -59,7 +89,16 @@ function SwipeDeleteRow({ children, onDelete }) {
   )
 }
 
+function titleCase(str) {
+  if (!str) return ''
+  return String(str)
+    .split(/\s+/)
+    .map((w) => (w ? w.charAt(0).toUpperCase() + w.slice(1).toLowerCase() : ''))
+    .join(' ')
+}
+
 function formatStyleLabel(style) {
+
   if (!style) return '—'
   if (STYLES[style]?.label) return STYLES[style].label
   // strip legacy "custom_" prefix and underscores from older data
@@ -72,10 +111,16 @@ function formatStyleLabel(style) {
 export default function Dashboard({ session, profile, company, onCompanyUpdate, onLogout }) {
   const [projects, setProjects] = useState([])
   const [loading, setLoading] = useState(true)
+  const [updateAvailable, setUpdateAvailable] = useState(false)
+  const [digest, setDigest] = useState([])
   const [activeId, setActiveId] = useState(null)
   const [showNew, setShowNew] = useState(false)
   const [showAdmin, setShowAdmin] = useState(false)
   const [showPassword, setShowPassword] = useState(false)
+  const [showCalendar, setShowCalendar] = useState(false)
+  const [showPlatform, setShowPlatform] = useState(false)
+  const [showFeedback, setShowFeedback] = useState(false)
+  const [showWeek, setShowWeek] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
   const [headerCompany, setHeaderCompany] = useState(company)
   const [searchQ, setSearchQ] = useState('')
@@ -86,13 +131,14 @@ export default function Dashboard({ session, profile, company, onCompanyUpdate, 
 
   const isAdmin = profile?.role === 'admin'
   const isCustomer = profile?.role === 'customer'
+  const platformAdmin = isPlatformAdmin(profile)
   const canUpload = profile?.role === 'admin' || profile?.role === 'team'
 
   const refreshCompany = useCallback(async () => {
     if (!profile?.company_id) return
     const { data, error } = await supabase
       .from('companies')
-      .select('id, name, logo_url, app_share_url')
+      .select('id, name, logo_url, app_share_url, header_color')
       .eq('id', profile.company_id)
       .maybeSingle()
     if (error) {
@@ -144,7 +190,59 @@ export default function Dashboard({ session, profile, company, onCompanyUpdate, 
         phases: (p.phases || []).slice().sort((a, b) => a.sort_order - b.sort_order),
         tasks: (p.tasks || []).slice().sort((a, b) => new Date(b.created_at) - new Date(a.created_at)),
       }))
-      // Team: if a project has assigned team members, only those team members see it (admins see all)
+      // Always merge photos from a direct query (nested embed often returns [] under RLS)
+      try {
+        const phaseIds = list.flatMap((p) => (p.phases || []).map((ph) => ph.id)).filter(Boolean)
+        const projectIds = list.map((p) => p.id).filter(Boolean)
+        if (phaseIds.length || projectIds.length) {
+          let photoRows = []
+          // batch phase_id IN queries (Supabase has URL limits)
+          for (let i = 0; i < phaseIds.length; i += 80) {
+            const chunk = phaseIds.slice(i, i + 80)
+            const { data, error: phErr } = await supabase.from('photos').select('*').in('phase_id', chunk)
+            if (phErr) console.warn('photos by phase', phErr.message)
+            if (data?.length) photoRows = photoRows.concat(data)
+          }
+          // also by project_id in case phase_id is null on older rows
+          for (let i = 0; i < projectIds.length; i += 40) {
+            const chunk = projectIds.slice(i, i + 40)
+            const { data, error: pjErr } = await supabase.from('photos').select('*').in('project_id', chunk)
+            if (pjErr) console.warn('photos by project', pjErr.message)
+            if (data?.length) {
+              const seen = new Set(photoRows.map((r) => r.id))
+              data.forEach((r) => { if (!seen.has(r.id)) photoRows.push(r) })
+            }
+          }
+          if (photoRows.length) {
+            const byPhase = {}
+            const byProject = {}
+            photoRows.forEach((ph) => {
+              if (ph.phase_id) {
+                if (!byPhase[ph.phase_id]) byPhase[ph.phase_id] = []
+                byPhase[ph.phase_id].push(ph)
+              }
+              if (ph.project_id) {
+                if (!byProject[ph.project_id]) byProject[ph.project_id] = []
+                byProject[ph.project_id].push(ph)
+              }
+            })
+            list = list.map((p) => ({
+              ...p,
+              phases: (p.phases || []).map((ph) => {
+                const fromPhase = byPhase[ph.id] || []
+                const nested = Array.isArray(ph.photos) ? ph.photos : []
+                // prefer direct query results; merge unique by id
+                const map = new Map()
+                ;[...nested, ...fromPhase].forEach((x) => { if (x?.id) map.set(x.id, x) })
+                return { ...ph, photos: Array.from(map.values()) }
+              }),
+            }))
+          }
+        }
+      } catch (e) {
+        console.warn('photo load', e)
+      }
+      // Team: if a project has assigned trade members, only those trade members see it (admins see all)
       if (profile?.role === 'team') {
         list = list.filter((p) => {
           const phases = p.phases || []
@@ -156,12 +254,12 @@ export default function Dashboard({ session, profile, company, onCompanyUpdate, 
             (ph.phase_team || []).some((m) => m.user_id === profile.id)
           )
           const myPhaseIds = new Set(myPhases.map((ph) => ph.id))
-          // Change orders only for phases this team member is on
+          // Change orders only for phases this trade member is on
           const cos = (p.change_orders || [])
             .filter((co) => co.phase_id && myPhaseIds.has(co.phase_id))
             .map((co) => {
-              const { amount, admin_reply, ...rest } = co
-              return rest
+              const { amount, admin_reply, admin_fee, ...rest } = co
+              return rest // keep team_amount only
             })
           return { ...p, phases: myPhases, change_orders: cos }
         })
@@ -172,6 +270,11 @@ export default function Dashboard({ session, profile, company, onCompanyUpdate, 
         )
       }
       setProjects(list)
+      try {
+        if (profile?.company_id) {
+          localStorage.setItem('bw_projects_cache_' + profile.company_id, JSON.stringify({ at: Date.now(), list }))
+        }
+      } catch (_) {}
     }
     setLoading(false)
   }, [profile?.id, profile?.role])
@@ -194,8 +297,18 @@ export default function Dashboard({ session, profile, company, onCompanyUpdate, 
 
 
   useEffect(() => {
+    // Offline: show last cached projects immediately
+    try {
+      if (profile?.company_id) {
+        const raw = localStorage.getItem('bw_projects_cache_' + profile.company_id)
+        if (raw) {
+          const parsed = JSON.parse(raw)
+          if (parsed?.list?.length) setProjects(parsed.list)
+        }
+      }
+    } catch (_) {}
     loadProjects()
-  }, [loadProjects])
+  }, [loadProjects, profile?.company_id])
 
   // Offline queue: retry when back online
   useEffect(() => {
@@ -237,44 +350,93 @@ export default function Dashboard({ session, profile, company, onCompanyUpdate, 
     return () => window.removeEventListener('online', flush)
   }, [loadProjects, profile?.id])
 
+
+  useEffect(() => {
+    if (!('serviceWorker' in navigator)) return
+    navigator.serviceWorker.getRegistration().then((reg) => {
+      if (!reg) return
+      reg.update().catch(() => {})
+      if (reg.waiting) setUpdateAvailable(true)
+      reg.addEventListener('updatefound', () => {
+        const nw = reg.installing
+        if (!nw) return
+        nw.addEventListener('statechange', () => {
+          if (nw.state === 'installed' && navigator.serviceWorker.controller) setUpdateAvailable(true)
+        })
+      })
+    }).catch(() => {})
+  }, [])
+
+
+  useEffect(() => {
+    if (!profile?.company_id || profile?.role !== 'admin') return
+    const since = new Date()
+    since.setDate(since.getDate() - 7)
+    supabase
+      .from('activity')
+      .select('id, action, detail, user_name, user_email, created_at, project_id')
+      .eq('company_id', profile.company_id)
+      .gte('created_at', since.toISOString())
+      .order('created_at', { ascending: false })
+      .limit(40)
+      .then(({ data }) => setDigest(data || []))
+      .catch(() => {})
+  }, [profile?.company_id, profile?.role, projects.length])
+
   const activeProject = projects.find((p) => p.id === activeId) || null
 
-  const logActivity = async (action, detail, projectId = null) => {
+  const logActivity = async (action, detail, projectId = null, phaseName = null) => {
+    const pid = projectId || activeId || null
+    const proj = projects.find((p) => p.id === pid) || activeProject
+    const projectLabel = (proj && (proj.address || proj.name)) || null
+    const phaseLabel = phaseName || null
+    const whereBits = []
+    if (projectLabel) whereBits.push(projectLabel)
+    if (phaseLabel) whereBits.push('Phase: ' + phaseLabel)
+    const whereLine = whereBits.length ? whereBits.join(' · ') : null
+
     await supabase.from('activity').insert({
       company_id: profile.company_id,
       user_id: profile.id,
       user_email: profile.email,
       user_name: profile.name,
       action,
-      detail,
-      project_id: projectId || activeId || null,
+      detail: [detail, whereLine].filter(Boolean).join(' — '),
+      project_id: pid,
     })
-    // Notify admins when team/customer (or any non-self noise) changes things
-    // Always notify for customer/team actions; also for key events from anyone except pure admin self-edits of notes
+
+    const notifTitle = titleCase(action)
+    const who = profile.name || profile.email || 'User'
+    const bodyParts = []
+    if (whereLine) bodyParts.push(whereLine)
+    if (detail) bodyParts.push(who + ': ' + detail)
+    else bodyParts.push(who)
+    const notifBody = bodyParts.join('\n')
+
     if (profile?.company_id && profile?.role !== 'admin') {
       try {
         await supabase.rpc('notify_company_admins', {
           p_company_id: profile.company_id,
-          p_project_id: projectId || activeId || null,
-          p_title: action,
-          p_body: (profile.name || profile.email || 'User') + (detail ? ': ' + detail : ''),
+          p_project_id: pid,
+          p_title: notifTitle,
+          p_body: notifBody,
           p_kind: action,
         })
       } catch (_) {}
     } else if (profile?.company_id && profile?.role === 'admin') {
-      // Admin actions that other admins may care about (quotes, etc.) — optional light set
       const shareWithAdmins = [
         'quoted change order',
         'approved change order',
         'rejected change order',
+        'sent change order offer',
       ]
       if (shareWithAdmins.some((k) => action.includes(k) || action === k)) {
         try {
           await supabase.rpc('notify_company_admins', {
             p_company_id: profile.company_id,
-            p_project_id: projectId || activeId || null,
-            p_title: action,
-            p_body: detail || '',
+            p_project_id: pid,
+            p_title: notifTitle,
+            p_body: [whereLine, detail].filter(Boolean).join('\n') || detail || '',
             p_kind: action,
           })
         } catch (_) {}
@@ -451,8 +613,8 @@ export default function Dashboard({ session, profile, company, onCompanyUpdate, 
 
   const createProject = async (form) => {
     const phaseNames = form.customPhases?.length
-      ? form.customPhases
-      : (STYLES[form.style] || STYLES.remodel).phases
+      ? form.customPhases.filter((n) => !isFinishingPhase(n))
+      : (STYLES[form.style] || STYLES.remodel).phases.filter((n) => !isFinishingPhase(n))
     const styleKey = form.customLabel || form.style || 'Remodel'
 
     // Optionally persist custom type for this company
@@ -515,14 +677,23 @@ export default function Dashboard({ session, profile, company, onCompanyUpdate, 
   }
 
     const deleteProject = async (id) => {
-    if (!confirm('Delete this project and its files?')) return
+    if (!confirm('Delete this project and all photos, files, and history? This cannot be undone.')) return
     try {
-      const prefix = profile.company_id + '/' + id
-      const { data: files } = await supabase.storage.from('project-photos').list(prefix, { limit: 100 })
-      // list is shallow; try remove common paths via photos table
+      const paths = []
       const { data: photos } = await supabase.from('photos').select('storage_path').eq('project_id', id)
-      const paths = (photos || []).map((x) => x.storage_path).filter(Boolean)
-      if (paths.length) await supabase.storage.from('project-photos').remove(paths)
+      ;(photos || []).forEach((x) => x.storage_path && paths.push(x.storage_path))
+      const { data: pfiles } = await supabase.from('project_files').select('storage_path').eq('project_id', id)
+      ;(pfiles || []).forEach((x) => x.storage_path && paths.push(x.storage_path))
+      const { data: phfiles } = await supabase.from('phase_files').select('storage_path').eq('project_id', id)
+      ;(phfiles || []).forEach((x) => x.storage_path && paths.push(x.storage_path))
+      const { data: cos } = await supabase.from('change_orders').select('storage_path').eq('project_id', id)
+      ;(cos || []).forEach((x) => x.storage_path && paths.push(x.storage_path))
+      const { data: tphotos } = await supabase.from('task_photos').select('storage_path').eq('project_id', id)
+      ;(tphotos || []).forEach((x) => x.storage_path && paths.push(x.storage_path))
+      // chunk removes
+      for (let i = 0; i < paths.length; i += 50) {
+        await supabase.storage.from('project-photos').remove(paths.slice(i, i + 50))
+      }
     } catch (_) {}
     await supabase.from('projects').delete().eq('id', id)
     setActiveId(null)
@@ -530,6 +701,8 @@ export default function Dashboard({ session, profile, company, onCompanyUpdate, 
   }
 
   const archiveProject = async (id, archived = true) => {
+    if (archived && !confirm('Archive this project? You can restore it from Archived.')) return
+    if (!archived && !confirm('Restore this project to active?')) return
     await supabase.from('projects').update({ archived }).eq('id', id)
     setActiveId(null)
     await loadProjects()
@@ -538,7 +711,7 @@ export default function Dashboard({ session, profile, company, onCompanyUpdate, 
 
   return (
     <div className="min-h-screen bg-white">
-      <header className="bg-black text-white px-4 pb-3 sticky top-0 z-50" style={{ paddingTop: "max(0.75rem, env(safe-area-inset-top))" }}>
+      <header className="text-white px-4 pb-3 sticky top-0 z-50" style={{ paddingTop: "max(0.75rem, env(safe-area-inset-top))", background: (headerCompany?.header_color || company?.header_color || '#000000') }}>
         <div className="max-w-2xl mx-auto grid grid-cols-3 items-center gap-2">
           {/* Left: company + email */}
           <div className="min-w-0 text-left">
@@ -603,11 +776,13 @@ export default function Dashboard({ session, profile, company, onCompanyUpdate, 
                         setMenuOpen(false)
                         setShowAdmin(true)
                         setShowPassword(false)
+                        setShowCalendar(false)
+                        setShowWeek(false)
                         setActiveId(null)
                         setShowNew(false)
                       }}
                     >
-                      Users / Admin
+                      Users / Contractor
                     </button>
                   )}
                   <button
@@ -615,8 +790,80 @@ export default function Dashboard({ session, profile, company, onCompanyUpdate, 
                     className="w-full text-left px-3 py-2.5 text-sm hover:bg-[#F5F5F5]"
                     onClick={() => {
                       setMenuOpen(false)
+                      setShowCalendar(true)
+                      setShowWeek(false)
+                      setShowAdmin(false)
+                      setShowPassword(false)
+                      setActiveId(null)
+                      setShowNew(false)
+                    }}
+                  >
+                    Calendar
+                  </button>
+                  {isAdmin && (
+                    <button
+                      type="button"
+                      className="w-full text-left px-3 py-2.5 text-sm hover:bg-[#F5F5F5]"
+                      onClick={() => {
+                        setMenuOpen(false)
+                        setShowWeek(true)
+                        setShowCalendar(false)
+                        setShowAdmin(false)
+                        setShowPassword(false)
+                        setActiveId(null)
+                        setShowNew(false)
+                      }}
+                    >
+                      This week
+                    </button>
+                  )}
+                  {platformAdmin && (
+                    <button
+                      type="button"
+                      className="w-full text-left px-3 py-2.5 text-sm hover:bg-[#F5F5F5]"
+                      onClick={() => {
+                        setMenuOpen(false)
+                        setShowPlatform(true)
+                        setShowFeedback(false)
+                        setShowAdmin(false)
+                        setShowPassword(false)
+                        setShowCalendar(false)
+                        setShowWeek(false)
+                        setActiveId(null)
+                        setShowNew(false)
+                      }}
+                    >
+                      Platform
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    className="w-full text-left px-3 py-2.5 text-sm hover:bg-[#F5F5F5]"
+                    onClick={() => {
+                      setMenuOpen(false)
+                      setShowFeedback(true)
+                      setShowPlatform(false)
+                      setShowAdmin(false)
+                      setShowPassword(false)
+                      setShowCalendar(false)
+                      setShowWeek(false)
+                      setActiveId(null)
+                      setShowNew(false)
+                    }}
+                  >
+                    Send feedback
+                  </button>
+                  <button
+                    type="button"
+                    className="w-full text-left px-3 py-2.5 text-sm hover:bg-[#F5F5F5]"
+                    onClick={() => {
+                      setMenuOpen(false)
                       setShowPassword(true)
                       setShowAdmin(false)
+                      setShowCalendar(false)
+                      setShowWeek(false)
+                      setShowPlatform(false)
+                      setShowFeedback(false)
                       setActiveId(null)
                       setShowNew(false)
                     }}
@@ -640,6 +887,14 @@ export default function Dashboard({ session, profile, company, onCompanyUpdate, 
         </div>
       </header>
 
+      {updateAvailable && (
+        <div className="bg-[#FFF8DB] border-b border-[#E6B800] text-center text-sm px-4 py-2">
+          New version available.{' '}
+          <button type="button" className="underline font-medium" onClick={() => window.location.reload()}>
+            Refresh
+          </button>
+        </div>
+      )}
       <main className="max-w-2xl mx-auto px-4 py-5">
         {showNotifs && (isAdmin || profile?.role === 'team') ? (
           <SwipeBack onBack={() => setShowNotifs(false)}>
@@ -707,24 +962,70 @@ export default function Dashboard({ session, profile, company, onCompanyUpdate, 
                         }
                       }}
                     >
-                      <div className="text-sm font-medium">{n.title}</div>
-                      {n.body && <div className="text-xs text-[#6B6E72] mt-0.5">{n.body}</div>}
-                      <div className="text-[10px] font-mono text-[#8A8D91] mt-1">{fmtDate(n.created_at)}</div>
+                      <div className="text-sm font-medium">{titleCase(n.title)}</div>
+                      {(() => {
+                        const proj = projects.find((p) => p.id === n.project_id)
+                        const projLine = proj?.address || null
+                        return (
+                          <>
+                            {projLine && (
+                              <div className="text-xs text-[#16324F] mt-0.5 font-medium">{projLine}</div>
+                            )}
+                            {n.body && (
+                              <div className="text-xs text-[#6B6E72] mt-0.5 whitespace-pre-wrap">{n.body}</div>
+                            )}
+                          </>
+                        )
+                      })()}
+                      <div className="text-[10px] font-mono text-[#8A8D91] mt-1">{fmtDateTime(n.created_at)}</div>
                     </button>
                   </SwipeDeleteRow>
                 ))}
               </div>
             )}
           </SwipeBack>
+        ) : showPlatform && platformAdmin ? (
+          <PlatformAdmin
+            profile={profile}
+            onBack={() => setShowPlatform(false)}
+          />
+        ) : showFeedback ? (
+          <FeedbackPanel
+            profile={profile}
+            company={headerCompany || company}
+            onBack={() => setShowFeedback(false)}
+          />
         ) : showPassword ? (
           <ChangePasswordPanel
             email={profile?.email}
             onBack={() => setShowPassword(false)}
           />
+        ) : showCalendar ? (
+          <AdminCalendarView
+            projects={projects}
+            role={profile?.role}
+            onBack={() => setShowCalendar(false)}
+            onOpenProject={(id) => {
+              setShowCalendar(false)
+              setActiveId(id)
+            }}
+          />
+        ) : showWeek && isAdmin ? (
+          <ThisWeekView
+            digest={digest}
+            projects={projects}
+            onBack={() => setShowWeek(false)}
+            onOpenProject={(id) => {
+              setShowWeek(false)
+              setActiveId(id)
+            }}
+          />
         ) : showAdmin && isAdmin ? (
           <AdminPanel
             profile={profile}
             company={headerCompany || company}
+            digest={digest}
+            allProjects={projects}
             onBack={() => {
               setShowAdmin(false)
               refreshCompany()
@@ -736,7 +1037,7 @@ export default function Dashboard({ session, profile, company, onCompanyUpdate, 
             }}
           />
         ) : showNew && isAdmin ? (
-          <NewProjectForm onCreate={createProject} onCancel={() => setShowNew(false)} companyId={profile.company_id} />
+          <NewProjectForm onCreate={createProject} onCancel={() => setShowNew(false)} companyId={profile.company_id} existingProjects={projects} />
         ) : activeProject ? (
           <ProjectDetail
             project={activeProject}
@@ -795,11 +1096,20 @@ export default function Dashboard({ session, profile, company, onCompanyUpdate, 
           </div>
         )}
 
-{!loading && visibleProjects.length === 0 ? (
+
+{loading ? (
+              <div className="text-center py-16">
+                <p className="text-sm text-[#6B6E72]">Loading projects…</p>
+              </div>
+            ) : !visibleProjects.length ? (
               <div className="text-center py-16 border-2 border-dashed border-black rounded-md">
                 <HardHat size={32} className="mx-auto text-[#C9C4B8] mb-2" />
                 <p className="text-[#6B6E72] text-sm mb-3">
-                  {isCustomer ? 'No projects shared with you yet.' : 'No projects yet.'}
+                  {showArchived
+                    ? 'No archived projects.'
+                    : isCustomer
+                      ? 'No projects shared with you yet.'
+                      : 'No projects yet.'}
                 </p>
                 {isAdmin && (
                   <button onClick={() => setShowNew(true)} className="text-sm font-medium text-white bg-black px-4 py-2 rounded">
@@ -841,7 +1151,18 @@ export default function Dashboard({ session, profile, company, onCompanyUpdate, 
                         <div className="text-xs text-[#6B6E72] mt-0.5">{formatStyleLabel(p.style)}</div>
                         <div className="text-[11px] font-mono text-[#6B6E72] mt-1">
                           {doneCount} of {phases.length} phases complete
+                          {phases.length > 0 ? ` · ${Math.round((doneCount / phases.length) * 100)}%` : ''}
                         </div>
+                        {isCustomer && (() => {
+                          const active = phases.find((ph) => ph.status === 'active')
+                          const recent = (p.change_orders || []).filter((c) => ['quoted', 'pending'].includes(c.status || ''))
+                          return (
+                            <div className="text-[11px] text-[#6B6E72] mt-1">
+                              {active ? `In progress: ${active.name}` : 'No phase in progress'}
+                              {recent.length ? ` · ${recent.length} change order${recent.length > 1 ? 's' : ''} open` : ''}
+                            </div>
+                          )
+                        })()}
                       </div>
                     </button>
                   )
@@ -966,6 +1287,218 @@ function ChangePasswordPanel({ email, onBack }) {
   )
 }
 
+
+function AdminCalendarView({ projects, role, onBack, onOpenProject }) {
+  const today = new Date()
+  const [year, setYear] = useState(today.getFullYear())
+  const [month, setMonth] = useState(today.getMonth()) // 0-11
+  const [selected, setSelected] = useState(today.toISOString().slice(0, 10))
+  const isTrade = role === 'team'
+  const isCustomer = role === 'customer'
+  // projects list is already scoped: customers → assigned jobs; trade → assigned phases only
+
+  const first = new Date(year, month, 1)
+  const startPad = first.getDay() // 0 Sun
+  const daysInMonth = new Date(year, month + 1, 0).getDate()
+  const cells = []
+  for (let i = 0; i < startPad; i++) cells.push(null)
+  for (let d = 1; d <= daysInMonth; d++) cells.push(d)
+
+  const iso = (d) => {
+    const mm = String(month + 1).padStart(2, '0')
+    const dd = String(d).padStart(2, '0')
+    return year + '-' + mm + '-' + dd
+  }
+
+  const marks = {}
+  const mark = (dateStr, info) => {
+    if (!dateStr) return
+    if (!marks[dateStr]) marks[dateStr] = []
+    marks[dateStr].push(info)
+  }
+  ;(projects || []).forEach((pr) => {
+    // Customer + contractor: project-level schedule
+    if (!isTrade) {
+      mark(pr.start_date, { projectId: pr.id, label: pr.address, detail: 'Project start', status: pr.status })
+      mark(pr.end_date, { projectId: pr.id, label: pr.address, detail: 'Project end', status: pr.status })
+    }
+    ;(pr.phases || []).forEach((ph) => {
+      // Trade: only their phase start/end (list already filtered to assigned phases)
+      // Customer/contractor: all phases on visible projects
+      mark(ph.start_date, {
+        projectId: pr.id,
+        label: isTrade ? (ph.name || 'Phase') : (pr.address + ' · ' + ph.name),
+        detail: isTrade ? 'Your start' : 'Phase start',
+        status: ph.status,
+      })
+      mark(ph.end_date, {
+        projectId: pr.id,
+        label: isTrade ? (ph.name || 'Phase') : (pr.address + ' · ' + ph.name),
+        detail: isTrade ? 'Your end' : 'Phase end',
+        status: ph.status,
+      })
+    })
+  })
+
+  const dayItems = []
+  const day = selected
+  ;(projects || []).forEach((pr) => {
+    if (!isTrade && (pr.start_date === day || pr.end_date === day)) {
+      dayItems.push({
+        projectId: pr.id,
+        label: pr.address,
+        detail: pr.start_date === day && pr.end_date === day ? 'Start & end' : pr.start_date === day ? 'Project start' : 'Project end',
+        status: pr.status,
+      })
+    }
+    ;(pr.phases || []).forEach((ph) => {
+      if (ph.start_date === day || ph.end_date === day) {
+        dayItems.push({
+          projectId: pr.id,
+          label: isTrade ? (ph.name || 'Phase') : (pr.address + ' · ' + ph.name),
+          detail: isTrade
+            ? (ph.start_date === day && ph.end_date === day ? 'Your start & end' : ph.start_date === day ? 'Your start' : 'Your end')
+            : (ph.start_date === day && ph.end_date === day ? 'Start & end' : ph.start_date === day ? 'Phase start' : 'Phase target end'),
+          status: ph.status,
+        })
+      }
+      if (!isTrade && ph.start_date && ph.end_date && ph.start_date < day && ph.end_date > day && ph.status === 'active') {
+        dayItems.push({
+          projectId: pr.id,
+          label: pr.address + ' · ' + ph.name,
+          detail: 'In progress',
+          status: ph.status,
+        })
+      }
+      if (isTrade && ph.start_date && ph.end_date && ph.start_date < day && ph.end_date > day && ph.status === 'active') {
+        dayItems.push({
+          projectId: pr.id,
+          label: ph.name || 'Phase',
+          detail: 'In progress (your phase)',
+          status: ph.status,
+        })
+      }
+    })
+  })
+
+  const monthLabel = new Date(year, month, 1).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
+  const prev = () => {
+    if (month === 0) { setMonth(11); setYear((y) => y - 1) }
+    else setMonth((m) => m - 1)
+  }
+  const next = () => {
+    if (month === 11) { setMonth(0); setYear((y) => y + 1) }
+    else setMonth((m) => m + 1)
+  }
+
+  return (
+    <SwipeBack onBack={onBack}>
+      <button type="button" onClick={onBack} className="flex items-center gap-1 text-sm text-[#6B6E72] mb-4">
+        <ChevronLeft size={16} /> Back
+      </button>
+      <h2 className="font-display text-2xl mb-1">Calendar</h2>
+      <p className="text-xs text-[#6B6E72] mb-4">
+        {isTrade ? 'Your phase start and end dates' : isCustomer ? 'Schedule for your projects' : 'All project and phase dates'}
+      </p>
+      <div className="bg-white border border-black rounded-md p-4 mb-4">
+        <div className="flex items-center justify-between mb-3">
+          <button type="button" onClick={prev} className="p-2 border border-black rounded"><ChevronLeft size={18} /></button>
+          <div className="font-display text-lg">{monthLabel}</div>
+          <button type="button" onClick={next} className="p-2 border border-black rounded"><ChevronRight size={18} /></button>
+        </div>
+        <div className="grid grid-cols-7 gap-1 text-center text-[10px] font-mono uppercase text-[#6B6E72] mb-1">
+          {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((d) => (
+            <div key={d}>{d}</div>
+          ))}
+        </div>
+        <div className="grid grid-cols-7 gap-1">
+          {cells.map((d, i) => {
+            if (d == null) return <div key={'e' + i} className="aspect-square" />
+            const dateStr = iso(d)
+            const has = (marks[dateStr] || []).length > 0
+            const isSel = selected === dateStr
+            const isToday = dateStr === today.toISOString().slice(0, 10)
+            return (
+              <button
+                key={dateStr}
+                type="button"
+                onClick={() => setSelected(dateStr)}
+                className={
+                  'aspect-square rounded text-sm relative border ' +
+                  (isSel ? 'bg-black text-white border-black' : isToday ? 'border-[#E6B800] bg-[#FFF8DB]' : 'border-transparent hover:border-black')
+                }
+              >
+                {d}
+                {has && !isSel && (
+                  <span className="absolute bottom-1 left-1/2 -translate-x-1/2 w-1 h-1 rounded-full bg-[#E6B800]" />
+                )}
+                {has && isSel && (
+                  <span className="absolute bottom-1 left-1/2 -translate-x-1/2 w-1 h-1 rounded-full bg-[#E6B800]" />
+                )}
+              </button>
+            )
+          })}
+        </div>
+      </div>
+      <div className="bg-white border border-black rounded-md p-4">
+        <h3 className="text-[11px] font-mono uppercase text-[#6B6E72] mb-2">
+          {fmtDate(selected)}
+        </h3>
+        {dayItems.length === 0 ? (
+          <p className="text-sm text-[#6B6E72]">Nothing scheduled.</p>
+        ) : (
+          <div className="space-y-2">
+            {dayItems.map((it, i) => (
+              <button
+                key={i}
+                type="button"
+                className="w-full text-left border border-[#E5E5E5] rounded p-3 hover:border-black"
+                onClick={() => it.projectId && onOpenProject?.(it.projectId)}
+              >
+                <div className="text-sm font-medium">{it.label}</div>
+                <div className="text-xs text-[#6B6E72]">{it.detail}{it.status ? ' · ' + it.status : ''}</div>
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+    </SwipeBack>
+  )
+}
+
+function ThisWeekView({ digest, projects, onBack, onOpenProject }) {
+  return (
+    <SwipeBack onBack={onBack}>
+      <button type="button" onClick={onBack} className="flex items-center gap-1 text-sm text-[#6B6E72] mb-4">
+        <ChevronLeft size={16} /> Back
+      </button>
+      <h2 className="font-display text-2xl mb-4">This week</h2>
+      {(digest || []).length === 0 ? (
+        <p className="text-sm text-[#6B6E72]">No activity in the last 7 days.</p>
+      ) : (
+        <div className="space-y-2">
+          {digest.map((d) => {
+            const proj = (projects || []).find((p) => p.id === d.project_id)
+            return (
+              <button
+                key={d.id}
+                type="button"
+                className="w-full text-left bg-white border border-black rounded-md p-3"
+                onClick={() => d.project_id && onOpenProject?.(d.project_id)}
+              >
+                <div className="text-sm font-medium">{titleCase(d.action)}</div>
+                {proj?.address && <div className="text-xs text-[#16324F] mt-0.5">{proj.address}</div>}
+                <div className="text-xs text-[#6B6E72] mt-0.5">{d.detail || d.user_name || d.user_email}</div>
+                <div className="text-[10px] font-mono text-[#8A8D91] mt-1">{fmtDateTime(d.created_at)}</div>
+              </button>
+            )
+          })}
+        </div>
+      )}
+    </SwipeBack>
+  )
+}
+
 function StatusBadge({ status, map }) {
   const s = map[status] || map.planning || Object.values(map)[0]
   return (
@@ -978,7 +1511,7 @@ function StatusBadge({ status, map }) {
   )
 }
 
-function NewProjectForm({ onCreate, onCancel, companyId }) {
+function NewProjectForm({ onCreate, onCancel, companyId, existingProjects = [] }) {
   const [address, setAddress] = useState('')
   const [style, setStyle] = useState('remodel')
   const [startDate, setStartDate] = useState('')
@@ -989,6 +1522,7 @@ function NewProjectForm({ onCreate, onCancel, companyId }) {
   const [formError, setFormError] = useState('')
   const [coverUrl, setCoverUrl] = useState(null)
   const [uploadingCover, setUploadingCover] = useState(false)
+  const [templateId, setTemplateId] = useState('')
 
   const uploadCover = async (e) => {
     const file = e.target.files?.[0]
@@ -1062,6 +1596,33 @@ function NewProjectForm({ onCreate, onCancel, companyId }) {
             </label>
           )}
         </div>
+        {existingProjects.length > 0 && (
+          <div>
+            <label className="block text-[11px] font-mono uppercase text-[#6B6E72] mb-1">Copy phases from</label>
+            <select
+              value={templateId}
+              onChange={(e) => {
+                const id = e.target.value
+                setTemplateId(id)
+                if (!id) return
+                const src = existingProjects.find((p) => p.id === id)
+                if (!src) return
+                const names = (src.phases || []).slice().sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0)).map((ph) => ph.name)
+                if (names.length) {
+                  setUseCustom(true)
+                  setCustomLabel((src.style || 'Template') + ' phases')
+                  setCustomPhases(names.join(', '))
+                }
+              }}
+              className="w-full border border-black rounded px-3 py-2 text-sm bg-white"
+            >
+              <option value="">None — pick a type below</option>
+              {existingProjects.map((p) => (
+                <option key={p.id} value={p.id}>{p.address}</option>
+              ))}
+            </select>
+          </div>
+        )}
         <div>
           <label className="block text-[11px] font-mono uppercase text-[#6B6E72] mb-1">Project type</label>
           {!useCustom ? (
@@ -1110,6 +1671,7 @@ function ProjectDetail({ project, isAdmin, canUpload, isCustomer, profile, onBac
   const [showExport, setShowExport] = useState(false)
   const [selectedPhaseId, setSelectedPhaseId] = useState(null)
   const [newPhaseName, setNewPhaseName] = useState('')
+  const [newFinishingName, setNewFinishingName] = useState('')
   const [companyUsers, setCompanyUsers] = useState([])
   const [uploadingFile, setUploadingFile] = useState(false)
   const [editingProject, setEditingProject] = useState(false)
@@ -1191,14 +1753,17 @@ function ProjectDetail({ project, isAdmin, canUpload, isCustomer, profile, onBac
     if (!isAdmin) return
     const next = nextPhaseStatus(phase.status)
     await supabase.from('phases').update({ status: next }).eq('id', phase.id)
-    await logActivity('updated phase status', phase.name)
+    await logActivity('updated phase status', phase.name, project.id, phase.name)
     onReload()
   }
 
-  const addPhase = async () => {
+  const addPhase = async (toFinishing = false) => {
     if (!isAdmin) return
-    const name = newPhaseName.trim()
-    if (!name) return
+    const raw = (toFinishing ? newFinishingName : newPhaseName).trim()
+    if (!raw) return
+    const name = toFinishing
+      ? (isFinishingPhase(raw) ? raw : ('Finishing — ' + raw))
+      : raw
     const maxOrder = phases.reduce((m, ph) => Math.max(m, ph.sort_order ?? 0), -1)
     const { error } = await supabase.from('phases').insert({
       project_id: project.id,
@@ -1211,8 +1776,9 @@ function ProjectDetail({ project, isAdmin, canUpload, isCustomer, profile, onBac
       alert(error.message)
       return
     }
-    setNewPhaseName('')
-    await logActivity('added phase', name)
+    if (toFinishing) setNewFinishingName('')
+    else setNewPhaseName('')
+    await logActivity('added phase', name, project.id, name)
     onReload()
   }
 
@@ -1350,10 +1916,13 @@ function ProjectDetail({ project, isAdmin, canUpload, isCustomer, profile, onBac
             <>
               <div className="flex justify-between items-start gap-2">
                 <div className="min-w-0">
-                  <div className="flex items-center gap-1 text-sm text-[#6B6E72]">
-                    <MapPin size={13} /> {formatStyleLabel(project.style)}
+                  <div className="text-sm font-semibold text-black">
+                    {formatStyleLabel(project.style)}
                   </div>
-                  <h2 className="font-display text-2xl leading-tight truncate">{project.address}</h2>
+                  <h2 className="font-display text-2xl leading-tight truncate flex items-center gap-1.5">
+                    <MapPin size={16} className="flex-shrink-0 text-[#6B6E72]" />
+                    <span className="truncate">{project.address}</span>
+                  </h2>
                 </div>
                 <StatusBadge status={project.status} map={PROJECT_STATUS} />
               </div>
@@ -1396,10 +1965,14 @@ function ProjectDetail({ project, isAdmin, canUpload, isCustomer, profile, onBac
             <div className="flex justify-between text-[11px] font-mono text-[#6B6E72] mb-1">
               <span>{doneCount} of {phases.length} phases complete</span>
             </div>
-            <div className="h-2 rounded-full bg-[#E9E9E7] overflow-hidden">
+            <div className="h-2 rounded-full bg-[#E9E9E7] overflow-hidden flex">
               <div
                 className="h-full bg-[#3F7D58]"
                 style={{ width: `${phases.length ? (doneCount / phases.length) * 100 : 0}%` }}
+              />
+              <div
+                className="h-full bg-[#E6B800]"
+                style={{ width: `${phases.length ? (phases.filter((ph) => ph.status === 'active').length / phases.length) * 100 : 0}%` }}
               />
             </div>
           </div>
@@ -1417,7 +1990,11 @@ function ProjectDetail({ project, isAdmin, canUpload, isCustomer, profile, onBac
       </div>
 
       <div className="space-y-2 mb-4">
-        {phases.map((phase, i) => (
+        {phases.map((phase, i) => {
+          if (isFinishingPhase(phase.name)) return null
+          const mainNum = phases.slice(0, i + 1).filter((p) => !isFinishingPhase(p.name)).length
+          return (
+          <div key={'wrap-' + phase.id}>
           <div
             key={phase.id}
 className={`bg-white border border-black rounded-md flex items-stretch overflow-hidden ${dragIdx === i ? 'opacity-60 scale-[0.98]' : ''} ${dragOverIdx === i && dragIdx !== null && dragIdx !== i ? 'ring-2 ring-black' : ''}`}
@@ -1435,7 +2012,7 @@ className={`bg-white border border-black rounded-md flex items-stretch overflow-
                 }}
                               >
                 <span className="text-sm leading-none opacity-90">⋮⋮</span>
-                <span className="font-mono text-xs">{i + 1}</span>
+                <span className="font-mono text-xs">{mainNum}</span>
               </div>
             )}
             {!isAdmin && (
@@ -1443,7 +2020,7 @@ className={`bg-white border border-black rounded-md flex items-stretch overflow-
                 className="w-9 flex items-center justify-center font-mono text-xs text-white flex-shrink-0"
                 style={{ background: (PHASE_STATUS[phase.status] || PHASE_STATUS.pending).color }}
               >
-                {i + 1}
+                {mainNum}
               </div>
             )}
             <button
@@ -1497,7 +2074,8 @@ className={`bg-white border border-black rounded-md flex items-stretch overflow-
               </div>
             )}
           </div>
-        ))}
+          </div>
+        )})}
       </div>
 
       {isAdmin && (
@@ -1505,14 +2083,120 @@ className={`bg-white border border-black rounded-md flex items-stretch overflow-
           <input
             value={newPhaseName}
             onChange={(e) => setNewPhaseName(e.target.value)}
-            placeholder="Add a custom phase"
+            placeholder="Add a phase"
             className="flex-1 border border-black rounded px-3 py-2 text-sm"
-            onKeyDown={(e) => { if (e.key === 'Enter') addPhase() }}
+            onKeyDown={(e) => { if (e.key === 'Enter') addPhase(false) }}
           />
           <button
             type="button"
-            onClick={addPhase}
+            onClick={() => addPhase(false)}
             disabled={!newPhaseName.trim()}
+            className="px-3 rounded bg-black text-white disabled:opacity-40"
+          >
+            <Plus size={16} />
+          </button>
+        </div>
+      )}
+
+      <div className="text-[11px] font-mono uppercase text-[#6B6E72] pt-2 pb-1 border-t border-black mt-1 mb-2">
+        Finishing
+      </div>
+      <div className="space-y-2 mb-2">
+        {(() => {
+          const finishing = phases.filter((ph) => isFinishingPhase(ph.name))
+          if (!finishing.length) {
+            return <p className="text-xs text-[#8A8D91]">No finishing phases yet. Add trades below.</p>
+          }
+          return finishing.map((phase, fi) => {
+            const globalIdx = phases.findIndex((p) => p.id === phase.id)
+            return (
+              <div
+                key={'fin-' + phase.id}
+                className="bg-white border border-black rounded-md flex items-stretch overflow-hidden"
+              >
+                <div
+                  className="w-9 flex items-center justify-center font-mono text-xs text-white flex-shrink-0"
+                  style={{ background: (PHASE_STATUS[phase.status] || PHASE_STATUS.pending).color }}
+                >
+                  {fi + 1}
+                </div>
+                <button
+                  type="button"
+                  className="flex-1 text-left px-3 py-3 min-w-0"
+                  onClick={() => setSelectedPhaseId(phase.id)}
+                >
+                  <div className="text-sm font-medium truncate">{finishingLabel(phase.name)}</div>
+                  <div className="text-[11px] text-[#8A8D91] mt-0.5">
+                    {(phase.photos || []).length} photo{(phase.photos || []).length !== 1 ? 's' : ''}
+                  </div>
+                </button>
+                {isAdmin && (
+                  <div className="flex flex-col border-l border-black/20">
+                    <button
+                      type="button"
+                      disabled={fi === 0}
+                      onClick={() => {
+                        if (globalIdx <= 0) return
+                        // swap with previous finishing only
+                        const prevFin = finishing[fi - 1]
+                        const prevIdx = phases.findIndex((p) => p.id === prevFin.id)
+                        movePhaseBy(globalIdx, prevIdx - globalIdx)
+                      }}
+                      className="px-2.5 py-1.5 disabled:opacity-25"
+                      title="Move up"
+                    >
+                      <ChevronUp size={18} />
+                    </button>
+                    <button
+                      type="button"
+                      disabled={fi === finishing.length - 1}
+                      onClick={() => {
+                        const nextFin = finishing[fi + 1]
+                        const nextIdx = phases.findIndex((p) => p.id === nextFin.id)
+                        movePhaseBy(globalIdx, nextIdx - globalIdx)
+                      }}
+                      className="px-2.5 py-1.5 disabled:opacity-25"
+                      title="Move down"
+                    >
+                      <ChevronDown size={18} />
+                    </button>
+                  </div>
+                )}
+                {isAdmin ? (
+                  <button type="button" onClick={() => cyclePhase(phase)} className="px-2 flex items-center border-l border-black/20" title="Cycle status">
+                    {phase.status === 'done' ? (
+                      <Check size={16} className="text-[#3F7D58]" />
+                    ) : (
+                      <div className="w-2.5 h-2.5 rounded-full" style={{ background: (PHASE_STATUS[phase.status] || PHASE_STATUS.pending).color }} />
+                    )}
+                  </button>
+                ) : (
+                  <div className="px-2 flex items-center">
+                    {phase.status === 'done' ? (
+                      <Check size={16} className="text-[#3F7D58]" />
+                    ) : (
+                      <div className="w-2.5 h-2.5 rounded-full" style={{ background: (PHASE_STATUS[phase.status] || PHASE_STATUS.pending).color }} />
+                    )}
+                  </div>
+                )}
+              </div>
+            )
+          })
+        })()}
+      </div>
+      {isAdmin && (
+        <div className="bg-white border border-dashed border-black rounded-md p-3 flex gap-2 mb-4">
+          <input
+            value={newFinishingName}
+            onChange={(e) => setNewFinishingName(e.target.value)}
+            placeholder="Add finishing phase (e.g. Electrical)"
+            className="flex-1 border border-black rounded px-3 py-2 text-sm"
+            onKeyDown={(e) => { if (e.key === 'Enter') addPhase(true) }}
+          />
+          <button
+            type="button"
+            onClick={() => addPhase(true)}
+            disabled={!newFinishingName.trim()}
             className="px-3 rounded bg-black text-white disabled:opacity-40"
           >
             <Plus size={16} />
@@ -1543,8 +2227,7 @@ className={`bg-white border border-black rounded-md flex items-stretch overflow-
       )}
 
 
-      {/* Change orders — admin + customer only (not team) */}
-      {(isAdmin || isCustomer) && (
+      {/* Change orders: team → admin price → customer */}
       <div className="bg-white border border-black rounded-md p-4 mb-4">
         <div className="flex items-center justify-between gap-2 mb-2">
           <h3 className="text-[11px] font-mono uppercase text-[#6B6E72]">Change orders</h3>
@@ -1554,6 +2237,32 @@ className={`bg-white border border-black rounded-md flex items-stretch overflow-
             </span>
           )}
         </div>
+        {(isAdmin || isCustomer) && (project.change_orders || []).length > 0 && (() => {
+          const cos = project.change_orders || []
+          const accepted = cos.filter((c) => c.status === 'approved')
+          const declined = cos.filter((c) => c.status === 'rejected')
+          const open = cos.filter((c) => ['pending', 'quoted'].includes(c.status || ''))
+          const sum = (arr) => arr.reduce((s, c) => s + (Number(c.amount) || 0), 0)
+          return (
+            <div className="grid grid-cols-3 gap-2 mb-3 text-center">
+              <div className="border border-[#E5E5E5] rounded p-2">
+                <div className="text-[10px] font-mono uppercase text-[#6B6E72]">Open</div>
+                <div className="text-sm font-medium">{open.length}</div>
+                <div className="text-[10px] text-[#6B6E72]">${sum(open).toLocaleString(undefined, { maximumFractionDigits: 0 })}</div>
+              </div>
+              <div className="border border-[#E5E5E5] rounded p-2">
+                <div className="text-[10px] font-mono uppercase text-[#6B6E72]">Accepted</div>
+                <div className="text-sm font-medium text-[#3F7D58]">${sum(accepted).toLocaleString(undefined, { maximumFractionDigits: 0 })}</div>
+                <div className="text-[10px] text-[#6B6E72]">{accepted.length} item{accepted.length !== 1 ? 's' : ''}</div>
+              </div>
+              <div className="border border-[#E5E5E5] rounded p-2">
+                <div className="text-[10px] font-mono uppercase text-[#6B6E72]">Declined</div>
+                <div className="text-sm font-medium text-[#B5533C]">${sum(declined).toLocaleString(undefined, { maximumFractionDigits: 0 })}</div>
+                <div className="text-[10px] text-[#6B6E72]">{declined.length} item{declined.length !== 1 ? 's' : ''}</div>
+              </div>
+            </div>
+          )
+        })()}
         {(project.change_orders || []).length > 0 && (
           <div className="space-y-3 mb-3">
             {(project.change_orders || [])
@@ -1575,14 +2284,19 @@ className={`bg-white border border-black rounded-md flex items-stretch overflow-
                               color: st === 'pending' || st === 'quoted' ? '#8A6D00' : st === 'rejected' ? '#B5533C' : '#3F7D58',
                             }}
                           >
-                            {st === 'quoted' ? 'Offer sent' : st === 'rejected' ? 'Declined' : st === 'approved' ? 'Accepted' : st === 'pending' ? 'Customer request' : st}
+                            {st === 'quoted' ? ((isAdmin || isCustomer) ? 'Offer sent' : 'With customer') : st === 'rejected' ? 'Declined' : st === 'approved' ? 'Approved' : st === 'pending' ? (co.origin === 'team_request' ? 'Awaiting contractor price' : (isAdmin || isCustomer ? 'Customer request' : 'Submitted')) : st}
                           </span>
                         </div>
                         <div className="text-[10px] font-mono text-[#8A8D91] mt-0.5">
-                          {fmtDate(co.created_at)}
+                          {fmtDateTime(co.created_at)}
                           {phaseName ? ` · ${phaseName}` : ''}
-                          {co.origin === 'admin_offer' ? ' · Contractor offer' : ''}
+                          {co.origin === 'admin_offer' ? ' · Contractor offer' : co.origin === 'team_request' ? ' · Trade request' : ' · Customer request'}
                         </div>
+                        {(isAdmin || isCustomer) && (
+                          <div className="text-[10px] text-[#8A8D91] mt-0.5">
+                            {co.decided_at ? `Decided ${fmtDateTime(co.decided_at)}` : st === 'quoted' ? 'Awaiting customer decision' : st === 'pending' ? 'Awaiting admin quote' : ''}
+                          </div>
+                        )}
                       </div>
                       {isAdmin && (
                         <button
@@ -1605,9 +2319,37 @@ className={`bg-white border border-black rounded-md flex items-stretch overflow-
                         View attachment
                       </a>
                     )}
+                    {isAdmin && co.team_amount != null && co.team_amount !== '' && (
+                      <div className="text-xs mt-2 text-[#6B6E72]">
+                        Trade request: ${Number(co.team_amount).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </div>
+                    )}
+                    {isAdmin && co.admin_fee != null && Number(co.admin_fee) > 0 && (
+                      <div className="text-xs text-[#6B6E72]">
+                        Contractor fee: ${Number(co.admin_fee).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </div>
+                    )}
                     {(isAdmin || isCustomer) && (co.amount != null && co.amount !== '') && (
+                      <div className="text-sm mt-1 font-medium">
+                        {isCustomer ? 'Amount' : (co.origin === 'admin_offer' ? 'Customer offer' : 'Customer total')}: ${Number(co.amount).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </div>
+                    )}
+                    {!isAdmin && !isCustomer && co.team_amount != null && co.team_amount !== '' && (
                       <div className="text-sm mt-2 font-medium">
-                        {co.origin === 'admin_offer' ? 'Offer amount' : 'Quoted amount'}: ${Number(co.amount).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        Cost: ${Number(co.team_amount).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </div>
+                    )}
+                    {!isAdmin && !isCustomer && st === 'approved' && (
+                      <div className="text-xs mt-1 text-[#3F7D58]">
+                        Customer approved{co.team_amount != null ? ` — $${Number(co.team_amount).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : ''}
+                      </div>
+                    )}
+                    {!isAdmin && !isCustomer && st === 'rejected' && (
+                      <div className="text-xs mt-2 text-[#B5533C]">Customer declined</div>
+                    )}
+                    {isAdmin && st === 'approved' && (co.amount != null) && (
+                      <div className="text-xs mt-1 text-[#3F7D58]">
+                        Approved at customer total ${Number(co.amount).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                       </div>
                     )}
                     {(isAdmin || isCustomer) && co.admin_reply && (
@@ -1653,6 +2395,8 @@ className={`bg-white border border-black rounded-md flex items-stretch overflow-
                           type="button"
                           className="flex-1 py-2 text-sm rounded border border-black"
                           onClick={async () => {
+                            const amt = co.amount != null ? '$' + Number(co.amount).toLocaleString(undefined, { minimumFractionDigits: 2 }) : 'this offer'
+                            if (!confirm('Decline ' + amt + ' for "' + co.title + '"?')) return
                             const { error } = await supabase.from('change_orders').update({
                               status: 'rejected',
                               decided_at: new Date().toISOString(),
@@ -1676,11 +2420,11 @@ className={`bg-white border border-black rounded-md flex items-stretch overflow-
             project={project}
             profile={profile}
             isAdmin={isAdmin}
+            isTeam={!isAdmin && !isCustomer}
             onDone={onReload}
             logActivity={logActivity}
           />
       </div>
-      )}
 
 
 
@@ -1788,6 +2532,31 @@ className={`bg-white border border-black rounded-md flex items-stretch overflow-
             }}
           >
             <Archive size={13} /> {project.archived ? 'Unarchive' : 'Archive'}
+
+          {isAdmin && project.status === 'done' && !(project.phases || []).some((ph) => /punch/i.test(ph.name || '')) && (
+            <button
+              type="button"
+              className="text-xs border border-black rounded px-3 py-1.5 flex items-center gap-1"
+              onClick={async () => {
+                if (!confirm('Add a Punch List / Warranty phase to this completed project?')) return
+                const maxOrder = Math.max(0, ...(project.phases || []).map((ph) => ph.sort_order || 0))
+                const { error } = await supabase.from('phases').insert({
+                  project_id: project.id,
+                  name: 'Punch List / Warranty',
+                  sort_order: maxOrder + 1,
+                  status: 'active',
+                  trade: '',
+                })
+                if (error) alert(error.message)
+                else {
+                  await logActivity?.('added phase', 'Punch List / Warranty', project.id)
+                  onReload()
+                }
+              }}
+            >
+              Punch list
+            </button>
+          )}
           </button>
         </div>
       )}
@@ -1896,7 +2665,7 @@ function ProjectPeoplePage({ project, isAdmin, companyUsers, onBack, onReload })
       </div>
 
       <div className="bg-white border border-black rounded-md p-4 mb-4">
-        <h3 className="text-[11px] font-mono uppercase text-[#6B6E72] mb-1">Team by phase</h3>
+        <h3 className="text-[11px] font-mono uppercase text-[#6B6E72] mb-1">Trade by phase</h3>
         {phases.length > 0 && isAdmin ? (
           <div className="space-y-4">
             {phases.map((ph) => {
@@ -1952,7 +2721,35 @@ function PhaseTasks({ phase, project, isAdmin, profile, onReload, logActivity })
   const [description, setDescription] = useState('')
   const [saving, setSaving] = useState(false)
   const [uploadingId, setUploadingId] = useState(null)
+  const [editingId, setEditingId] = useState(null)
+  const [editTitle, setEditTitle] = useState('')
+  const [editDescription, setEditDescription] = useState('')
+  const [editSaving, setEditSaving] = useState(false)
   const tasks = phase.tasks || []
+
+  const startEdit = (task) => {
+    if (!isAdmin) return
+    setEditingId(task.id)
+    setEditTitle(task.title || '')
+    setEditDescription(task.description || '')
+  }
+
+  const saveEdit = async (task) => {
+    if (!isAdmin || !editTitle.trim()) return
+    setEditSaving(true)
+    const { error } = await supabase.from('tasks').update({
+      title: editTitle.trim(),
+      description: editDescription.trim() || null,
+    }).eq('id', task.id)
+    setEditSaving(false)
+    if (error) {
+      alert(error.message)
+      return
+    }
+    setEditingId(null)
+    await logActivity?.('edited task', editTitle.trim(), project.id, phase.name)
+    onReload?.()
+  }
 
   const createTask = async (e) => {
     e.preventDefault()
@@ -1976,12 +2773,12 @@ function PhaseTasks({ phase, project, isAdmin, profile, onReload, logActivity })
       await supabase.rpc('notify_project_team', {
         p_company_id: profile.company_id,
         p_project_id: project.id,
-        p_title: 'New task — ' + (phase.name || 'phase'),
-        p_body: title.trim(),
+        p_title: titleCase('New task'),
+        p_body: (project.address ? project.address + '\n' : '') + 'Phase: ' + (phase.name || '—') + '\n' + title.trim(),
         p_kind: 'task',
       })
     } catch (_) {}
-    await logActivity?.('created task', (phase.name || '') + ': ' + title.trim(), project.id)
+    await logActivity?.('created task', title.trim(), project.id, phase.name)
     setTitle('')
     setDescription('')
     onReload?.()
@@ -1997,7 +2794,7 @@ function PhaseTasks({ phase, project, isAdmin, profile, onReload, logActivity })
       alert(error.message)
       return
     }
-    await logActivity?.('completed task', task.title, project.id)
+    await logActivity?.('completed task', task.title, project.id, phase.name)
     onReload?.()
   }
 
@@ -2040,7 +2837,7 @@ function PhaseTasks({ phase, project, isAdmin, profile, onReload, logActivity })
       })
       if (insErr) throw insErr
       // One notification only (via logActivity for team/customer)
-      await logActivity?.('uploaded task photo', (phase.name || '') + ' — ' + task.title, project.id)
+      await logActivity?.('uploaded task photo', task.title, project.id, phase.name)
       onReload?.()
     } catch (err) {
       alert(err.message || 'Upload failed')
@@ -2058,25 +2855,57 @@ function PhaseTasks({ phase, project, isAdmin, profile, onReload, logActivity })
           {tasks.map((task) => (
             <div key={task.id} className="border border-[#E5E5E5] rounded p-3">
               <div className="flex justify-between gap-2 items-start">
-                <div className="min-w-0">
-                  <div className="text-sm font-medium">{task.title}</div>
-                  <span
-                    className="text-[10px] font-mono uppercase px-1.5 py-0.5 rounded inline-block mt-1"
-                    style={{
-                      background: task.status === 'done' ? '#E1EDE4' : '#FFF8DB',
-                      color: task.status === 'done' ? '#3F7D58' : '#8A6D00',
-                    }}
-                  >
-                    {task.status}
-                  </span>
+                <div className="min-w-0 flex-1">
+                  {editingId === task.id ? (
+                    <div className="space-y-2">
+                      <input
+                        value={editTitle}
+                        onChange={(e) => setEditTitle(e.target.value)}
+                        className="w-full border border-black rounded px-2 py-1.5 text-sm"
+                      />
+                      <textarea
+                        value={editDescription}
+                        onChange={(e) => setEditDescription(e.target.value)}
+                        rows={2}
+                        className="w-full border border-black rounded px-2 py-1.5 text-sm"
+                        placeholder="Description"
+                      />
+                      <div className="flex gap-2">
+                        <button type="button" disabled={editSaving} className="text-xs text-white bg-black rounded px-3 py-1.5" onClick={() => saveEdit(task)}>
+                          {editSaving ? 'Saving…' : 'Save'}
+                        </button>
+                        <button type="button" className="text-xs border border-black rounded px-3 py-1.5" onClick={() => setEditingId(null)}>
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="text-sm font-medium">{task.title}</div>
+                      <span
+                        className="text-[10px] font-mono uppercase px-1.5 py-0.5 rounded inline-block mt-1"
+                        style={{
+                          background: task.status === 'done' ? '#E1EDE4' : '#FFF8DB',
+                          color: task.status === 'done' ? '#3F7D58' : '#8A6D00',
+                        }}
+                      >
+                        {task.status}
+                      </span>
+                    </>
+                  )}
                 </div>
-                {isAdmin && (
-                  <button type="button" className="text-[#B5533C] p-1" onClick={() => deleteTask(task)}>
-                    <Trash2 size={12} />
-                  </button>
+                {isAdmin && editingId !== task.id && (
+                  <div className="flex gap-1 flex-shrink-0">
+                    <button type="button" className="text-[#6B6E72] p-1 text-xs underline" onClick={() => startEdit(task)}>
+                      Edit
+                    </button>
+                    <button type="button" className="text-[#B5533C] p-1" onClick={() => deleteTask(task)}>
+                      <Trash2 size={12} />
+                    </button>
+                  </div>
                 )}
               </div>
-              {task.description && <p className="text-xs mt-2 whitespace-pre-wrap">{task.description}</p>}
+              {editingId !== task.id && task.description && <p className="text-xs mt-2 whitespace-pre-wrap">{task.description}</p>}
               {(task.task_photos || []).length > 0 && (
                 <div className="grid grid-cols-3 gap-2 mt-2">
                   {(task.task_photos || []).map((ph) => (
@@ -2167,20 +2996,34 @@ function ProjectActivity({ projectId }) {
 
 
 function QuoteReplyForm({ changeOrder, profile, logActivity, onDone }) {
-  const [amount, setAmount] = useState(changeOrder.amount != null ? String(changeOrder.amount) : '')
+  const teamAmt = changeOrder.team_amount != null ? Number(changeOrder.team_amount) : null
+  const [baseAmount, setBaseAmount] = useState(
+    changeOrder.amount != null
+      ? String(Number(changeOrder.amount) - (Number(changeOrder.admin_fee) || 0))
+      : (teamAmt != null ? String(teamAmt) : '')
+  )
+  const [adminFee, setAdminFee] = useState(changeOrder.admin_fee != null ? String(changeOrder.admin_fee) : '0')
   const [reply, setReply] = useState(changeOrder.admin_reply || '')
   const [saving, setSaving] = useState(false)
 
+  const baseN = parseFloat(baseAmount)
+  const feeN = parseFloat(adminFee) || 0
+  const totalN = (Number.isFinite(baseN) ? baseN : 0) + (Number.isFinite(feeN) ? feeN : 0)
+
   const submit = async (e) => {
     e.preventDefault()
-    const n = parseFloat(amount)
-    if (Number.isNaN(n) || n < 0) {
-      alert('Enter a valid amount.')
+    if (Number.isNaN(baseN) || baseN < 0) {
+      alert('Enter a valid base amount.')
+      return
+    }
+    if (feeN < 0) {
+      alert('Contractor fee cannot be negative.')
       return
     }
     setSaving(true)
     const { error } = await supabase.from('change_orders').update({
-      amount: n,
+      amount: totalN,
+      admin_fee: feeN,
       admin_reply: reply.trim() || null,
       status: 'quoted',
       decided_at: null,
@@ -2191,13 +3034,13 @@ function QuoteReplyForm({ changeOrder, profile, logActivity, onDone }) {
       alert(error.message)
       return
     }
-    await logActivity?.('quoted change order', changeOrder.title + ' — $' + n.toFixed(2))
+    await logActivity?.('quoted change order', changeOrder.title + ' — $' + totalN.toFixed(2))
     try {
       await supabase.rpc('notify_project_customers', {
         p_company_id: profile.company_id,
         p_project_id: changeOrder.project_id,
-        p_title: 'Change order quote',
-        p_body: changeOrder.title + ' — $' + n.toFixed(2),
+        p_title: titleCase('Change order quote'),
+        p_body: changeOrder.title + ' — $' + totalN.toFixed(2),
         p_kind: 'change_order_quote',
       })
     } catch (_) {}
@@ -2206,17 +3049,33 @@ function QuoteReplyForm({ changeOrder, profile, logActivity, onDone }) {
 
   return (
     <form onSubmit={submit} className="mt-3 space-y-2 border-t border-[#E5E5E5] pt-3">
-      <label className="block text-[11px] font-mono uppercase text-[#6B6E72]">Price quote ($)</label>
+      {teamAmt != null && (
+        <div className="text-xs text-[#6B6E72]">Trade requested ${teamAmt.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+      )}
+      <label className="block text-[11px] font-mono uppercase text-[#6B6E72]">Base amount for customer ($)</label>
       <input
         type="number"
         step="0.01"
         min="0"
-        value={amount}
-        onChange={(e) => setAmount(e.target.value)}
+        value={baseAmount}
+        onChange={(e) => setBaseAmount(e.target.value)}
         required
         className="w-full border border-black rounded px-3 py-2 text-sm"
-        placeholder="1000.00"
+        placeholder="500.00"
       />
+      <label className="block text-[11px] font-mono uppercase text-[#6B6E72]">Contractor fee ($)</label>
+      <input
+        type="number"
+        step="0.01"
+        min="0"
+        value={adminFee}
+        onChange={(e) => setAdminFee(e.target.value)}
+        className="w-full border border-black rounded px-3 py-2 text-sm"
+        placeholder="0.00"
+      />
+      <div className="text-sm font-medium">
+        Customer total: ${totalN.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+      </div>
       <textarea
         value={reply}
         onChange={(e) => setReply(e.target.value)}
@@ -2231,7 +3090,7 @@ function QuoteReplyForm({ changeOrder, profile, logActivity, onDone }) {
   )
 }
 
-function ChangeOrderForm({ project, profile, isAdmin, onDone, logActivity, defaultPhaseId }) {
+function ChangeOrderForm({ project, profile, isAdmin, isTeam = false, onDone, logActivity, defaultPhaseId }) {
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
   const [phaseId, setPhaseId] = useState(defaultPhaseId || '')
@@ -2249,12 +3108,17 @@ function ChangeOrderForm({ project, profile, isAdmin, onDone, logActivity, defau
       return
     }
     let amountNum = null
-    if (isAdmin) {
+    if (isAdmin || isTeam) {
       amountNum = parseFloat(String(amount).replace(/[^0-9.]/g, ''))
-      if (!Number.isFinite(amountNum) || amountNum < 0) {
+      if (isAdmin && (!Number.isFinite(amountNum) || amountNum < 0)) {
         setError('Enter the dollar amount for this offer to the customer.')
         return
       }
+      if (isTeam && amount.trim() && (!Number.isFinite(amountNum) || amountNum < 0)) {
+        setError('Enter a valid dollar amount.')
+        return
+      }
+      if (isTeam && !amount.trim()) amountNum = null
     }
     setSaving(true)
     try {
@@ -2272,7 +3136,7 @@ function ChangeOrderForm({ project, profile, isAdmin, onDone, logActivity, defau
         storage_path = path
         public_url = pub.publicUrl
       }
-      // Admin → offer to customer (quoted + amount). Customer → request (pending).
+      // Admin → offer (quoted). Team → pending team_request. Customer → pending request.
       const status = isAdmin ? 'quoted' : 'pending'
       const row = {
         project_id: project.id,
@@ -2283,25 +3147,30 @@ function ChangeOrderForm({ project, profile, isAdmin, onDone, logActivity, defau
         public_url,
         created_by: profile.id,
         status,
+        origin: isAdmin ? 'admin_offer' : (isTeam ? 'team_request' : 'customer_request'),
       }
       if (isAdmin) {
         row.amount = amountNum
-        row.origin = 'admin_offer'
         row.admin_reply = description.trim() || null
+      }
+      if (isTeam && amountNum != null) {
+        row.team_amount = amountNum
       }
       const { error: insErr } = await supabase.from('change_orders').insert(row)
       if (insErr) throw insErr
       await logActivity?.(
-        isAdmin ? 'sent change order offer' : 'requested change order',
-        isAdmin ? (title.trim() + ' — $' + amountNum.toFixed(2)) : title.trim()
+        isAdmin ? 'sent change order offer' : (isTeam ? 'trade change order request' : 'requested change order'),
+        isAdmin
+          ? (title.trim() + ' — $' + amountNum.toFixed(2))
+          : (isTeam && amountNum != null ? title.trim() + ' — $' + amountNum.toFixed(2) : title.trim())
       )
       if (isAdmin) {
         try {
           await supabase.rpc('notify_project_customers', {
             p_company_id: profile.company_id,
             p_project_id: project.id,
-            p_title: 'Change order offer',
-            p_body: title.trim() + ' — $' + amountNum.toFixed(2),
+            p_title: titleCase('Change order offer'),
+            p_body: (project.address ? project.address + '\n' : '') + (phaseId ? 'Phase: ' + (phases.find((ph) => ph.id === phaseId)?.name || '') + '\n' : '') + title.trim() + ' — $' + amountNum.toFixed(2),
             p_kind: 'change_order_offer',
           })
         } catch (_) {}
@@ -2321,7 +3190,7 @@ function ChangeOrderForm({ project, profile, isAdmin, onDone, logActivity, defau
   return (
     <form onSubmit={submit} className="border border-dashed border-black rounded p-3 space-y-2 mt-2">
       <div className="text-[11px] font-mono uppercase text-[#6B6E72]">
-        {isAdmin ? 'Send offer to customer' : 'Request a change'}
+        {isAdmin ? 'Send offer to customer' : isTeam ? 'Request change order (to contractor)' : 'Request a change'}
       </div>
       <input
         value={title}
@@ -2336,9 +3205,11 @@ function ChangeOrderForm({ project, profile, isAdmin, onDone, logActivity, defau
         rows={3}
         className="w-full border border-black rounded px-3 py-2 text-sm"
       />
-      {isAdmin && (
+      {(isAdmin || isTeam) && (
         <div>
-          <label className="block text-[11px] font-mono uppercase text-[#6B6E72] mb-1">Amount (required)</label>
+          <label className="block text-[11px] font-mono uppercase text-[#6B6E72] mb-1">
+            {isAdmin ? 'Amount (required)' : 'Cost'}
+          </label>
           <div className="flex items-center gap-2">
             <span className="text-sm">$</span>
             <input
@@ -2372,9 +3243,104 @@ function ChangeOrderForm({ project, profile, isAdmin, onDone, logActivity, defau
       </label>
       {error && <p className="text-xs text-[#B5533C]">{error}</p>}
       <button type="submit" disabled={saving} className="w-full py-2 rounded text-sm text-white bg-black disabled:opacity-50">
-        {saving ? 'Saving…' : isAdmin ? 'Send offer to customer' : 'Submit request'}
+        {saving ? 'Saving…' : isAdmin ? 'Send offer to customer' : isTeam ? 'Send to contractor' : 'Submit request'}
       </button>
     </form>
+  )
+}
+
+
+function parsePunchItems(raw) {
+  if (!raw) return []
+  try {
+    const j = JSON.parse(raw)
+    if (Array.isArray(j)) return j
+  } catch (_) {}
+  // legacy free-text → one open item per non-empty line
+  return String(raw).split('\n').map((line) => line.trim()).filter(Boolean).map((text, i) => ({
+    id: 'legacy-' + i,
+    text,
+    done: false,
+  }))
+}
+
+function AdminPunchList({ phase, value, onChange, onSave }) {
+  const [items, setItems] = useState(() => parsePunchItems(value))
+  const [newItem, setNewItem] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [savedMsg, setSavedMsg] = useState('')
+
+  useEffect(() => {
+    setItems(parsePunchItems(value))
+  }, [phase.id, value])
+
+  const persist = async (next) => {
+    setItems(next)
+    const json = JSON.stringify(next)
+    onChange(json)
+    setSaving(true)
+    setSavedMsg('')
+    // write directly so we don't depend on stale state in parent
+    try {
+      const { error } = await supabase.from('phases').update({ admin_notes: json }).eq('id', phase.id)
+      if (error) {
+        alert(error.message || 'Could not save. Ensure admin_notes column exists.')
+      } else {
+        setSavedMsg('Saved')
+        setTimeout(() => setSavedMsg(''), 1500)
+        await onSave?.()
+      }
+    } catch (err) {
+      alert(err.message || 'Save failed')
+    }
+    setSaving(false)
+  }
+
+  const add = () => {
+    const text = newItem.trim()
+    if (!text) return
+    persist([...items, { id: Date.now().toString(36), text, done: false }])
+    setNewItem('')
+  }
+
+  return (
+    <div>
+      <label className="block text-[11px] font-mono uppercase text-[#6B6E72] mb-1">Contractor punch list (private)</label>
+      <div className="space-y-2 mb-2">
+        {items.length === 0 && <p className="text-xs text-[#8A8D91]">No punch items yet.</p>}
+        {items.map((it) => (
+          <div key={it.id} className="flex items-start gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={!!it.done}
+              onChange={() => persist(items.map((x) => x.id === it.id ? { ...x, done: !x.done } : x))}
+              className="mt-1"
+            />
+            <span className={it.done ? 'line-through text-[#8A8D91] flex-1' : 'flex-1'}>{it.text}</span>
+            <button
+              type="button"
+              className="text-[#B5533C] text-xs"
+              onClick={() => persist(items.filter((x) => x.id !== it.id))}
+            >
+              ×
+            </button>
+          </div>
+        ))}
+      </div>
+      <div className="flex gap-2">
+        <input
+          value={newItem}
+          onChange={(e) => setNewItem(e.target.value)}
+          onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); add() } }}
+          placeholder="Add punch item"
+          className="flex-1 border border-black rounded px-3 py-2 text-sm"
+        />
+        <button type="button" onClick={add} disabled={saving} className="px-3 rounded bg-black text-white text-sm disabled:opacity-50">
+          Add
+        </button>
+      </div>
+      {savedMsg && <p className="text-[10px] text-[#3F7D58] mt-1">{savedMsg}</p>}
+    </div>
   )
 }
 
@@ -2389,6 +3355,9 @@ function PhaseDetail({ phase, project, isAdmin, canUpload, isCustomer, profile, 
   const [adminNotes, setAdminNotes] = useState(phase.admin_notes || '')
   const [lightboxIdx, setLightboxIdx] = useState(null)
   const [uploadingPhaseFile, setUploadingPhaseFile] = useState(false)
+  const [showMarkup, setShowMarkup] = useState(false)
+  const markupCanvasRef = useRef(null)
+  const markupDrawing = useRef(false)
   const touchX = useRef(null)
   const photos = (phase.photos || []).slice().sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0))
   const phaseFiles = phase.phase_files || []
@@ -2427,12 +3396,34 @@ function PhaseDetail({ phase, project, isAdmin, canUpload, isCustomer, profile, 
     onReload()
   }
 
-  const onTouchStart = (e) => { touchX.current = e.touches[0].clientX }
+  const onTouchStart = (e) => {
+    const t = e.touches[0]
+    touchX.current = { x: t.clientX, y: t.clientY, edge: t.clientX <= 28 }
+  }
   const onTouchEnd = (e) => {
-    if (touchX.current == null || lightboxIdx != null) return
+    if (touchX.current == null) return
+    const t = e.changedTouches[0]
+    const dx = t.clientX - touchX.current.x
+    const dy = t.clientY - touchX.current.y
+    const fromEdge = touchX.current.edge
+    touchX.current = null
+    // Swipe photos in lightbox
+    if (lightboxIdx != null) {
+      if (Math.abs(dx) > Math.abs(dy) && dx < -50 && lightboxIdx < photos.length - 1) setLightboxIdx((i) => i + 1)
+      else if (Math.abs(dx) > Math.abs(dy) && dx > 50 && lightboxIdx > 0) setLightboxIdx((i) => i - 1)
+      return
+    }
+    // Back only from left edge + clear horizontal swipe
+    if (fromEdge && dx > 100 && Math.abs(dx) > Math.abs(dy) * 2) onBack()
+  }
+
+  const lbTouchStart = (e) => { touchX.current = e.touches[0].clientX }
+  const lbTouchEnd = (e) => {
+    if (touchX.current == null || lightboxIdx == null) return
     const dx = e.changedTouches[0].clientX - touchX.current
     touchX.current = null
-    if (dx > 90) onBack()
+    if (dx < -50 && lightboxIdx < photos.length - 1) setLightboxIdx((i) => Math.min(photos.length - 1, i + 1))
+    else if (dx > 50 && lightboxIdx > 0) setLightboxIdx((i) => Math.max(0, i - 1))
   }
 
   const uploadPhaseFile = async (e) => {
@@ -2459,7 +3450,7 @@ function PhaseDetail({ phase, project, isAdmin, canUpload, isCustomer, profile, 
         uploaded_by: profile.id,
       })
       if (insErr) throw insErr
-      await logActivity?.('uploaded phase file', phase.name + ': ' + file.name)
+      await logActivity?.('uploaded phase file', file.name, project.id, phase.name)
       onReload()
     } catch (err) {
       alert(err.message || 'Upload failed')
@@ -2475,51 +3466,195 @@ function PhaseDetail({ phase, project, isAdmin, canUpload, isCustomer, profile, 
 
   const saveNotes = async () => {
     if (!isAdmin) return
-    await supabase.from('phases').update({ admin_notes: adminNotes }).eq('id', phase.id)
-    onReload()
+    try {
+      const { error } = await supabase.from('phases').update({ admin_notes: adminNotes || null }).eq('id', phase.id)
+      if (error) {
+        alert(error.message || 'Could not save notes. Run SQL: alter table phases add column if not exists admin_notes text;')
+        return false
+      }
+      onReload()
+      return true
+    } catch (err) {
+      alert(err.message || 'Could not save notes')
+      return false
+    }
   }
 
   const uploadMedia = async (e) => {
     const files = Array.from(e.target.files || [])
     e.target.value = ''
-    if (!files.length || !canUpload) return
+    if (!files.length) return
+    if (!canUpload) {
+      alert('You do not have permission to upload photos on this phase.')
+      return
+    }
+    if (!profile?.company_id || !project?.id || !phase?.id) {
+      alert('Missing project or phase — try reopening this phase.')
+      return
+    }
+
     setUploading(true)
+    const cap = caption || null
+    const tag = photoTag || null
+    setCaption('')
+
     let ok = 0
-    try {
-      for (const file of files) {
-        if (!file.size) continue
-        const isVideo = (file.type || '').startsWith('video/')
-        const safeName = (file.name || (isVideo ? 'video.mp4' : 'photo.jpg')).replace(/[^a-zA-Z0-9._-]/g, '_')
-        const path = profile.company_id + '/' + project.id + '/' + phase.id + '/' + Date.now() + '-' + Math.random().toString(36).slice(2, 6) + '-' + safeName
-        const bytes = await file.arrayBuffer()
-        const { error: upErr } = await supabase.storage.from('project-photos').upload(path, bytes, {
-          upsert: false,
-          contentType: file.type || (isVideo ? 'video/mp4' : 'image/jpeg'),
-          cacheControl: '3600',
-        })
-        if (upErr) throw upErr
+    const errors = []
+
+    for (const file of files) {
+      if (!file.size) {
+        errors.push('Empty file skipped')
+        continue
+      }
+      const isVideo = (file.type || '').startsWith('video/')
+      const safeName = (file.name || (isVideo ? 'video.mp4' : 'photo.jpg')).replace(/[^a-zA-Z0-9._-]/g, '_')
+      const path =
+        String(profile.company_id) +
+        '/' +
+        String(project.id) +
+        '/' +
+        String(phase.id) +
+        '/' +
+        Date.now() +
+        '-' +
+        Math.random().toString(36).slice(2, 6) +
+        '-' +
+        safeName
+      const contentType = file.type || (isVideo ? 'video/mp4' : 'image/jpeg')
+      try {
+        let upErr = null
+        // Prefer raw bytes — more reliable on iOS / HEIC / large files than File object quirks
+        try {
+          const bytes = await file.arrayBuffer()
+          const res = await supabase.storage.from('project-photos').upload(path, bytes, {
+            upsert: true,
+            contentType,
+            cacheControl: '3600',
+          })
+          upErr = res.error
+        } catch (inner) {
+          const res2 = await supabase.storage.from('project-photos').upload(path, file, {
+            upsert: true,
+            contentType,
+            cacheControl: '3600',
+          })
+          upErr = res2.error || inner
+        }
+        if (upErr) {
+          errors.push((upErr.message || String(upErr)) + ' (storage)')
+          continue
+        }
         const { data: pub } = supabase.storage.from('project-photos').getPublicUrl(path)
         const { error: insErr } = await supabase.from('photos').insert({
           phase_id: phase.id,
+          project_id: project.id,
           storage_path: path,
           public_url: pub.publicUrl,
-          caption: caption.trim(),
-          uploaded_by: profile.id,
+          caption: cap,
+          tag: tag,
           media_type: isVideo ? 'video' : 'image',
+          uploaded_by: profile.id,
         })
-        if (insErr) throw insErr
+        if (insErr) {
+          errors.push((insErr.message || 'Could not save photo record') + ' (database)')
+          continue
+        }
         ok++
+      } catch (err) {
+        console.error(err)
+        errors.push(err.message || 'Upload failed')
       }
-      if (ok) {
-        await logActivity('uploaded media', phase.name + ' (' + ok + ' file' + (ok > 1 ? 's' : '') + ')')
-        setCaption('')
-        onReload()
-      }
-    } catch (err) {
-      console.error(err)
-      alert(err.message || 'Upload failed')
     }
+
     setUploading(false)
+    if (ok) {
+      await logActivity('uploaded media', ok + ' file' + (ok > 1 ? 's' : ''), project.id, phase.name)
+      onReload()
+    }
+    if (errors.length) {
+      alert(
+        (ok ? ok + ' uploaded. ' : '') +
+          'Upload problem: ' +
+          errors.slice(0, 3).join(' · ')
+      )
+    } else if (!ok) {
+      alert('No photos were uploaded.')
+    }
+  }
+
+
+  const openMarkup = () => {
+    if (lightboxIdx == null) return
+    setShowMarkup(true)
+    setTimeout(() => {
+      const canvas = markupCanvasRef.current
+      const photo = photos[lightboxIdx]
+      if (!canvas || !photo) return
+      const ctx = canvas.getContext('2d')
+      const img = new Image()
+      img.crossOrigin = 'anonymous'
+      img.onload = () => {
+        const maxW = Math.min(window.innerWidth - 24, 900)
+        const scale = Math.min(1, maxW / img.width)
+        canvas.width = img.width * scale
+        canvas.height = img.height * scale
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height)
+        ctx.strokeStyle = '#E6B800'
+        ctx.lineWidth = 4
+        ctx.lineCap = 'round'
+      }
+      img.src = photo.public_url
+    }, 50)
+  }
+
+  const markupPointer = (e, type) => {
+    const canvas = markupCanvasRef.current
+    if (!canvas) return
+    const ctx = canvas.getContext('2d')
+    const rect = canvas.getBoundingClientRect()
+    const point = e.touches ? e.touches[0] : e
+    const x = (point.clientX - rect.left) * (canvas.width / rect.width)
+    const y = (point.clientY - rect.top) * (canvas.height / rect.height)
+    if (type === 'down') {
+      markupDrawing.current = true
+      ctx.beginPath()
+      ctx.moveTo(x, y)
+    } else if (type === 'move' && markupDrawing.current) {
+      ctx.lineTo(x, y)
+      ctx.stroke()
+    } else if (type === 'up') {
+      markupDrawing.current = false
+    }
+  }
+
+  const saveMarkup = async () => {
+    const canvas = markupCanvasRef.current
+    const photo = photos[lightboxIdx]
+    if (!canvas || !photo || !canUpload) return
+    try {
+      const blob = await new Promise((res) => canvas.toBlob(res, 'image/jpeg', 0.92))
+      if (!blob) throw new Error('Could not export image')
+      const path = profile.company_id + '/' + project.id + '/' + phase.id + '/' + Date.now() + '-markup.jpg'
+      const { error: upErr } = await supabase.storage.from('project-photos').upload(path, blob, { contentType: 'image/jpeg' })
+      if (upErr) throw upErr
+      const { data: pub } = supabase.storage.from('project-photos').getPublicUrl(path)
+      await supabase.from('photos').insert({
+        phase_id: phase.id,
+        project_id: project.id,
+        storage_path: path,
+        public_url: pub.publicUrl,
+        caption: (photo.caption ? photo.caption + ' ' : '') + '(markup)',
+        tag: photo.tag || 'markup',
+        media_type: 'image',
+        uploaded_by: profile.id,
+      })
+      setShowMarkup(false)
+      setLightboxIdx(null)
+      await logActivity?.('uploaded media', 'markup', project.id, phase.name)
+      onReload()
+    } catch (err) {
+      alert(err.message || 'Markup save failed')
+    }
   }
 
   const deletePhoto = async (photo) => {
@@ -2584,13 +3719,21 @@ function PhaseDetail({ phase, project, isAdmin, canUpload, isCustomer, profile, 
 
   const deletePhase = async () => {
     if (!isAdmin) return
-    if (!confirm('Delete phase "' + phase.name + '" and all its photos?')) return
+    if (!confirm('Delete phase "' + phase.name + '" and all its photos and files? This cannot be undone.')) return
+    try {
+      const paths = []
+      ;(phase.photos || []).forEach((ph) => ph.storage_path && paths.push(ph.storage_path))
+      ;(phase.phase_files || []).forEach((f) => f.storage_path && paths.push(f.storage_path))
+      for (let i = 0; i < paths.length; i += 50) {
+        await supabase.storage.from('project-photos').remove(paths.slice(i, i + 50))
+      }
+    } catch (_) {}
     const { error } = await supabase.from('phases').delete().eq('id', phase.id)
     if (error) {
       alert(error.message)
       return
     }
-    await logActivity('deleted phase', phase.name)
+    await logActivity('deleted phase', phase.name, project.id, phase.name)
     onBack()
     onReload()
   }
@@ -2598,7 +3741,7 @@ function PhaseDetail({ phase, project, isAdmin, canUpload, isCustomer, profile, 
   const lb = lightboxIdx != null ? photos[lightboxIdx] : null
 
   return (
-    <SwipeBack onBack={onBack}>
+    <SwipeBack onBack={onBack} disabled={lightboxIdx != null || showMarkup}>
             <button onClick={onBack} className="flex items-center gap-1 text-sm text-[#6B6E72] mb-4">
         <ChevronLeft size={16} /> All phases
       </button>
@@ -2699,17 +3842,12 @@ function PhaseDetail({ phase, project, isAdmin, canUpload, isCustomer, profile, 
           </div>
         )}
         {isAdmin && (
-          <div>
-            <label className="block text-[11px] font-mono uppercase text-[#6B6E72] mb-1">Admin notes (private)</label>
-            <textarea
-              value={adminNotes}
-              onChange={(e) => setAdminNotes(e.target.value)}
-              onBlur={saveNotes}
-              placeholder="Admin notes"
-              rows={3}
-              className="w-full border border-black rounded px-3 py-2 text-sm"
-            />
-          </div>
+          <AdminPunchList
+            phase={phase}
+            value={adminNotes}
+            onChange={setAdminNotes}
+            onSave={saveNotes}
+          />
         )}
         {isAdmin && (
           <button type="button" onClick={deletePhase} className="mt-3 text-xs text-[#B5533C] flex items-center gap-1">
@@ -2718,15 +3856,16 @@ function PhaseDetail({ phase, project, isAdmin, canUpload, isCustomer, profile, 
         )}
       </div>
 
-      {(isAdmin || isCustomer) && (
+      {(isAdmin || isCustomer || (!isAdmin && !isCustomer)) && (
         <div className="bg-white border border-black rounded-md p-4 mb-4">
           <h3 className="text-[11px] font-mono uppercase text-[#6B6E72] mb-1">
-            {isAdmin ? 'Change order for this phase' : 'Request change for this phase'}
+            {isAdmin ? 'Change order for this phase' : (!isAdmin && !isCustomer) ? 'Request change order (to contractor)' : 'Request change for this phase'}
           </h3>
           <ChangeOrderForm
             project={project}
             profile={profile}
             isAdmin={isAdmin}
+            isTeam={!isAdmin && !isCustomer}
             defaultPhaseId={phase.id}
             onDone={onReload}
             logActivity={logActivity}
@@ -2820,6 +3959,11 @@ function PhaseDetail({ phase, project, isAdmin, canUpload, isCustomer, profile, 
         </div>
       )}
 
+      {uploading && (
+        <div className="text-xs text-[#8A6D00] bg-[#FFF8DB] border border-[#E6B800] rounded px-3 py-2 mb-3">
+          Uploading in background — you can leave this phase
+        </div>
+      )}
       {photos.length === 0 ? (
         <div className="text-center py-10 text-[#6B6E72] text-sm">No media yet.</div>
       ) : (
@@ -2858,7 +4002,12 @@ function PhaseDetail({ phase, project, isAdmin, canUpload, isCustomer, profile, 
       )}
 
       {lb && (
-        <div className="fixed inset-0 z-50 bg-black/90 flex flex-col">
+        <div
+          className="fixed inset-0 z-50 bg-black/90 flex flex-col"
+          onTouchStart={(e) => { e.stopPropagation(); lbTouchStart(e) }}
+          onTouchEnd={(e) => { e.stopPropagation(); lbTouchEnd(e) }}
+          onTouchMove={(e) => e.stopPropagation()}
+        >
           <div className="flex items-center justify-between px-4 py-3 text-white" style={{ paddingTop: 'max(0.75rem, env(safe-area-inset-top))' }}>
             <span className="text-sm">{lightboxIdx + 1} / {photos.length}</span>
             <button type="button" onClick={() => setLightboxIdx(null)} className="p-2">
@@ -2898,12 +4047,43 @@ function PhaseDetail({ phase, project, isAdmin, canUpload, isCustomer, profile, 
               >
                 <Share2 size={16} /> Share
               </button>
+              {canUpload && lb.media_type !== 'video' && (
+                <button type="button" onClick={openMarkup} className="text-sm bg-white/20 text-white px-4 py-2 rounded-full">
+                  Markup
+                </button>
+              )}
               {isAdmin && (
                 <button type="button" onClick={() => deletePhoto(lb)} className="text-[#ff8a80] text-sm underline px-2">
                   Delete
                 </button>
               )}
             </div>
+          </div>
+        </div>
+      )}
+
+      {showMarkup && (
+        <div className="fixed inset-0 z-[60] bg-black/95 flex flex-col">
+          <div className="flex justify-between items-center px-4 py-3 text-white" style={{ paddingTop: 'max(0.75rem, env(safe-area-inset-top))' }}>
+            <span className="text-sm">Draw on photo</span>
+            <button type="button" onClick={() => setShowMarkup(false)} className="p-2"><X size={22} /></button>
+          </div>
+          <div className="flex-1 overflow-auto flex items-center justify-center p-2">
+            <canvas
+              ref={markupCanvasRef}
+              className="max-w-full touch-none bg-black"
+              onMouseDown={(e) => markupPointer(e, 'down')}
+              onMouseMove={(e) => markupPointer(e, 'move')}
+              onMouseUp={(e) => markupPointer(e, 'up')}
+              onMouseLeave={(e) => markupPointer(e, 'up')}
+              onTouchStart={(e) => { e.preventDefault(); markupPointer(e, 'down') }}
+              onTouchMove={(e) => { e.preventDefault(); markupPointer(e, 'move') }}
+              onTouchEnd={(e) => markupPointer(e, 'up')}
+            />
+          </div>
+          <div className="p-4 flex gap-2" style={{ paddingBottom: 'max(0.75rem, env(safe-area-inset-bottom))' }}>
+            <button type="button" onClick={() => setShowMarkup(false)} className="flex-1 py-2 rounded border border-white text-white text-sm">Cancel</button>
+            <button type="button" onClick={saveMarkup} className="flex-1 py-2 rounded bg-white text-black text-sm">Save markup</button>
           </div>
         </div>
       )}
