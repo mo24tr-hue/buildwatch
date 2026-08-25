@@ -4,8 +4,6 @@ export const FEEDBACK_EMAIL = 'buildwatchfeedback@gmail.com'
 /** Add your login email(s) here so the Platform panel appears for you */
 export const PLATFORM_ADMIN_EMAILS = [
   'buildwatchfeedback@gmail.com',
-  'moshe@aybuilders.com',
-  'moshe@aabuilders.com',
 ]
 
 export function isPlatformAdmin(emailOrProfile) {
