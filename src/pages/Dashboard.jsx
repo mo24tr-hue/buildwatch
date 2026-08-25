@@ -184,33 +184,57 @@ export default function Dashboard({ session, profile, company, onCompanyUpdate, 
         phases: (p.phases || []).slice().sort((a, b) => a.sort_order - b.sort_order),
         tasks: (p.tasks || []).slice().sort((a, b) => new Date(b.created_at) - new Date(a.created_at)),
       }))
-      // If nested photos(*) came back empty due to RLS nesting quirks, load photos in a second query
+      // Always merge photos from a direct query (nested embed often returns [] under RLS)
       try {
         const phaseIds = list.flatMap((p) => (p.phases || []).map((ph) => ph.id)).filter(Boolean)
-        const missing = list.some((p) => (p.phases || []).some((ph) => !Array.isArray(ph.photos)))
-        const allEmpty = list.every((p) => (p.phases || []).every((ph) => !(ph.photos && ph.photos.length)))
-        if (phaseIds.length && (missing || allEmpty)) {
-          const { data: photoRows } = await supabase
-            .from('photos')
-            .select('*')
-            .in('phase_id', phaseIds.slice(0, 200))
-          if (photoRows?.length) {
+        const projectIds = list.map((p) => p.id).filter(Boolean)
+        if (phaseIds.length || projectIds.length) {
+          let photoRows = []
+          // batch phase_id IN queries (Supabase has URL limits)
+          for (let i = 0; i < phaseIds.length; i += 80) {
+            const chunk = phaseIds.slice(i, i + 80)
+            const { data, error: phErr } = await supabase.from('photos').select('*').in('phase_id', chunk)
+            if (phErr) console.warn('photos by phase', phErr.message)
+            if (data?.length) photoRows = photoRows.concat(data)
+          }
+          // also by project_id in case phase_id is null on older rows
+          for (let i = 0; i < projectIds.length; i += 40) {
+            const chunk = projectIds.slice(i, i + 40)
+            const { data, error: pjErr } = await supabase.from('photos').select('*').in('project_id', chunk)
+            if (pjErr) console.warn('photos by project', pjErr.message)
+            if (data?.length) {
+              const seen = new Set(photoRows.map((r) => r.id))
+              data.forEach((r) => { if (!seen.has(r.id)) photoRows.push(r) })
+            }
+          }
+          if (photoRows.length) {
             const byPhase = {}
+            const byProject = {}
             photoRows.forEach((ph) => {
-              if (!byPhase[ph.phase_id]) byPhase[ph.phase_id] = []
-              byPhase[ph.phase_id].push(ph)
+              if (ph.phase_id) {
+                if (!byPhase[ph.phase_id]) byPhase[ph.phase_id] = []
+                byPhase[ph.phase_id].push(ph)
+              }
+              if (ph.project_id) {
+                if (!byProject[ph.project_id]) byProject[ph.project_id] = []
+                byProject[ph.project_id].push(ph)
+              }
             })
             list = list.map((p) => ({
               ...p,
-              phases: (p.phases || []).map((ph) => ({
-                ...ph,
-                photos: byPhase[ph.id] || ph.photos || [],
-              })),
+              phases: (p.phases || []).map((ph) => {
+                const fromPhase = byPhase[ph.id] || []
+                const nested = Array.isArray(ph.photos) ? ph.photos : []
+                // prefer direct query results; merge unique by id
+                const map = new Map()
+                ;[...nested, ...fromPhase].forEach((x) => { if (x?.id) map.set(x.id, x) })
+                return { ...ph, photos: Array.from(map.values()) }
+              }),
             }))
           }
         }
       } catch (e) {
-        console.warn('photo fallback load', e)
+        console.warn('photo load', e)
       }
       // Team: if a project has assigned trade members, only those trade members see it (admins see all)
       if (profile?.role === 'team') {
