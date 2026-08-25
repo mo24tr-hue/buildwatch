@@ -4,7 +4,6 @@ export const STYLES = {
     phases: [
       'Excavation', 'Footings & Foundation', 'Framing', 'Plumbing', 'HVAC', 'Electrical',
       'Insulation', 'Drywall', 'Mud', 'Tile', 'Flooring', 'Paint',
-      'Finishing — Electrical', 'Finishing — Plumbing', 'Finishing — HVAC',
     ],
   },
   addition: {
@@ -12,7 +11,6 @@ export const STYLES = {
     phases: [
       'Excavation', 'Footings & Foundation', 'Framing', 'Plumbing', 'HVAC', 'Electrical',
       'Insulation', 'Drywall', 'Mud', 'Tile', 'Flooring', 'Paint',
-      'Finishing — Electrical', 'Finishing — Plumbing', 'Finishing — HVAC',
     ],
   },
   remodel: {
@@ -20,7 +18,6 @@ export const STYLES = {
     phases: [
       'Demo', 'Framing', 'Plumbing', 'HVAC', 'Electrical', 'Insulation', 'Drywall',
       'Mud', 'Tile', 'Flooring', 'Paint',
-      'Finishing — Electrical', 'Finishing — Plumbing', 'Finishing — HVAC',
     ],
   },
   kitchen: {
@@ -28,7 +25,6 @@ export const STYLES = {
     phases: [
       'Demo', 'Plumbing Rough-in', 'Electrical Rough-in', 'Drywall', 'Cabinets',
       'Countertops', 'Tile / Backsplash', 'Flooring', 'Paint', 'Appliances',
-      'Finishing — Electrical', 'Finishing — Plumbing', 'Finishing — HVAC',
     ],
   },
   bathroom: {
@@ -36,14 +32,20 @@ export const STYLES = {
     phases: [
       'Demo', 'Plumbing Rough-in', 'Electrical Rough-in', 'Waterproofing', 'Tile',
       'Vanity & Fixtures', 'Paint',
-      'Finishing — Electrical', 'Finishing — Plumbing', 'Finishing — HVAC',
     ],
   },
 }
 
+/** Always attached to every new project as its own section */
+export const FINISHING_PHASES = [
+  'Electrical',
+  'Plumbing',
+  'HVAC',
+]
+
 export const PROJECT_STATUS = {
   planning: { label: 'Planning', color: '#2F6690', bg: '#E4EEF5' },
-  active: { label: 'In progress', color: '#000000', bg: '#E9E9E7' },
+  active: { label: 'In progress', color: '#E6B800', bg: '#FFF8DB' },
   hold: { label: 'On hold', color: '#6B6E72', bg: '#E9E9E7' },
   done: { label: 'Complete', color: '#3F7D58', bg: '#E1EDE4' },
 }
@@ -71,9 +73,18 @@ export function fmtDate(d) {
   }
 }
 
-/** True if phase name is under the Finishing group */
+/** True if phase is in the permanent Finishing section */
 export function isFinishingPhase(name) {
-  return /^finishing/i.test(String(name || '').trim())
+  const n = String(name || '').trim()
+  if (/^finishing/i.test(n)) return true
+  return FINISHING_PHASES.some((f) => n === f || n === `Finishing — ${f}` || n === `Finishing: ${f}`)
+}
+
+export function finishingLabel(name) {
+  const n = String(name || '').trim()
+  const m = n.match(/^finishing\s*[—\-:]\s*(.+)$/i)
+  if (m) return m[1].trim()
+  return n
 }
 
 export function fmtDateTime(d) {

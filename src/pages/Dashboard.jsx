@@ -1,18 +1,21 @@
 import { useCallback, useEffect, useState, useRef } from 'react'
 import { HardHat, Plus, Image as ImageIcon, MapPin, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Camera, Trash2, Check, FileText, X, Video, Menu, Share2, Bell, Search, Copy, Archive, Printer } from 'lucide-react'
 import { supabase } from '../lib/supabase'
-import { STYLES, PROJECT_STATUS, PHASE_STATUS, nextPhaseStatus, fmtDate, fmtDateTime, isFinishingPhase } from '../lib/styles'
+import { STYLES, PROJECT_STATUS, PHASE_STATUS, nextPhaseStatus, fmtDate, fmtDateTime, isFinishingPhase, FINISHING_PHASES, finishingLabel } from '../lib/styles'
 import AdminPanel from '../components/AdminPanel'
 
 const QUEUE_KEY = 'ay_upload_queue'
 
 
 
-function SwipeBack({ onBack, children, className = '' }) {
+function SwipeBack({ onBack, children, className = '', disabled = false }) {
   const touchX = useRef(null)
-  const onTouchStart = (e) => { touchX.current = e.touches[0].clientX }
+  const onTouchStart = (e) => {
+    if (disabled) return
+    touchX.current = e.touches[0].clientX
+  }
   const onTouchEnd = (e) => {
-    if (touchX.current == null) return
+    if (disabled || touchX.current == null) return
     const dx = e.changedTouches[0].clientX - touchX.current
     touchX.current = null
     if (dx > 80) onBack?.()
@@ -103,7 +106,7 @@ export default function Dashboard({ session, profile, company, onCompanyUpdate, 
     if (!profile?.company_id) return
     const { data, error } = await supabase
       .from('companies')
-      .select('id, name, logo_url, app_share_url')
+      .select('id, name, logo_url, app_share_url, header_color')
       .eq('id', profile.company_id)
       .maybeSingle()
     if (error) {
@@ -525,9 +528,14 @@ export default function Dashboard({ session, profile, company, onCompanyUpdate, 
 
 
   const createProject = async (form) => {
-    const phaseNames = form.customPhases?.length
+    const basePhases = form.customPhases?.length
       ? form.customPhases
       : (STYLES[form.style] || STYLES.remodel).phases
+    // Permanent Finishing section phases (always added)
+    const phaseNames = [
+      ...basePhases.filter((n) => !isFinishingPhase(n)),
+      ...FINISHING_PHASES.map((n) => 'Finishing — ' + n),
+    ]
     const styleKey = form.customLabel || form.style || 'Remodel'
 
     // Optionally persist custom type for this company
@@ -624,7 +632,7 @@ export default function Dashboard({ session, profile, company, onCompanyUpdate, 
 
   return (
     <div className="min-h-screen bg-white">
-      <header className="bg-black text-white px-4 pb-3 sticky top-0 z-50" style={{ paddingTop: "max(0.75rem, env(safe-area-inset-top))" }}>
+      <header className="text-white px-4 pb-3 sticky top-0 z-50" style={{ paddingTop: "max(0.75rem, env(safe-area-inset-top))", background: (headerCompany?.header_color || company?.header_color || '#000000') }}>
         <div className="max-w-2xl mx-auto grid grid-cols-3 items-center gap-2">
           {/* Left: company + email */}
           <div className="min-w-0 text-left">
@@ -832,6 +840,8 @@ export default function Dashboard({ session, profile, company, onCompanyUpdate, 
           <AdminPanel
             profile={profile}
             company={headerCompany || company}
+            digest={digest}
+            allProjects={projects}
             onBack={() => {
               setShowAdmin(false)
               refreshCompany()
@@ -902,21 +912,6 @@ export default function Dashboard({ session, profile, company, onCompanyUpdate, 
           </div>
         )}
 
-
-          {isAdmin && !activeId && digest.length > 0 && (
-            <div className="bg-white border border-black rounded-md p-4 mb-4">
-              <h3 className="text-[11px] font-mono uppercase text-[#6B6E72] mb-2">This week</h3>
-              <div className="space-y-2 max-h-48 overflow-auto">
-                {digest.slice(0, 12).map((d) => (
-                  <div key={d.id} className="text-xs border-b border-[#E5E5E5] pb-1.5">
-                    <div className="font-medium">{titleCase(d.action)}</div>
-                    <div className="text-[#6B6E72]">{d.detail || d.user_name || d.user_email}</div>
-                    <div className="text-[10px] font-mono text-[#8A8D91]">{fmtDateTime(d.created_at)}</div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
 
 {loading ? (
               <div className="text-center py-16">
@@ -1566,10 +1561,14 @@ function ProjectDetail({ project, isAdmin, canUpload, isCustomer, profile, onBac
             <div className="flex justify-between text-[11px] font-mono text-[#6B6E72] mb-1">
               <span>{doneCount} of {phases.length} phases complete</span>
             </div>
-            <div className="h-2 rounded-full bg-[#E9E9E7] overflow-hidden">
+            <div className="h-2 rounded-full bg-[#E9E9E7] overflow-hidden flex">
               <div
                 className="h-full bg-[#3F7D58]"
                 style={{ width: `${phases.length ? (doneCount / phases.length) * 100 : 0}%` }}
+              />
+              <div
+                className="h-full bg-[#E6B800]"
+                style={{ width: `${phases.length ? (phases.filter((ph) => ph.status === 'active').length / phases.length) * 100 : 0}%` }}
               />
             </div>
           </div>
@@ -1590,7 +1589,7 @@ function ProjectDetail({ project, isAdmin, canUpload, isCustomer, profile, onBac
         {phases.map((phase, i) => (
           <div key={'wrap-' + phase.id}>
           {isFinishingPhase(phase.name) && (i === 0 || !isFinishingPhase(phases[i - 1]?.name)) && (
-            <div className="text-[11px] font-mono uppercase text-[#6B6E72] pt-2 pb-1">
+            <div className="text-[11px] font-mono uppercase text-[#6B6E72] pt-3 pb-1 border-t border-black mt-2">
               Finishing
             </div>
           )}
@@ -1627,7 +1626,7 @@ className={`bg-white border border-black rounded-md flex items-stretch overflow-
               className="flex-1 text-left px-3 py-3 min-w-0"
               onClick={() => setSelectedPhaseId(phase.id)}
             >
-              <div className="text-sm font-medium truncate">{phase.name}</div>
+              <div className="text-sm font-medium truncate">{isFinishingPhase(phase.name) ? finishingLabel(phase.name) : phase.name}</div>
               <div className="text-[11px] text-[#8A8D91] mt-0.5 flex flex-wrap gap-x-2">
                 {!isCustomer && phase.trade && <span className="font-medium text-black">{phase.trade}</span>}
                 <span>{(phase.photos || []).length} photo{(phase.photos || []).length !== 1 ? 's' : ''}</span>
@@ -1720,8 +1719,7 @@ className={`bg-white border border-black rounded-md flex items-stretch overflow-
       )}
 
 
-      {/* Change orders — admin + customer only (not team) */}
-      {(isAdmin || isCustomer) && (
+      {/* Change orders: team → admin price → customer */}
       <div className="bg-white border border-black rounded-md p-4 mb-4">
         <div className="flex items-center justify-between gap-2 mb-2">
           <h3 className="text-[11px] font-mono uppercase text-[#6B6E72]">Change orders</h3>
@@ -1778,13 +1776,13 @@ className={`bg-white border border-black rounded-md flex items-stretch overflow-
                               color: st === 'pending' || st === 'quoted' ? '#8A6D00' : st === 'rejected' ? '#B5533C' : '#3F7D58',
                             }}
                           >
-                            {st === 'quoted' ? 'Offer sent' : st === 'rejected' ? 'Declined' : st === 'approved' ? 'Accepted' : st === 'pending' ? 'Customer request' : st}
+                            {st === 'quoted' ? ((isAdmin || isCustomer) ? 'Offer sent' : 'With customer') : st === 'rejected' ? 'Declined' : st === 'approved' ? 'Approved' : st === 'pending' ? (co.origin === 'team_request' ? 'Awaiting admin price' : (isAdmin || isCustomer ? 'Customer request' : 'Submitted')) : st}
                           </span>
                         </div>
                         <div className="text-[10px] font-mono text-[#8A8D91] mt-0.5">
                           {fmtDateTime(co.created_at)}
                           {phaseName ? ` · ${phaseName}` : ''}
-                          {co.origin === 'admin_offer' ? ' · Contractor offer' : ' · Customer request'}
+                          {co.origin === 'admin_offer' ? ' · Contractor offer' : co.origin === 'team_request' ? ' · Team request' : ' · Customer request'}
                         </div>
                         {(isAdmin || isCustomer) && (
                           <div className="text-[10px] text-[#8A8D91] mt-0.5">
@@ -1817,6 +1815,12 @@ className={`bg-white border border-black rounded-md flex items-stretch overflow-
                       <div className="text-sm mt-2 font-medium">
                         {co.origin === 'admin_offer' ? 'Offer amount' : 'Quoted amount'}: ${Number(co.amount).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                       </div>
+                    )}
+                    {!isAdmin && !isCustomer && st === 'approved' && (
+                      <div className="text-xs mt-2 text-[#3F7D58]">Customer approved</div>
+                    )}
+                    {!isAdmin && !isCustomer && st === 'rejected' && (
+                      <div className="text-xs mt-2 text-[#B5533C]">Customer declined</div>
                     )}
                     {(isAdmin || isCustomer) && co.admin_reply && (
                       <p className="text-xs mt-1 text-[#6B6E72] whitespace-pre-wrap">{co.admin_reply}</p>
@@ -1886,11 +1890,11 @@ className={`bg-white border border-black rounded-md flex items-stretch overflow-
             project={project}
             profile={profile}
             isAdmin={isAdmin}
+            isTeam={!isAdmin && !isCustomer}
             onDone={onReload}
             logActivity={logActivity}
           />
       </div>
-      )}
 
 
 
@@ -2526,7 +2530,7 @@ function QuoteReplyForm({ changeOrder, profile, logActivity, onDone }) {
   )
 }
 
-function ChangeOrderForm({ project, profile, isAdmin, onDone, logActivity, defaultPhaseId }) {
+function ChangeOrderForm({ project, profile, isAdmin, isTeam = false, onDone, logActivity, defaultPhaseId }) {
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
   const [phaseId, setPhaseId] = useState(defaultPhaseId || '')
@@ -2567,7 +2571,7 @@ function ChangeOrderForm({ project, profile, isAdmin, onDone, logActivity, defau
         storage_path = path
         public_url = pub.publicUrl
       }
-      // Admin → offer to customer (quoted + amount). Customer → request (pending).
+      // Admin → offer (quoted). Team → pending team_request. Customer → pending request.
       const status = isAdmin ? 'quoted' : 'pending'
       const row = {
         project_id: project.id,
@@ -2578,16 +2582,16 @@ function ChangeOrderForm({ project, profile, isAdmin, onDone, logActivity, defau
         public_url,
         created_by: profile.id,
         status,
+        origin: isAdmin ? 'admin_offer' : (isTeam ? 'team_request' : 'customer_request'),
       }
       if (isAdmin) {
         row.amount = amountNum
-        row.origin = 'admin_offer'
         row.admin_reply = description.trim() || null
       }
       const { error: insErr } = await supabase.from('change_orders').insert(row)
       if (insErr) throw insErr
       await logActivity?.(
-        isAdmin ? 'sent change order offer' : 'requested change order',
+        isAdmin ? 'sent change order offer' : (isTeam ? 'team change order request' : 'requested change order'),
         isAdmin ? (title.trim() + ' — $' + amountNum.toFixed(2)) : title.trim()
       )
       if (isAdmin) {
@@ -2616,7 +2620,7 @@ function ChangeOrderForm({ project, profile, isAdmin, onDone, logActivity, defau
   return (
     <form onSubmit={submit} className="border border-dashed border-black rounded p-3 space-y-2 mt-2">
       <div className="text-[11px] font-mono uppercase text-[#6B6E72]">
-        {isAdmin ? 'Send offer to customer' : 'Request a change'}
+        {isAdmin ? 'Send offer to customer' : isTeam ? 'Request change order (to admin)' : 'Request a change'}
       </div>
       <input
         value={title}
@@ -2667,9 +2671,104 @@ function ChangeOrderForm({ project, profile, isAdmin, onDone, logActivity, defau
       </label>
       {error && <p className="text-xs text-[#B5533C]">{error}</p>}
       <button type="submit" disabled={saving} className="w-full py-2 rounded text-sm text-white bg-black disabled:opacity-50">
-        {saving ? 'Saving…' : isAdmin ? 'Send offer to customer' : 'Submit request'}
+        {saving ? 'Saving…' : isAdmin ? 'Send offer to customer' : isTeam ? 'Send to admin' : 'Submit request'}
       </button>
     </form>
+  )
+}
+
+
+function parsePunchItems(raw) {
+  if (!raw) return []
+  try {
+    const j = JSON.parse(raw)
+    if (Array.isArray(j)) return j
+  } catch (_) {}
+  // legacy free-text → one open item per non-empty line
+  return String(raw).split('\n').map((line) => line.trim()).filter(Boolean).map((text, i) => ({
+    id: 'legacy-' + i,
+    text,
+    done: false,
+  }))
+}
+
+function AdminPunchList({ phase, value, onChange, onSave }) {
+  const [items, setItems] = useState(() => parsePunchItems(value))
+  const [newItem, setNewItem] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [savedMsg, setSavedMsg] = useState('')
+
+  useEffect(() => {
+    setItems(parsePunchItems(value))
+  }, [phase.id, value])
+
+  const persist = async (next) => {
+    setItems(next)
+    const json = JSON.stringify(next)
+    onChange(json)
+    setSaving(true)
+    setSavedMsg('')
+    // write directly so we don't depend on stale state in parent
+    try {
+      const { error } = await supabase.from('phases').update({ admin_notes: json }).eq('id', phase.id)
+      if (error) {
+        alert(error.message || 'Could not save. Ensure admin_notes column exists.')
+      } else {
+        setSavedMsg('Saved')
+        setTimeout(() => setSavedMsg(''), 1500)
+        await onSave?.()
+      }
+    } catch (err) {
+      alert(err.message || 'Save failed')
+    }
+    setSaving(false)
+  }
+
+  const add = () => {
+    const text = newItem.trim()
+    if (!text) return
+    persist([...items, { id: Date.now().toString(36), text, done: false }])
+    setNewItem('')
+  }
+
+  return (
+    <div>
+      <label className="block text-[11px] font-mono uppercase text-[#6B6E72] mb-1">Admin punch list (private)</label>
+      <div className="space-y-2 mb-2">
+        {items.length === 0 && <p className="text-xs text-[#8A8D91]">No punch items yet.</p>}
+        {items.map((it) => (
+          <div key={it.id} className="flex items-start gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={!!it.done}
+              onChange={() => persist(items.map((x) => x.id === it.id ? { ...x, done: !x.done } : x))}
+              className="mt-1"
+            />
+            <span className={it.done ? 'line-through text-[#8A8D91] flex-1' : 'flex-1'}>{it.text}</span>
+            <button
+              type="button"
+              className="text-[#B5533C] text-xs"
+              onClick={() => persist(items.filter((x) => x.id !== it.id))}
+            >
+              ×
+            </button>
+          </div>
+        ))}
+      </div>
+      <div className="flex gap-2">
+        <input
+          value={newItem}
+          onChange={(e) => setNewItem(e.target.value)}
+          onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); add() } }}
+          placeholder="Add punch item"
+          className="flex-1 border border-black rounded px-3 py-2 text-sm"
+        />
+        <button type="button" onClick={add} disabled={saving} className="px-3 rounded bg-black text-white text-sm disabled:opacity-50">
+          Add
+        </button>
+      </div>
+      {savedMsg && <p className="text-[10px] text-[#3F7D58] mt-1">{savedMsg}</p>}
+    </div>
   )
 }
 
@@ -2788,12 +2887,18 @@ function PhaseDetail({ phase, project, isAdmin, canUpload, isCustomer, profile, 
 
   const saveNotes = async () => {
     if (!isAdmin) return
-    const { error } = await supabase.from('phases').update({ admin_notes: adminNotes || null }).eq('id', phase.id)
-    if (error) {
-      alert(error.message || 'Could not save notes')
-      return
+    try {
+      const { error } = await supabase.from('phases').update({ admin_notes: adminNotes || null }).eq('id', phase.id)
+      if (error) {
+        alert(error.message || 'Could not save notes. Run SQL: alter table phases add column if not exists admin_notes text;')
+        return false
+      }
+      onReload()
+      return true
+    } catch (err) {
+      alert(err.message || 'Could not save notes')
+      return false
     }
-    onReload()
   }
 
   const uploadMedia = async (e) => {
@@ -3056,7 +3161,7 @@ function PhaseDetail({ phase, project, isAdmin, canUpload, isCustomer, profile, 
   const lb = lightboxIdx != null ? photos[lightboxIdx] : null
 
   return (
-    <SwipeBack onBack={onBack}>
+    <SwipeBack onBack={onBack} disabled={lightboxIdx != null || showMarkup}>
             <button onClick={onBack} className="flex items-center gap-1 text-sm text-[#6B6E72] mb-4">
         <ChevronLeft size={16} /> All phases
       </button>
@@ -3157,25 +3262,12 @@ function PhaseDetail({ phase, project, isAdmin, canUpload, isCustomer, profile, 
           </div>
         )}
         {isAdmin && (
-          <div>
-            <label className="block text-[11px] font-mono uppercase text-[#6B6E72] mb-1">Admin notes (private)</label>
-            <textarea
-              value={adminNotes}
-              onChange={(e) => setAdminNotes(e.target.value)}
-              placeholder="Private notes — only admins see these"
-              rows={3}
-              className="w-full border border-black rounded px-3 py-2 text-sm"
-            />
-            <button
-              type="button"
-              onClick={async () => {
-                await saveNotes()
-              }}
-              className="mt-2 text-xs border border-black rounded px-3 py-1.5"
-            >
-              Save notes
-            </button>
-          </div>
+          <AdminPunchList
+            phase={phase}
+            value={adminNotes}
+            onChange={setAdminNotes}
+            onSave={saveNotes}
+          />
         )}
         {isAdmin && (
           <button type="button" onClick={deletePhase} className="mt-3 text-xs text-[#B5533C] flex items-center gap-1">
@@ -3184,15 +3276,16 @@ function PhaseDetail({ phase, project, isAdmin, canUpload, isCustomer, profile, 
         )}
       </div>
 
-      {(isAdmin || isCustomer) && (
+      {(isAdmin || isCustomer || (!isAdmin && !isCustomer)) && (
         <div className="bg-white border border-black rounded-md p-4 mb-4">
           <h3 className="text-[11px] font-mono uppercase text-[#6B6E72] mb-1">
-            {isAdmin ? 'Change order for this phase' : 'Request change for this phase'}
+            {isAdmin ? 'Change order for this phase' : (!isAdmin && !isCustomer) ? 'Request change order (to admin)' : 'Request change for this phase'}
           </h3>
           <ChangeOrderForm
             project={project}
             profile={profile}
             isAdmin={isAdmin}
+            isTeam={!isAdmin && !isCustomer}
             defaultPhaseId={phase.id}
             onDone={onReload}
             logActivity={logActivity}
@@ -3329,7 +3422,12 @@ function PhaseDetail({ phase, project, isAdmin, canUpload, isCustomer, profile, 
       )}
 
       {lb && (
-        <div className="fixed inset-0 z-50 bg-black/90 flex flex-col" onTouchStart={lbTouchStart} onTouchEnd={lbTouchEnd}>
+        <div
+          className="fixed inset-0 z-50 bg-black/90 flex flex-col"
+          onTouchStart={(e) => { e.stopPropagation(); lbTouchStart(e) }}
+          onTouchEnd={(e) => { e.stopPropagation(); lbTouchEnd(e) }}
+          onTouchMove={(e) => e.stopPropagation()}
+        >
           <div className="flex items-center justify-between px-4 py-3 text-white" style={{ paddingTop: 'max(0.75rem, env(safe-area-inset-top))' }}>
             <span className="text-sm">{lightboxIdx + 1} / {photos.length}</span>
             <button type="button" onClick={() => setLightboxIdx(null)} className="p-2">
