@@ -3,6 +3,8 @@ import { supabase } from './lib/supabase'
 import AuthScreen from './pages/AuthScreen'
 import SetupCompany from './pages/SetupCompany'
 import Dashboard from './pages/Dashboard'
+import PlatformAdmin from './components/PlatformAdmin'
+import { isPlatformAdmin } from './lib/platform'
 
 const PROFILE_CACHE_KEY = 'bw_profile_cache'
 
@@ -187,6 +189,28 @@ export default function App() {
     return <AuthScreen />
   }
 
+  const handleLogout = async () => {
+    clearCachedProfile()
+    await supabase.auth.signOut()
+    try {
+      if (navigator.clearAppBadge) await navigator.clearAppBadge()
+    } catch (_) {}
+  }
+
+  // Platform owner: separate screen — companies + feedback only, no projects
+  const platformOwner =
+    isPlatformAdmin(profile) || isPlatformAdmin(session.user?.email)
+
+  if (platformOwner && profileReady) {
+    return (
+      <PlatformAdmin
+        profile={profile}
+        session={session}
+        onLogout={handleLogout}
+      />
+    )
+  }
+
   // Only show setup when we are sure profile has no company (not on a failed fetch)
   if (profileReady && profile && !profile.company_id) {
     return (
@@ -213,13 +237,7 @@ export default function App() {
       profile={profile}
       company={company}
       onCompanyUpdate={refreshProfile}
-      onLogout={async () => {
-        clearCachedProfile()
-        await supabase.auth.signOut()
-        try {
-          if (navigator.clearAppBadge) await navigator.clearAppBadge()
-        } catch (_) {}
-      }}
+      onLogout={handleLogout}
     />
   )
 }
