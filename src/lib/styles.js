@@ -73,11 +73,10 @@ export function fmtDate(d) {
   }
 }
 
-/** True if phase is in the permanent Finishing section */
+/** True only when phase was explicitly added to Finishing (name starts with Finishing) */
 export function isFinishingPhase(name) {
   const n = String(name || '').trim()
-  if (/^finishing/i.test(n)) return true
-  return FINISHING_PHASES.some((f) => n === f || n === `Finishing — ${f}` || n === `Finishing: ${f}`)
+  return /^finishing(\s*[—\-:]|\s+)/i.test(n) || /^finishing$/i.test(n)
 }
 
 export function finishingLabel(name) {

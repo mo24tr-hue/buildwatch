@@ -1829,6 +1829,7 @@ function ProjectDetail({ project, isAdmin, canUpload, isCustomer, profile, onBac
       <div className="space-y-2 mb-4">
         {phases.map((phase, i) => {
           if (isFinishingPhase(phase.name)) return null
+          const mainNum = phases.slice(0, i + 1).filter((p) => !isFinishingPhase(p.name)).length
           return (
           <div key={'wrap-' + phase.id}>
           <div
@@ -1848,7 +1849,7 @@ className={`bg-white border border-black rounded-md flex items-stretch overflow-
                 }}
                               >
                 <span className="text-sm leading-none opacity-90">⋮⋮</span>
-                <span className="font-mono text-xs">{i + 1}</span>
+                <span className="font-mono text-xs">{mainNum}</span>
               </div>
             )}
             {!isAdmin && (
@@ -1856,7 +1857,7 @@ className={`bg-white border border-black rounded-md flex items-stretch overflow-
                 className="w-9 flex items-center justify-center font-mono text-xs text-white flex-shrink-0"
                 style={{ background: (PHASE_STATUS[phase.status] || PHASE_STATUS.pending).color }}
               >
-                {i + 1}
+                {mainNum}
               </div>
             )}
             <button
@@ -1864,7 +1865,7 @@ className={`bg-white border border-black rounded-md flex items-stretch overflow-
               className="flex-1 text-left px-3 py-3 min-w-0"
               onClick={() => setSelectedPhaseId(phase.id)}
             >
-              <div className="text-sm font-medium truncate">{isFinishingPhase(phase.name) ? finishingLabel(phase.name) : phase.name}</div>
+              <div className="text-sm font-medium truncate">{phase.name}</div>
               <div className="text-[11px] text-[#8A8D91] mt-0.5 flex flex-wrap gap-x-2">
                 {!isCustomer && phase.trade && <span className="font-medium text-black">{phase.trade}</span>}
                 <span>{(phase.photos || []).length} photo{(phase.photos || []).length !== 1 ? 's' : ''}</span>
@@ -1938,51 +1939,87 @@ className={`bg-white border border-black rounded-md flex items-stretch overflow-
         Finishing
       </div>
       <div className="space-y-2 mb-2">
-        {phases.filter((ph) => isFinishingPhase(ph.name)).length === 0 && (
-          <p className="text-xs text-[#8A8D91]">No finishing phases yet. Add trades below.</p>
-        )}
-        {phases.map((phase, i) => {
-          if (!isFinishingPhase(phase.name)) return null
-          return (
-          <div key={'fin-' + phase.id}
-            className={`bg-white border border-black rounded-md flex items-stretch overflow-hidden`}
-          >
-            <div
-              className="w-9 flex items-center justify-center font-mono text-xs text-white flex-shrink-0"
-              style={{ background: (PHASE_STATUS[phase.status] || PHASE_STATUS.pending).color }}
-            >
-              {finishingLabel(phase.name).slice(0, 1)}
-            </div>
-            <button
-              type="button"
-              className="flex-1 text-left px-3 py-3 min-w-0"
-              onClick={() => setSelectedPhaseId(phase.id)}
-            >
-              <div className="text-sm font-medium truncate">{finishingLabel(phase.name)}</div>
-              <div className="text-[11px] text-[#8A8D91] mt-0.5">
-                {(phase.photos || []).length} photo{(phase.photos || []).length !== 1 ? 's' : ''}
-              </div>
-            </button>
-            {isAdmin ? (
-              <button type="button" onClick={() => cyclePhase(phase)} className="px-2 flex items-center border-l border-black/20" title="Cycle status">
-                {phase.status === 'done' ? (
-                  <Check size={16} className="text-[#3F7D58]" />
-                ) : (
-                  <div className="w-2.5 h-2.5 rounded-full" style={{ background: (PHASE_STATUS[phase.status] || PHASE_STATUS.pending).color }} />
+        {(() => {
+          const finishing = phases.filter((ph) => isFinishingPhase(ph.name))
+          if (!finishing.length) {
+            return <p className="text-xs text-[#8A8D91]">No finishing phases yet. Add trades below.</p>
+          }
+          return finishing.map((phase, fi) => {
+            const globalIdx = phases.findIndex((p) => p.id === phase.id)
+            return (
+              <div
+                key={'fin-' + phase.id}
+                className="bg-white border border-black rounded-md flex items-stretch overflow-hidden"
+              >
+                <div
+                  className="w-9 flex items-center justify-center font-mono text-xs text-white flex-shrink-0"
+                  style={{ background: (PHASE_STATUS[phase.status] || PHASE_STATUS.pending).color }}
+                >
+                  {fi + 1}
+                </div>
+                <button
+                  type="button"
+                  className="flex-1 text-left px-3 py-3 min-w-0"
+                  onClick={() => setSelectedPhaseId(phase.id)}
+                >
+                  <div className="text-sm font-medium truncate">{finishingLabel(phase.name)}</div>
+                  <div className="text-[11px] text-[#8A8D91] mt-0.5">
+                    {(phase.photos || []).length} photo{(phase.photos || []).length !== 1 ? 's' : ''}
+                  </div>
+                </button>
+                {isAdmin && (
+                  <div className="flex flex-col border-l border-black/20">
+                    <button
+                      type="button"
+                      disabled={fi === 0}
+                      onClick={() => {
+                        if (globalIdx <= 0) return
+                        // swap with previous finishing only
+                        const prevFin = finishing[fi - 1]
+                        const prevIdx = phases.findIndex((p) => p.id === prevFin.id)
+                        movePhaseBy(globalIdx, prevIdx - globalIdx)
+                      }}
+                      className="px-2.5 py-1.5 disabled:opacity-25"
+                      title="Move up"
+                    >
+                      <ChevronUp size={18} />
+                    </button>
+                    <button
+                      type="button"
+                      disabled={fi === finishing.length - 1}
+                      onClick={() => {
+                        const nextFin = finishing[fi + 1]
+                        const nextIdx = phases.findIndex((p) => p.id === nextFin.id)
+                        movePhaseBy(globalIdx, nextIdx - globalIdx)
+                      }}
+                      className="px-2.5 py-1.5 disabled:opacity-25"
+                      title="Move down"
+                    >
+                      <ChevronDown size={18} />
+                    </button>
+                  </div>
                 )}
-              </button>
-            ) : (
-              <div className="px-2 flex items-center">
-                {phase.status === 'done' ? (
-                  <Check size={16} className="text-[#3F7D58]" />
+                {isAdmin ? (
+                  <button type="button" onClick={() => cyclePhase(phase)} className="px-2 flex items-center border-l border-black/20" title="Cycle status">
+                    {phase.status === 'done' ? (
+                      <Check size={16} className="text-[#3F7D58]" />
+                    ) : (
+                      <div className="w-2.5 h-2.5 rounded-full" style={{ background: (PHASE_STATUS[phase.status] || PHASE_STATUS.pending).color }} />
+                    )}
+                  </button>
                 ) : (
-                  <div className="w-2.5 h-2.5 rounded-full" style={{ background: (PHASE_STATUS[phase.status] || PHASE_STATUS.pending).color }} />
+                  <div className="px-2 flex items-center">
+                    {phase.status === 'done' ? (
+                      <Check size={16} className="text-[#3F7D58]" />
+                    ) : (
+                      <div className="w-2.5 h-2.5 rounded-full" style={{ background: (PHASE_STATUS[phase.status] || PHASE_STATUS.pending).color }} />
+                    )}
+                  </div>
                 )}
               </div>
-            )}
-          </div>
-          )
-        })}
+            )
+          })
+        })()}
       </div>
       {isAdmin && (
         <div className="bg-white border border-dashed border-black rounded-md p-3 flex gap-2 mb-4">
