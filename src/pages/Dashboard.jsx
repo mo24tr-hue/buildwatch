@@ -779,23 +779,21 @@ export default function Dashboard({ session, profile, company, onCompanyUpdate, 
                       Users / Contractor
                     </button>
                   )}
-                  {isAdmin && (
-                    <button
-                      type="button"
-                      className="w-full text-left px-3 py-2.5 text-sm hover:bg-[#F5F5F5]"
-                      onClick={() => {
-                        setMenuOpen(false)
-                        setShowCalendar(true)
-                        setShowWeek(false)
-                        setShowAdmin(false)
-                        setShowPassword(false)
-                        setActiveId(null)
-                        setShowNew(false)
-                      }}
-                    >
-                      Calendar
-                    </button>
-                  )}
+                  <button
+                    type="button"
+                    className="w-full text-left px-3 py-2.5 text-sm hover:bg-[#F5F5F5]"
+                    onClick={() => {
+                      setMenuOpen(false)
+                      setShowCalendar(true)
+                      setShowWeek(false)
+                      setShowAdmin(false)
+                      setShowPassword(false)
+                      setActiveId(null)
+                      setShowNew(false)
+                    }}
+                  >
+                    Calendar
+                  </button>
                   {isAdmin && (
                     <button
                       type="button"
@@ -947,9 +945,10 @@ export default function Dashboard({ session, profile, company, onCompanyUpdate, 
             email={profile?.email}
             onBack={() => setShowPassword(false)}
           />
-        ) : showCalendar && isAdmin ? (
+        ) : showCalendar ? (
           <AdminCalendarView
             projects={projects}
+            role={profile?.role}
             onBack={() => setShowCalendar(false)}
             onOpenProject={(id) => {
               setShowCalendar(false)
@@ -1234,11 +1233,14 @@ function ChangePasswordPanel({ email, onBack }) {
 }
 
 
-function AdminCalendarView({ projects, onBack, onOpenProject }) {
+function AdminCalendarView({ projects, role, onBack, onOpenProject }) {
   const today = new Date()
   const [year, setYear] = useState(today.getFullYear())
   const [month, setMonth] = useState(today.getMonth()) // 0-11
   const [selected, setSelected] = useState(today.toISOString().slice(0, 10))
+  const isTrade = role === 'team'
+  const isCustomer = role === 'customer'
+  // projects list is already scoped: customers → assigned jobs; trade → assigned phases only
 
   const first = new Date(year, month, 1)
   const startPad = first.getDay() // 0 Sun
@@ -1254,25 +1256,39 @@ function AdminCalendarView({ projects, onBack, onOpenProject }) {
   }
 
   const marks = {}
+  const mark = (dateStr, info) => {
+    if (!dateStr) return
+    if (!marks[dateStr]) marks[dateStr] = []
+    marks[dateStr].push(info)
+  }
   ;(projects || []).forEach((pr) => {
-    const mark = (dateStr, info) => {
-      if (!dateStr) return
-      if (!marks[dateStr]) marks[dateStr] = []
-      marks[dateStr].push(info)
+    // Customer + contractor: project-level schedule
+    if (!isTrade) {
+      mark(pr.start_date, { projectId: pr.id, label: pr.address, detail: 'Project start', status: pr.status })
+      mark(pr.end_date, { projectId: pr.id, label: pr.address, detail: 'Project end', status: pr.status })
     }
-    mark(pr.start_date, { projectId: pr.id, label: pr.address, detail: 'Project start', status: pr.status })
-    mark(pr.end_date, { projectId: pr.id, label: pr.address, detail: 'Project end', status: pr.status })
     ;(pr.phases || []).forEach((ph) => {
-      mark(ph.start_date, { projectId: pr.id, label: pr.address + ' · ' + ph.name, detail: 'Phase start', status: ph.status })
-      mark(ph.end_date, { projectId: pr.id, label: pr.address + ' · ' + ph.name, detail: 'Phase end', status: ph.status })
+      // Trade: only their phase start/end (list already filtered to assigned phases)
+      // Customer/contractor: all phases on visible projects
+      mark(ph.start_date, {
+        projectId: pr.id,
+        label: isTrade ? (ph.name || 'Phase') : (pr.address + ' · ' + ph.name),
+        detail: isTrade ? 'Your start' : 'Phase start',
+        status: ph.status,
+      })
+      mark(ph.end_date, {
+        projectId: pr.id,
+        label: isTrade ? (ph.name || 'Phase') : (pr.address + ' · ' + ph.name),
+        detail: isTrade ? 'Your end' : 'Phase end',
+        status: ph.status,
+      })
     })
   })
 
-  // Ongoing on selected day
   const dayItems = []
   const day = selected
   ;(projects || []).forEach((pr) => {
-    if (pr.start_date === day || pr.end_date === day) {
+    if (!isTrade && (pr.start_date === day || pr.end_date === day)) {
       dayItems.push({
         projectId: pr.id,
         label: pr.address,
@@ -1284,16 +1300,26 @@ function AdminCalendarView({ projects, onBack, onOpenProject }) {
       if (ph.start_date === day || ph.end_date === day) {
         dayItems.push({
           projectId: pr.id,
-          label: pr.address + ' · ' + ph.name,
-          detail: ph.start_date === day && ph.end_date === day ? 'Start & end' : ph.start_date === day ? 'Phase start' : 'Phase target end',
+          label: isTrade ? (ph.name || 'Phase') : (pr.address + ' · ' + ph.name),
+          detail: isTrade
+            ? (ph.start_date === day && ph.end_date === day ? 'Your start & end' : ph.start_date === day ? 'Your start' : 'Your end')
+            : (ph.start_date === day && ph.end_date === day ? 'Start & end' : ph.start_date === day ? 'Phase start' : 'Phase target end'),
           status: ph.status,
         })
       }
-      if (ph.start_date && ph.end_date && ph.start_date < day && ph.end_date > day && ph.status === 'active') {
+      if (!isTrade && ph.start_date && ph.end_date && ph.start_date < day && ph.end_date > day && ph.status === 'active') {
         dayItems.push({
           projectId: pr.id,
           label: pr.address + ' · ' + ph.name,
           detail: 'In progress',
+          status: ph.status,
+        })
+      }
+      if (isTrade && ph.start_date && ph.end_date && ph.start_date < day && ph.end_date > day && ph.status === 'active') {
+        dayItems.push({
+          projectId: pr.id,
+          label: ph.name || 'Phase',
+          detail: 'In progress (your phase)',
           status: ph.status,
         })
       }
@@ -1315,7 +1341,10 @@ function AdminCalendarView({ projects, onBack, onOpenProject }) {
       <button type="button" onClick={onBack} className="flex items-center gap-1 text-sm text-[#6B6E72] mb-4">
         <ChevronLeft size={16} /> Back
       </button>
-      <h2 className="font-display text-2xl mb-4">Calendar</h2>
+      <h2 className="font-display text-2xl mb-1">Calendar</h2>
+      <p className="text-xs text-[#6B6E72] mb-4">
+        {isTrade ? 'Your phase start and end dates' : isCustomer ? 'Schedule for your projects' : 'All project and phase dates'}
+      </p>
       <div className="bg-white border border-black rounded-md p-4 mb-4">
         <div className="flex items-center justify-between mb-3">
           <button type="button" onClick={prev} className="p-2 border border-black rounded"><ChevronLeft size={18} /></button>
