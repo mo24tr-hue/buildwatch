@@ -353,7 +353,33 @@ export default function AdminPanel({ profile, company, onBack, onCompanyUpdate }
 
       <div className="bg-white border border-black rounded-md p-4">
         <h3 className="text-[11px] font-mono uppercase text-[#6B6E72] mb-1">Users ({users.length})</h3>
-        {users.map((u) => {
+        
+      <div className="bg-white border border-black rounded-md p-4 mb-4">
+        <h3 className="text-[11px] font-mono uppercase text-[#6B6E72] mb-2">Role checklist</h3>
+        <div className="space-y-2">
+          {users.map((u) => {
+            const customerProjects = projects.filter((pr) => (pr.project_customers || []).some((c) => c.user_id === u.id))
+            const teamPhases = projects.reduce((n, pr) => {
+              return n + (pr.phases || []).filter((ph) => (ph.phase_team || []).some((m) => m.user_id === u.id)).length
+            }, 0)
+            return (
+              <div key={u.id} className="text-xs border border-[#E5E5E5] rounded px-3 py-2 flex justify-between gap-2">
+                <div className="min-w-0">
+                  <div className="font-medium truncate">{u.name || u.email}</div>
+                  <div className="text-[#6B6E72] uppercase font-mono text-[10px]">{u.role}</div>
+                </div>
+                <div className="text-right text-[#6B6E72] flex-shrink-0">
+                  {u.role === 'customer' && <div>{customerProjects.length} project{customerProjects.length !== 1 ? 's' : ''}</div>}
+                  {u.role === 'team' && <div>{teamPhases} phase{teamPhases !== 1 ? 's' : ''}</div>}
+                  {u.role === 'admin' && <div>All access</div>}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      </div>
+
+      {users.map((u) => {
           let summary = ''
           if (u.role === 'customer') {
             const n = projects.filter((pr) => (pr.project_customers || []).some((c) => c.user_id === u.id)).length

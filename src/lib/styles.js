@@ -75,3 +75,20 @@ export function fmtDate(d) {
 export function isFinishingPhase(name) {
   return /^finishing/i.test(String(name || '').trim())
 }
+
+export function fmtDateTime(d) {
+  if (!d) return '—'
+  try {
+    const date = typeof d === 'string' && d.length <= 10 ? new Date(d + 'T12:00:00') : new Date(d)
+    const now = new Date()
+    const sameDay = date.toDateString() === now.toDateString()
+    const time = date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
+    if (sameDay) return 'Today ' + time
+    const yday = new Date(now)
+    yday.setDate(yday.getDate() - 1)
+    if (date.toDateString() === yday.toDateString()) return 'Yesterday ' + time
+    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) + ' ' + time
+  } catch {
+    return d
+  }
+}

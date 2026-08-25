@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState, useRef } from 'react'
 import { HardHat, Plus, Image as ImageIcon, MapPin, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Camera, Trash2, Check, FileText, X, Video, Menu, Share2, Bell, Search, Copy, Archive, Printer } from 'lucide-react'
 import { supabase } from '../lib/supabase'
-import { STYLES, PROJECT_STATUS, PHASE_STATUS, nextPhaseStatus, fmtDate, isFinishingPhase } from '../lib/styles'
+import { STYLES, PROJECT_STATUS, PHASE_STATUS, nextPhaseStatus, fmtDate, fmtDateTime, isFinishingPhase } from '../lib/styles'
 import AdminPanel from '../components/AdminPanel'
 
 const QUEUE_KEY = 'ay_upload_queue'
@@ -181,6 +181,11 @@ export default function Dashboard({ session, profile, company, onCompanyUpdate, 
         )
       }
       setProjects(list)
+      try {
+        if (profile?.company_id) {
+          localStorage.setItem('bw_projects_cache_' + profile.company_id, JSON.stringify({ at: Date.now(), list }))
+        }
+      } catch (_) {}
     }
     setLoading(false)
   }, [profile?.id, profile?.role])
@@ -203,8 +208,18 @@ export default function Dashboard({ session, profile, company, onCompanyUpdate, 
 
 
   useEffect(() => {
+    // Offline: show last cached projects immediately
+    try {
+      if (profile?.company_id) {
+        const raw = localStorage.getItem('bw_projects_cache_' + profile.company_id)
+        if (raw) {
+          const parsed = JSON.parse(raw)
+          if (parsed?.list?.length) setProjects(parsed.list)
+        }
+      }
+    } catch (_) {}
     loadProjects()
-  }, [loadProjects])
+  }, [loadProjects, profile?.company_id])
 
   // Offline queue: retry when back online
   useEffect(() => {
@@ -245,6 +260,39 @@ export default function Dashboard({ session, profile, company, onCompanyUpdate, 
     if (navigator.onLine) flush()
     return () => window.removeEventListener('online', flush)
   }, [loadProjects, profile?.id])
+
+
+  useEffect(() => {
+    if (!('serviceWorker' in navigator)) return
+    navigator.serviceWorker.getRegistration().then((reg) => {
+      if (!reg) return
+      reg.update().catch(() => {})
+      if (reg.waiting) setUpdateAvailable(true)
+      reg.addEventListener('updatefound', () => {
+        const nw = reg.installing
+        if (!nw) return
+        nw.addEventListener('statechange', () => {
+          if (nw.state === 'installed' && navigator.serviceWorker.controller) setUpdateAvailable(true)
+        })
+      })
+    }).catch(() => {})
+  }, [])
+
+
+  useEffect(() => {
+    if (!profile?.company_id || profile?.role !== 'admin') return
+    const since = new Date()
+    since.setDate(since.getDate() - 7)
+    supabase
+      .from('activity')
+      .select('id, action, detail, user_name, user_email, created_at, project_id')
+      .eq('company_id', profile.company_id)
+      .gte('created_at', since.toISOString())
+      .order('created_at', { ascending: false })
+      .limit(40)
+      .then(({ data }) => setDigest(data || []))
+      .catch(() => {})
+  }, [profile?.company_id, profile?.role, projects.length])
 
   const activeProject = projects.find((p) => p.id === activeId) || null
 
@@ -540,14 +588,23 @@ export default function Dashboard({ session, profile, company, onCompanyUpdate, 
   }
 
     const deleteProject = async (id) => {
-    if (!confirm('Delete this project and its files?')) return
+    if (!confirm('Delete this project and all photos, files, and history? This cannot be undone.')) return
     try {
-      const prefix = profile.company_id + '/' + id
-      const { data: files } = await supabase.storage.from('project-photos').list(prefix, { limit: 100 })
-      // list is shallow; try remove common paths via photos table
+      const paths = []
       const { data: photos } = await supabase.from('photos').select('storage_path').eq('project_id', id)
-      const paths = (photos || []).map((x) => x.storage_path).filter(Boolean)
-      if (paths.length) await supabase.storage.from('project-photos').remove(paths)
+      ;(photos || []).forEach((x) => x.storage_path && paths.push(x.storage_path))
+      const { data: pfiles } = await supabase.from('project_files').select('storage_path').eq('project_id', id)
+      ;(pfiles || []).forEach((x) => x.storage_path && paths.push(x.storage_path))
+      const { data: phfiles } = await supabase.from('phase_files').select('storage_path').eq('project_id', id)
+      ;(phfiles || []).forEach((x) => x.storage_path && paths.push(x.storage_path))
+      const { data: cos } = await supabase.from('change_orders').select('storage_path').eq('project_id', id)
+      ;(cos || []).forEach((x) => x.storage_path && paths.push(x.storage_path))
+      const { data: tphotos } = await supabase.from('task_photos').select('storage_path').eq('project_id', id)
+      ;(tphotos || []).forEach((x) => x.storage_path && paths.push(x.storage_path))
+      // chunk removes
+      for (let i = 0; i < paths.length; i += 50) {
+        await supabase.storage.from('project-photos').remove(paths.slice(i, i + 50))
+      }
     } catch (_) {}
     await supabase.from('projects').delete().eq('id', id)
     setActiveId(null)
@@ -555,6 +612,8 @@ export default function Dashboard({ session, profile, company, onCompanyUpdate, 
   }
 
   const archiveProject = async (id, archived = true) => {
+    if (archived && !confirm('Archive this project? You can restore it from Archived.')) return
+    if (!archived && !confirm('Restore this project to active?')) return
     await supabase.from('projects').update({ archived }).eq('id', id)
     setActiveId(null)
     await loadProjects()
@@ -665,6 +724,14 @@ export default function Dashboard({ session, profile, company, onCompanyUpdate, 
         </div>
       </header>
 
+      {updateAvailable && (
+        <div className="bg-[#FFF8DB] border-b border-[#E6B800] text-center text-sm px-4 py-2">
+          New version available.{' '}
+          <button type="button" className="underline font-medium" onClick={() => window.location.reload()}>
+            Refresh
+          </button>
+        </div>
+      )}
       <main className="max-w-2xl mx-auto px-4 py-5">
         {showNotifs && (isAdmin || profile?.role === 'team') ? (
           <SwipeBack onBack={() => setShowNotifs(false)}>
@@ -747,7 +814,7 @@ export default function Dashboard({ session, profile, company, onCompanyUpdate, 
                           </>
                         )
                       })()}
-                      <div className="text-[10px] font-mono text-[#8A8D91] mt-1">{fmtDate(n.created_at)}</div>
+                      <div className="text-[10px] font-mono text-[#8A8D91] mt-1">{fmtDateTime(n.created_at)}</div>
                     </button>
                   </SwipeDeleteRow>
                 ))}
@@ -774,7 +841,7 @@ export default function Dashboard({ session, profile, company, onCompanyUpdate, 
             }}
           />
         ) : showNew && isAdmin ? (
-          <NewProjectForm onCreate={createProject} onCancel={() => setShowNew(false)} companyId={profile.company_id} />
+          <NewProjectForm onCreate={createProject} onCancel={() => setShowNew(false)} companyId={profile.company_id} existingProjects={projects} />
         ) : activeProject ? (
           <ProjectDetail
             project={activeProject}
@@ -833,11 +900,35 @@ export default function Dashboard({ session, profile, company, onCompanyUpdate, 
           </div>
         )}
 
-{!loading && visibleProjects.length === 0 ? (
+
+          {isAdmin && !activeId && digest.length > 0 && (
+            <div className="bg-white border border-black rounded-md p-4 mb-4">
+              <h3 className="text-[11px] font-mono uppercase text-[#6B6E72] mb-2">This week</h3>
+              <div className="space-y-2 max-h-48 overflow-auto">
+                {digest.slice(0, 12).map((d) => (
+                  <div key={d.id} className="text-xs border-b border-[#E5E5E5] pb-1.5">
+                    <div className="font-medium">{titleCase(d.action)}</div>
+                    <div className="text-[#6B6E72]">{d.detail || d.user_name || d.user_email}</div>
+                    <div className="text-[10px] font-mono text-[#8A8D91]">{fmtDateTime(d.created_at)}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+{loading ? (
+              <div className="text-center py-16">
+                <p className="text-sm text-[#6B6E72]">Loading projects…</p>
+              </div>
+            ) : !visibleProjects.length ? (
               <div className="text-center py-16 border-2 border-dashed border-black rounded-md">
                 <HardHat size={32} className="mx-auto text-[#C9C4B8] mb-2" />
                 <p className="text-[#6B6E72] text-sm mb-3">
-                  {isCustomer ? 'No projects shared with you yet.' : 'No projects yet.'}
+                  {showArchived
+                    ? 'No archived projects.'
+                    : isCustomer
+                      ? 'No projects shared with you yet.'
+                      : 'No projects yet.'}
                 </p>
                 {isAdmin && (
                   <button onClick={() => setShowNew(true)} className="text-sm font-medium text-white bg-black px-4 py-2 rounded">
@@ -879,7 +970,18 @@ export default function Dashboard({ session, profile, company, onCompanyUpdate, 
                         <div className="text-xs text-[#6B6E72] mt-0.5">{formatStyleLabel(p.style)}</div>
                         <div className="text-[11px] font-mono text-[#6B6E72] mt-1">
                           {doneCount} of {phases.length} phases complete
+                          {phases.length > 0 ? ` · ${Math.round((doneCount / phases.length) * 100)}%` : ''}
                         </div>
+                        {isCustomer && (() => {
+                          const active = phases.find((ph) => ph.status === 'active')
+                          const recent = (p.change_orders || []).filter((c) => ['quoted', 'pending'].includes(c.status || ''))
+                          return (
+                            <div className="text-[11px] text-[#6B6E72] mt-1">
+                              {active ? `In progress: ${active.name}` : 'No phase in progress'}
+                              {recent.length ? ` · ${recent.length} change order${recent.length > 1 ? 's' : ''} open` : ''}
+                            </div>
+                          )
+                        })()}
                       </div>
                     </button>
                   )
@@ -1016,7 +1118,7 @@ function StatusBadge({ status, map }) {
   )
 }
 
-function NewProjectForm({ onCreate, onCancel, companyId }) {
+function NewProjectForm({ onCreate, onCancel, companyId, existingProjects = [] }) {
   const [address, setAddress] = useState('')
   const [style, setStyle] = useState('remodel')
   const [startDate, setStartDate] = useState('')
@@ -1027,6 +1129,7 @@ function NewProjectForm({ onCreate, onCancel, companyId }) {
   const [formError, setFormError] = useState('')
   const [coverUrl, setCoverUrl] = useState(null)
   const [uploadingCover, setUploadingCover] = useState(false)
+  const [templateId, setTemplateId] = useState('')
 
   const uploadCover = async (e) => {
     const file = e.target.files?.[0]
@@ -1100,6 +1203,33 @@ function NewProjectForm({ onCreate, onCancel, companyId }) {
             </label>
           )}
         </div>
+        {existingProjects.length > 0 && (
+          <div>
+            <label className="block text-[11px] font-mono uppercase text-[#6B6E72] mb-1">Copy phases from</label>
+            <select
+              value={templateId}
+              onChange={(e) => {
+                const id = e.target.value
+                setTemplateId(id)
+                if (!id) return
+                const src = existingProjects.find((p) => p.id === id)
+                if (!src) return
+                const names = (src.phases || []).slice().sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0)).map((ph) => ph.name)
+                if (names.length) {
+                  setUseCustom(true)
+                  setCustomLabel((src.style || 'Template') + ' phases')
+                  setCustomPhases(names.join(', '))
+                }
+              }}
+              className="w-full border border-black rounded px-3 py-2 text-sm bg-white"
+            >
+              <option value="">None — pick a type below</option>
+              {existingProjects.map((p) => (
+                <option key={p.id} value={p.id}>{p.address}</option>
+              ))}
+            </select>
+          </div>
+        )}
         <div>
           <label className="block text-[11px] font-mono uppercase text-[#6B6E72] mb-1">Project type</label>
           {!useCustom ? (
@@ -1599,6 +1729,32 @@ className={`bg-white border border-black rounded-md flex items-stretch overflow-
             </span>
           )}
         </div>
+        {(isAdmin || isCustomer) && (project.change_orders || []).length > 0 && (() => {
+          const cos = project.change_orders || []
+          const accepted = cos.filter((c) => c.status === 'approved')
+          const declined = cos.filter((c) => c.status === 'rejected')
+          const open = cos.filter((c) => ['pending', 'quoted'].includes(c.status || ''))
+          const sum = (arr) => arr.reduce((s, c) => s + (Number(c.amount) || 0), 0)
+          return (
+            <div className="grid grid-cols-3 gap-2 mb-3 text-center">
+              <div className="border border-[#E5E5E5] rounded p-2">
+                <div className="text-[10px] font-mono uppercase text-[#6B6E72]">Open</div>
+                <div className="text-sm font-medium">{open.length}</div>
+                <div className="text-[10px] text-[#6B6E72]">${sum(open).toLocaleString(undefined, { maximumFractionDigits: 0 })}</div>
+              </div>
+              <div className="border border-[#E5E5E5] rounded p-2">
+                <div className="text-[10px] font-mono uppercase text-[#6B6E72]">Accepted</div>
+                <div className="text-sm font-medium text-[#3F7D58]">${sum(accepted).toLocaleString(undefined, { maximumFractionDigits: 0 })}</div>
+                <div className="text-[10px] text-[#6B6E72]">{accepted.length} item{accepted.length !== 1 ? 's' : ''}</div>
+              </div>
+              <div className="border border-[#E5E5E5] rounded p-2">
+                <div className="text-[10px] font-mono uppercase text-[#6B6E72]">Declined</div>
+                <div className="text-sm font-medium text-[#B5533C]">${sum(declined).toLocaleString(undefined, { maximumFractionDigits: 0 })}</div>
+                <div className="text-[10px] text-[#6B6E72]">{declined.length} item{declined.length !== 1 ? 's' : ''}</div>
+              </div>
+            </div>
+          )
+        })()}
         {(project.change_orders || []).length > 0 && (
           <div className="space-y-3 mb-3">
             {(project.change_orders || [])
@@ -1624,10 +1780,15 @@ className={`bg-white border border-black rounded-md flex items-stretch overflow-
                           </span>
                         </div>
                         <div className="text-[10px] font-mono text-[#8A8D91] mt-0.5">
-                          {fmtDate(co.created_at)}
+                          {fmtDateTime(co.created_at)}
                           {phaseName ? ` · ${phaseName}` : ''}
-                          {co.origin === 'admin_offer' ? ' · Contractor offer' : ''}
+                          {co.origin === 'admin_offer' ? ' · Contractor offer' : ' · Customer request'}
                         </div>
+                        {(isAdmin || isCustomer) && (
+                          <div className="text-[10px] text-[#8A8D91] mt-0.5">
+                            {co.decided_at ? `Decided ${fmtDateTime(co.decided_at)}` : st === 'quoted' ? 'Awaiting customer decision' : st === 'pending' ? 'Awaiting admin quote' : ''}
+                          </div>
+                        )}
                       </div>
                       {isAdmin && (
                         <button
@@ -1698,6 +1859,8 @@ className={`bg-white border border-black rounded-md flex items-stretch overflow-
                           type="button"
                           className="flex-1 py-2 text-sm rounded border border-black"
                           onClick={async () => {
+                            const amt = co.amount != null ? '$' + Number(co.amount).toLocaleString(undefined, { minimumFractionDigits: 2 }) : 'this offer'
+                            if (!confirm('Decline ' + amt + ' for "' + co.title + '"?')) return
                             const { error } = await supabase.from('change_orders').update({
                               status: 'rejected',
                               decided_at: new Date().toISOString(),
@@ -1833,6 +1996,31 @@ className={`bg-white border border-black rounded-md flex items-stretch overflow-
             }}
           >
             <Archive size={13} /> {project.archived ? 'Unarchive' : 'Archive'}
+
+          {isAdmin && project.status === 'done' && !(project.phases || []).some((ph) => /punch/i.test(ph.name || '')) && (
+            <button
+              type="button"
+              className="text-xs border border-black rounded px-3 py-1.5 flex items-center gap-1"
+              onClick={async () => {
+                if (!confirm('Add a Punch List / Warranty phase to this completed project?')) return
+                const maxOrder = Math.max(0, ...(project.phases || []).map((ph) => ph.sort_order || 0))
+                const { error } = await supabase.from('phases').insert({
+                  project_id: project.id,
+                  name: 'Punch List / Warranty',
+                  sort_order: maxOrder + 1,
+                  status: 'active',
+                  trade: '',
+                })
+                if (error) alert(error.message)
+                else {
+                  await logActivity?.('added phase', 'Punch List / Warranty', project.id)
+                  onReload()
+                }
+              }}
+            >
+              Punch list
+            </button>
+          )}
           </button>
         </div>
       )}
@@ -2494,6 +2682,9 @@ function PhaseDetail({ phase, project, isAdmin, canUpload, isCustomer, profile, 
   const [adminNotes, setAdminNotes] = useState(phase.admin_notes || '')
   const [lightboxIdx, setLightboxIdx] = useState(null)
   const [uploadingPhaseFile, setUploadingPhaseFile] = useState(false)
+  const [showMarkup, setShowMarkup] = useState(false)
+  const markupCanvasRef = useRef(null)
+  const markupDrawing = useRef(false)
   const touchX = useRef(null)
   const photos = (phase.photos || []).slice().sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0))
   const phaseFiles = phase.phase_files || []
@@ -2704,6 +2895,81 @@ function PhaseDetail({ phase, project, isAdmin, canUpload, isCustomer, profile, 
     })()
   }
 
+
+  const openMarkup = () => {
+    if (lightboxIdx == null) return
+    setShowMarkup(true)
+    setTimeout(() => {
+      const canvas = markupCanvasRef.current
+      const photo = photos[lightboxIdx]
+      if (!canvas || !photo) return
+      const ctx = canvas.getContext('2d')
+      const img = new Image()
+      img.crossOrigin = 'anonymous'
+      img.onload = () => {
+        const maxW = Math.min(window.innerWidth - 24, 900)
+        const scale = Math.min(1, maxW / img.width)
+        canvas.width = img.width * scale
+        canvas.height = img.height * scale
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height)
+        ctx.strokeStyle = '#E6B800'
+        ctx.lineWidth = 4
+        ctx.lineCap = 'round'
+      }
+      img.src = photo.public_url
+    }, 50)
+  }
+
+  const markupPointer = (e, type) => {
+    const canvas = markupCanvasRef.current
+    if (!canvas) return
+    const ctx = canvas.getContext('2d')
+    const rect = canvas.getBoundingClientRect()
+    const point = e.touches ? e.touches[0] : e
+    const x = (point.clientX - rect.left) * (canvas.width / rect.width)
+    const y = (point.clientY - rect.top) * (canvas.height / rect.height)
+    if (type === 'down') {
+      markupDrawing.current = true
+      ctx.beginPath()
+      ctx.moveTo(x, y)
+    } else if (type === 'move' && markupDrawing.current) {
+      ctx.lineTo(x, y)
+      ctx.stroke()
+    } else if (type === 'up') {
+      markupDrawing.current = false
+    }
+  }
+
+  const saveMarkup = async () => {
+    const canvas = markupCanvasRef.current
+    const photo = photos[lightboxIdx]
+    if (!canvas || !photo || !canUpload) return
+    try {
+      const blob = await new Promise((res) => canvas.toBlob(res, 'image/jpeg', 0.92))
+      if (!blob) throw new Error('Could not export image')
+      const path = profile.company_id + '/' + project.id + '/' + phase.id + '/' + Date.now() + '-markup.jpg'
+      const { error: upErr } = await supabase.storage.from('project-photos').upload(path, blob, { contentType: 'image/jpeg' })
+      if (upErr) throw upErr
+      const { data: pub } = supabase.storage.from('project-photos').getPublicUrl(path)
+      await supabase.from('photos').insert({
+        phase_id: phase.id,
+        project_id: project.id,
+        storage_path: path,
+        public_url: pub.publicUrl,
+        caption: (photo.caption ? photo.caption + ' ' : '') + '(markup)',
+        tag: photo.tag || 'markup',
+        media_type: 'image',
+        uploaded_by: profile.id,
+      })
+      setShowMarkup(false)
+      setLightboxIdx(null)
+      await logActivity?.('uploaded media', 'markup', project.id, phase.name)
+      onReload()
+    } catch (err) {
+      alert(err.message || 'Markup save failed')
+    }
+  }
+
   const deletePhoto = async (photo) => {
     if (!isAdmin) return
     if (!confirm('Delete this media?')) return
@@ -2766,7 +3032,15 @@ function PhaseDetail({ phase, project, isAdmin, canUpload, isCustomer, profile, 
 
   const deletePhase = async () => {
     if (!isAdmin) return
-    if (!confirm('Delete phase "' + phase.name + '" and all its photos?')) return
+    if (!confirm('Delete phase "' + phase.name + '" and all its photos and files? This cannot be undone.')) return
+    try {
+      const paths = []
+      ;(phase.photos || []).forEach((ph) => ph.storage_path && paths.push(ph.storage_path))
+      ;(phase.phase_files || []).forEach((f) => f.storage_path && paths.push(f.storage_path))
+      for (let i = 0; i < paths.length; i += 50) {
+        await supabase.storage.from('project-photos').remove(paths.slice(i, i + 50))
+      }
+    } catch (_) {}
     const { error } = await supabase.from('phases').delete().eq('id', phase.id)
     if (error) {
       alert(error.message)
@@ -3093,12 +3367,43 @@ function PhaseDetail({ phase, project, isAdmin, canUpload, isCustomer, profile, 
               >
                 <Share2 size={16} /> Share
               </button>
+              {canUpload && lb.media_type !== 'video' && (
+                <button type="button" onClick={openMarkup} className="text-sm bg-white/20 text-white px-4 py-2 rounded-full">
+                  Markup
+                </button>
+              )}
               {isAdmin && (
                 <button type="button" onClick={() => deletePhoto(lb)} className="text-[#ff8a80] text-sm underline px-2">
                   Delete
                 </button>
               )}
             </div>
+          </div>
+        </div>
+      )}
+
+      {showMarkup && (
+        <div className="fixed inset-0 z-[60] bg-black/95 flex flex-col">
+          <div className="flex justify-between items-center px-4 py-3 text-white" style={{ paddingTop: 'max(0.75rem, env(safe-area-inset-top))' }}>
+            <span className="text-sm">Draw on photo</span>
+            <button type="button" onClick={() => setShowMarkup(false)} className="p-2"><X size={22} /></button>
+          </div>
+          <div className="flex-1 overflow-auto flex items-center justify-center p-2">
+            <canvas
+              ref={markupCanvasRef}
+              className="max-w-full touch-none bg-black"
+              onMouseDown={(e) => markupPointer(e, 'down')}
+              onMouseMove={(e) => markupPointer(e, 'move')}
+              onMouseUp={(e) => markupPointer(e, 'up')}
+              onMouseLeave={(e) => markupPointer(e, 'up')}
+              onTouchStart={(e) => { e.preventDefault(); markupPointer(e, 'down') }}
+              onTouchMove={(e) => { e.preventDefault(); markupPointer(e, 'move') }}
+              onTouchEnd={(e) => markupPointer(e, 'up')}
+            />
+          </div>
+          <div className="p-4 flex gap-2" style={{ paddingBottom: 'max(0.75rem, env(safe-area-inset-bottom))' }}>
+            <button type="button" onClick={() => setShowMarkup(false)} className="flex-1 py-2 rounded border border-white text-white text-sm">Cancel</button>
+            <button type="button" onClick={saveMarkup} className="flex-1 py-2 rounded bg-white text-black text-sm">Save markup</button>
           </div>
         </div>
       )}
