@@ -81,6 +81,8 @@ function formatStyleLabel(style) {
 export default function Dashboard({ session, profile, company, onCompanyUpdate, onLogout }) {
   const [projects, setProjects] = useState([])
   const [loading, setLoading] = useState(true)
+  const [updateAvailable, setUpdateAvailable] = useState(false)
+  const [digest, setDigest] = useState([])
   const [activeId, setActiveId] = useState(null)
   const [showNew, setShowNew] = useState(false)
   const [showAdmin, setShowAdmin] = useState(false)
