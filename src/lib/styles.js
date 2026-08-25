@@ -3,35 +3,40 @@ export const STYLES = {
     label: 'New Build',
     phases: [
       'Excavation', 'Footings & Foundation', 'Framing', 'Plumbing', 'HVAC', 'Electrical',
-      'Insulation', 'Drywall', 'Mud', 'Tile', 'Flooring', 'Paint', 'Finishings',
+      'Insulation', 'Drywall', 'Mud', 'Tile', 'Flooring', 'Paint',
+      'Finishing — Electrical', 'Finishing — Plumbing', 'Finishing — HVAC',
     ],
   },
   addition: {
     label: 'Addition',
     phases: [
       'Excavation', 'Footings & Foundation', 'Framing', 'Plumbing', 'HVAC', 'Electrical',
-      'Insulation', 'Drywall', 'Mud', 'Tile', 'Flooring', 'Paint', 'Finishings',
+      'Insulation', 'Drywall', 'Mud', 'Tile', 'Flooring', 'Paint',
+      'Finishing — Electrical', 'Finishing — Plumbing', 'Finishing — HVAC',
     ],
   },
   remodel: {
     label: 'Remodel',
     phases: [
       'Demo', 'Framing', 'Plumbing', 'HVAC', 'Electrical', 'Insulation', 'Drywall',
-      'Mud', 'Tile', 'Flooring', 'Paint', 'Finishings',
+      'Mud', 'Tile', 'Flooring', 'Paint',
+      'Finishing — Electrical', 'Finishing — Plumbing', 'Finishing — HVAC',
     ],
   },
   kitchen: {
     label: 'Kitchen',
     phases: [
       'Demo', 'Plumbing Rough-in', 'Electrical Rough-in', 'Drywall', 'Cabinets',
-      'Countertops', 'Tile / Backsplash', 'Flooring', 'Paint', 'Appliances', 'Finishings',
+      'Countertops', 'Tile / Backsplash', 'Flooring', 'Paint', 'Appliances',
+      'Finishing — Electrical', 'Finishing — Plumbing', 'Finishing — HVAC',
     ],
   },
   bathroom: {
     label: 'Bathroom',
     phases: [
       'Demo', 'Plumbing Rough-in', 'Electrical Rough-in', 'Waterproofing', 'Tile',
-      'Vanity & Fixtures', 'Paint', 'Finishings',
+      'Vanity & Fixtures', 'Paint',
+      'Finishing — Electrical', 'Finishing — Plumbing', 'Finishing — HVAC',
     ],
   },
 }
@@ -64,4 +69,9 @@ export function fmtDate(d) {
   } catch {
     return d
   }
+}
+
+/** True if phase name is under the Finishing group */
+export function isFinishingPhase(name) {
+  return /^finishing/i.test(String(name || '').trim())
 }

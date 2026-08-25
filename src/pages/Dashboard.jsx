@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState, useRef } from 'react'
 import { HardHat, Plus, Image as ImageIcon, MapPin, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Camera, Trash2, Check, FileText, X, Video, Menu, Share2, Bell, Search, Copy, Archive, Printer } from 'lucide-react'
 import { supabase } from '../lib/supabase'
-import { STYLES, PROJECT_STATUS, PHASE_STATUS, nextPhaseStatus, fmtDate } from '../lib/styles'
+import { STYLES, PROJECT_STATUS, PHASE_STATUS, nextPhaseStatus, fmtDate, isFinishingPhase } from '../lib/styles'
 import AdminPanel from '../components/AdminPanel'
 
 const QUEUE_KEY = 'ay_upload_queue'
@@ -1456,6 +1456,12 @@ function ProjectDetail({ project, isAdmin, canUpload, isCustomer, profile, onBac
 
       <div className="space-y-2 mb-4">
         {phases.map((phase, i) => (
+          <div key={'wrap-' + phase.id}>
+          {isFinishingPhase(phase.name) && (i === 0 || !isFinishingPhase(phases[i - 1]?.name)) && (
+            <div className="text-[11px] font-mono uppercase text-[#6B6E72] pt-2 pb-1">
+              Finishing
+            </div>
+          )}
           <div
             key={phase.id}
 className={`bg-white border border-black rounded-md flex items-stretch overflow-hidden ${dragIdx === i ? 'opacity-60 scale-[0.98]' : ''} ${dragOverIdx === i && dragIdx !== null && dragIdx !== i ? 'ring-2 ring-black' : ''}`}
@@ -1534,6 +1540,7 @@ className={`bg-white border border-black rounded-md flex items-stretch overflow-
                 )}
               </div>
             )}
+          </div>
           </div>
         ))}
       </div>
@@ -1990,7 +1997,35 @@ function PhaseTasks({ phase, project, isAdmin, profile, onReload, logActivity })
   const [description, setDescription] = useState('')
   const [saving, setSaving] = useState(false)
   const [uploadingId, setUploadingId] = useState(null)
+  const [editingId, setEditingId] = useState(null)
+  const [editTitle, setEditTitle] = useState('')
+  const [editDescription, setEditDescription] = useState('')
+  const [editSaving, setEditSaving] = useState(false)
   const tasks = phase.tasks || []
+
+  const startEdit = (task) => {
+    if (!isAdmin) return
+    setEditingId(task.id)
+    setEditTitle(task.title || '')
+    setEditDescription(task.description || '')
+  }
+
+  const saveEdit = async (task) => {
+    if (!isAdmin || !editTitle.trim()) return
+    setEditSaving(true)
+    const { error } = await supabase.from('tasks').update({
+      title: editTitle.trim(),
+      description: editDescription.trim() || null,
+    }).eq('id', task.id)
+    setEditSaving(false)
+    if (error) {
+      alert(error.message)
+      return
+    }
+    setEditingId(null)
+    await logActivity?.('edited task', editTitle.trim(), project.id, phase.name)
+    onReload?.()
+  }
 
   const createTask = async (e) => {
     e.preventDefault()
@@ -2096,25 +2131,57 @@ function PhaseTasks({ phase, project, isAdmin, profile, onReload, logActivity })
           {tasks.map((task) => (
             <div key={task.id} className="border border-[#E5E5E5] rounded p-3">
               <div className="flex justify-between gap-2 items-start">
-                <div className="min-w-0">
-                  <div className="text-sm font-medium">{task.title}</div>
-                  <span
-                    className="text-[10px] font-mono uppercase px-1.5 py-0.5 rounded inline-block mt-1"
-                    style={{
-                      background: task.status === 'done' ? '#E1EDE4' : '#FFF8DB',
-                      color: task.status === 'done' ? '#3F7D58' : '#8A6D00',
-                    }}
-                  >
-                    {task.status}
-                  </span>
+                <div className="min-w-0 flex-1">
+                  {editingId === task.id ? (
+                    <div className="space-y-2">
+                      <input
+                        value={editTitle}
+                        onChange={(e) => setEditTitle(e.target.value)}
+                        className="w-full border border-black rounded px-2 py-1.5 text-sm"
+                      />
+                      <textarea
+                        value={editDescription}
+                        onChange={(e) => setEditDescription(e.target.value)}
+                        rows={2}
+                        className="w-full border border-black rounded px-2 py-1.5 text-sm"
+                        placeholder="Description"
+                      />
+                      <div className="flex gap-2">
+                        <button type="button" disabled={editSaving} className="text-xs text-white bg-black rounded px-3 py-1.5" onClick={() => saveEdit(task)}>
+                          {editSaving ? 'Saving…' : 'Save'}
+                        </button>
+                        <button type="button" className="text-xs border border-black rounded px-3 py-1.5" onClick={() => setEditingId(null)}>
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="text-sm font-medium">{task.title}</div>
+                      <span
+                        className="text-[10px] font-mono uppercase px-1.5 py-0.5 rounded inline-block mt-1"
+                        style={{
+                          background: task.status === 'done' ? '#E1EDE4' : '#FFF8DB',
+                          color: task.status === 'done' ? '#3F7D58' : '#8A6D00',
+                        }}
+                      >
+                        {task.status}
+                      </span>
+                    </>
+                  )}
                 </div>
-                {isAdmin && (
-                  <button type="button" className="text-[#B5533C] p-1" onClick={() => deleteTask(task)}>
-                    <Trash2 size={12} />
-                  </button>
+                {isAdmin && editingId !== task.id && (
+                  <div className="flex gap-1 flex-shrink-0">
+                    <button type="button" className="text-[#6B6E72] p-1 text-xs underline" onClick={() => startEdit(task)}>
+                      Edit
+                    </button>
+                    <button type="button" className="text-[#B5533C] p-1" onClick={() => deleteTask(task)}>
+                      <Trash2 size={12} />
+                    </button>
+                  </div>
                 )}
               </div>
-              {task.description && <p className="text-xs mt-2 whitespace-pre-wrap">{task.description}</p>}
+              {editingId !== task.id && task.description && <p className="text-xs mt-2 whitespace-pre-wrap">{task.description}</p>}
               {(task.task_photos || []).length > 0 && (
                 <div className="grid grid-cols-3 gap-2 mt-2">
                   {(task.task_photos || []).map((ph) => (
@@ -2467,10 +2534,25 @@ function PhaseDetail({ phase, project, isAdmin, canUpload, isCustomer, profile, 
 
   const onTouchStart = (e) => { touchX.current = e.touches[0].clientX }
   const onTouchEnd = (e) => {
-    if (touchX.current == null || lightboxIdx != null) return
+    if (touchX.current == null) return
     const dx = e.changedTouches[0].clientX - touchX.current
     touchX.current = null
+    // Swipe photos in lightbox
+    if (lightboxIdx != null) {
+      if (dx < -50 && lightboxIdx < photos.length - 1) setLightboxIdx((i) => i + 1)
+      else if (dx > 50 && lightboxIdx > 0) setLightboxIdx((i) => i - 1)
+      return
+    }
     if (dx > 90) onBack()
+  }
+
+  const lbTouchStart = (e) => { touchX.current = e.touches[0].clientX }
+  const lbTouchEnd = (e) => {
+    if (touchX.current == null || lightboxIdx == null) return
+    const dx = e.changedTouches[0].clientX - touchX.current
+    touchX.current = null
+    if (dx < -50 && lightboxIdx < photos.length - 1) setLightboxIdx((i) => Math.min(photos.length - 1, i + 1))
+    else if (dx > 50 && lightboxIdx > 0) setLightboxIdx((i) => Math.max(0, i - 1))
   }
 
   const uploadPhaseFile = async (e) => {
@@ -2513,7 +2595,11 @@ function PhaseDetail({ phase, project, isAdmin, canUpload, isCustomer, profile, 
 
   const saveNotes = async () => {
     if (!isAdmin) return
-    await supabase.from('phases').update({ admin_notes: adminNotes }).eq('id', phase.id)
+    const { error } = await supabase.from('phases').update({ admin_notes: adminNotes || null }).eq('id', phase.id)
+    if (error) {
+      alert(error.message || 'Could not save notes')
+      return
+    }
     onReload()
   }
 
@@ -2521,43 +2607,101 @@ function PhaseDetail({ phase, project, isAdmin, canUpload, isCustomer, profile, 
     const files = Array.from(e.target.files || [])
     e.target.value = ''
     if (!files.length || !canUpload) return
-    setUploading(true)
-    let ok = 0
-    try {
-      for (const file of files) {
-        if (!file.size) continue
-        const isVideo = (file.type || '').startsWith('video/')
-        const safeName = (file.name || (isVideo ? 'video.mp4' : 'photo.jpg')).replace(/[^a-zA-Z0-9._-]/g, '_')
-        const path = profile.company_id + '/' + project.id + '/' + phase.id + '/' + Date.now() + '-' + Math.random().toString(36).slice(2, 6) + '-' + safeName
+
+    // Queue files so uploads continue if you leave the phase
+    const queueItems = []
+    for (const file of files) {
+      if (!file.size) continue
+      const isVideo = (file.type || '').startsWith('video/')
+      const safeName = (file.name || (isVideo ? 'video.mp4' : 'photo.jpg')).replace(/[^a-zA-Z0-9._-]/g, '_')
+      const path = profile.company_id + '/' + project.id + '/' + phase.id + '/' + Date.now() + '-' + Math.random().toString(36).slice(2, 6) + '-' + safeName
+      try {
         const bytes = await file.arrayBuffer()
-        const { error: upErr } = await supabase.storage.from('project-photos').upload(path, bytes, {
-          upsert: false,
+        // base64 for offline queue persistence
+        let binary = ''
+        const bytesArr = new Uint8Array(bytes)
+        const chunk = 0x8000
+        for (let i = 0; i < bytesArr.length; i += chunk) {
+          binary += String.fromCharCode.apply(null, bytesArr.subarray(i, i + chunk))
+        }
+        const b64 = btoa(binary)
+        queueItems.push({
+          path,
+          b64,
           contentType: file.type || (isVideo ? 'video/mp4' : 'image/jpeg'),
-          cacheControl: '3600',
-        })
-        if (upErr) throw upErr
-        const { data: pub } = supabase.storage.from('project-photos').getPublicUrl(path)
-        const { error: insErr } = await supabase.from('photos').insert({
           phase_id: phase.id,
-          storage_path: path,
-          public_url: pub.publicUrl,
-          caption: caption.trim(),
-          uploaded_by: profile.id,
+          project_id: project.id,
+          caption: caption || null,
+          tag: photoTag || null,
           media_type: isVideo ? 'video' : 'image',
         })
-        if (insErr) throw insErr
-        ok++
+      } catch (err) {
+        console.error(err)
       }
-      if (ok) {
-        await logActivity('uploaded media', ok + ' file' + (ok > 1 ? 's' : ''), project.id, phase.name)
-        setCaption('')
-        onReload()
-      }
-    } catch (err) {
-      console.error(err)
-      alert(err.message || 'Upload failed')
     }
-    setUploading(false)
+    if (!queueItems.length) return
+
+    // Merge into global upload queue
+    try {
+      const raw = localStorage.getItem(QUEUE_KEY)
+      const existing = raw ? JSON.parse(raw) : []
+      localStorage.setItem(QUEUE_KEY, JSON.stringify([...(Array.isArray(existing) ? existing : []), ...queueItems]))
+    } catch (_) {}
+
+    setUploading(true)
+    setCaption('')
+    // Process in background — user can leave phase
+    ;(async () => {
+      let ok = 0
+      let left = []
+      try {
+        const raw = localStorage.getItem(QUEUE_KEY)
+        const q = raw ? JSON.parse(raw) : []
+        const mine = []
+        const others = []
+        for (const item of (Array.isArray(q) ? q : [])) {
+          if (queueItems.some((qi) => qi.path === item.path)) mine.push(item)
+          else others.push(item)
+        }
+        for (const item of mine) {
+          try {
+            const bin = Uint8Array.from(atob(item.b64), (c) => c.charCodeAt(0))
+            const { error: upErr } = await supabase.storage.from('project-photos').upload(item.path, bin, {
+              upsert: false,
+              contentType: item.contentType,
+              cacheControl: '3600',
+            })
+            if (upErr) { left.push(item); continue }
+            const { data: pub } = supabase.storage.from('project-photos').getPublicUrl(item.path)
+            const { error: insErr } = await supabase.from('photos').insert({
+              phase_id: item.phase_id,
+              project_id: item.project_id,
+              storage_path: item.path,
+              public_url: pub.publicUrl,
+              caption: item.caption || null,
+              tag: item.tag || null,
+              media_type: item.media_type || 'image',
+              uploaded_by: profile.id,
+            })
+            if (insErr) { left.push(item); continue }
+            ok++
+          } catch {
+            left.push(item)
+          }
+        }
+        localStorage.setItem(QUEUE_KEY, JSON.stringify([...others, ...left]))
+        if (ok) {
+          await logActivity('uploaded media', ok + ' file' + (ok > 1 ? 's' : ''), project.id, phase.name)
+          onReload()
+        }
+        if (left.length) {
+          // remaining will retry on online/flush
+        }
+      } catch (err) {
+        console.error(err)
+      }
+      setUploading(false)
+    })()
   }
 
   const deletePhoto = async (photo) => {
@@ -2742,11 +2886,19 @@ function PhaseDetail({ phase, project, isAdmin, canUpload, isCustomer, profile, 
             <textarea
               value={adminNotes}
               onChange={(e) => setAdminNotes(e.target.value)}
-              onBlur={saveNotes}
-              placeholder="Admin notes"
+              placeholder="Private notes — only admins see these"
               rows={3}
               className="w-full border border-black rounded px-3 py-2 text-sm"
             />
+            <button
+              type="button"
+              onClick={async () => {
+                await saveNotes()
+              }}
+              className="mt-2 text-xs border border-black rounded px-3 py-1.5"
+            >
+              Save notes
+            </button>
           </div>
         )}
         {isAdmin && (
@@ -2858,6 +3010,11 @@ function PhaseDetail({ phase, project, isAdmin, canUpload, isCustomer, profile, 
         </div>
       )}
 
+      {uploading && (
+        <div className="text-xs text-[#8A6D00] bg-[#FFF8DB] border border-[#E6B800] rounded px-3 py-2 mb-3">
+          Uploading in background — you can leave this phase
+        </div>
+      )}
       {photos.length === 0 ? (
         <div className="text-center py-10 text-[#6B6E72] text-sm">No media yet.</div>
       ) : (
@@ -2896,7 +3053,7 @@ function PhaseDetail({ phase, project, isAdmin, canUpload, isCustomer, profile, 
       )}
 
       {lb && (
-        <div className="fixed inset-0 z-50 bg-black/90 flex flex-col">
+        <div className="fixed inset-0 z-50 bg-black/90 flex flex-col" onTouchStart={lbTouchStart} onTouchEnd={lbTouchEnd}>
           <div className="flex items-center justify-between px-4 py-3 text-white" style={{ paddingTop: 'max(0.75rem, env(safe-area-inset-top))' }}>
             <span className="text-sm">{lightboxIdx + 1} / {photos.length}</span>
             <button type="button" onClick={() => setLightboxIdx(null)} className="p-2">
