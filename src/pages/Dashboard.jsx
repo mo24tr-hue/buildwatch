@@ -2173,7 +2173,7 @@ className={`bg-white border border-black rounded-md flex items-stretch overflow-
                     )}
                     {!isAdmin && !isCustomer && co.team_amount != null && co.team_amount !== '' && (
                       <div className="text-sm mt-2 font-medium">
-                        Your amount: ${Number(co.team_amount).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        Cost: ${Number(co.team_amount).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                       </div>
                     )}
                     {!isAdmin && !isCustomer && st === 'approved' && (
@@ -3045,7 +3045,7 @@ function ChangeOrderForm({ project, profile, isAdmin, isTeam = false, onDone, lo
       {(isAdmin || isTeam) && (
         <div>
           <label className="block text-[11px] font-mono uppercase text-[#6B6E72] mb-1">
-            {isAdmin ? 'Amount (required)' : 'Your amount (optional)'}
+            {isAdmin ? 'Amount (required)' : 'Cost'}
           </label>
           <div className="flex items-center gap-2">
             <span className="text-sm">$</span>
