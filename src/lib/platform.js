@@ -5,6 +5,7 @@ export const FEEDBACK_EMAIL = 'buildwatchfeedback@gmail.com'
 export const PLATFORM_ADMIN_EMAILS = [
   'buildwatchfeedback@gmail.com',
   'moshe@aybuilders.com',
+  'moshe@aabuilders.com',
 ]
 
 export function isPlatformAdmin(emailOrProfile) {
@@ -15,7 +16,12 @@ export function isPlatformAdmin(emailOrProfile) {
   )
     .trim()
     .toLowerCase()
-  if (!email) return false
+  if (!email) {
+    if (emailOrProfile && typeof emailOrProfile === 'object' && emailOrProfile.is_platform_admin) {
+      return true
+    }
+    return false
+  }
   if (PLATFORM_ADMIN_EMAILS.map((e) => e.toLowerCase()).includes(email)) return true
   if (emailOrProfile && typeof emailOrProfile === 'object' && emailOrProfile.is_platform_admin) {
     return true

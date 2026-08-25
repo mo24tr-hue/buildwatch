@@ -3,6 +3,9 @@ import { HardHat, Plus, Image as ImageIcon, MapPin, ChevronLeft, ChevronRight, C
 import { supabase } from '../lib/supabase'
 import { STYLES, PROJECT_STATUS, PHASE_STATUS, nextPhaseStatus, fmtDate, fmtDateTime, isFinishingPhase, FINISHING_PHASES, finishingLabel, roleLabel } from '../lib/styles'
 import AdminPanel from '../components/AdminPanel'
+import PlatformAdmin from '../components/PlatformAdmin'
+import FeedbackPanel from '../components/FeedbackPanel'
+import { isPlatformAdmin } from '../lib/platform'
 
 const QUEUE_KEY = 'ay_upload_queue'
 
@@ -115,6 +118,8 @@ export default function Dashboard({ session, profile, company, onCompanyUpdate, 
   const [showAdmin, setShowAdmin] = useState(false)
   const [showPassword, setShowPassword] = useState(false)
   const [showCalendar, setShowCalendar] = useState(false)
+  const [showPlatform, setShowPlatform] = useState(false)
+  const [showFeedback, setShowFeedback] = useState(false)
   const [showWeek, setShowWeek] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
   const [headerCompany, setHeaderCompany] = useState(company)
@@ -126,6 +131,7 @@ export default function Dashboard({ session, profile, company, onCompanyUpdate, 
 
   const isAdmin = profile?.role === 'admin'
   const isCustomer = profile?.role === 'customer'
+  const platformAdmin = isPlatformAdmin(profile)
   const canUpload = profile?.role === 'admin' || profile?.role === 'team'
 
   const refreshCompany = useCallback(async () => {
@@ -811,6 +817,42 @@ export default function Dashboard({ session, profile, company, onCompanyUpdate, 
                       This week
                     </button>
                   )}
+                  {platformAdmin && (
+                    <button
+                      type="button"
+                      className="w-full text-left px-3 py-2.5 text-sm hover:bg-[#F5F5F5]"
+                      onClick={() => {
+                        setMenuOpen(false)
+                        setShowPlatform(true)
+                        setShowFeedback(false)
+                        setShowAdmin(false)
+                        setShowPassword(false)
+                        setShowCalendar(false)
+                        setShowWeek(false)
+                        setActiveId(null)
+                        setShowNew(false)
+                      }}
+                    >
+                      Platform
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    className="w-full text-left px-3 py-2.5 text-sm hover:bg-[#F5F5F5]"
+                    onClick={() => {
+                      setMenuOpen(false)
+                      setShowFeedback(true)
+                      setShowPlatform(false)
+                      setShowAdmin(false)
+                      setShowPassword(false)
+                      setShowCalendar(false)
+                      setShowWeek(false)
+                      setActiveId(null)
+                      setShowNew(false)
+                    }}
+                  >
+                    Send feedback
+                  </button>
                   <button
                     type="button"
                     className="w-full text-left px-3 py-2.5 text-sm hover:bg-[#F5F5F5]"
@@ -820,6 +862,8 @@ export default function Dashboard({ session, profile, company, onCompanyUpdate, 
                       setShowAdmin(false)
                       setShowCalendar(false)
                       setShowWeek(false)
+                      setShowPlatform(false)
+                      setShowFeedback(false)
                       setActiveId(null)
                       setShowNew(false)
                     }}
@@ -940,6 +984,17 @@ export default function Dashboard({ session, profile, company, onCompanyUpdate, 
               </div>
             )}
           </SwipeBack>
+        ) : showPlatform && platformAdmin ? (
+          <PlatformAdmin
+            profile={profile}
+            onBack={() => setShowPlatform(false)}
+          />
+        ) : showFeedback ? (
+          <FeedbackPanel
+            profile={profile}
+            company={headerCompany || company}
+            onBack={() => setShowFeedback(false)}
+          />
         ) : showPassword ? (
           <ChangePasswordPanel
             email={profile?.email}

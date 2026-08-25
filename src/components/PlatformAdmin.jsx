@@ -112,62 +112,69 @@ export default function PlatformAdmin({ profile, session, onLogout }) {
   return (
     <div className="min-h-screen bg-white">
       <header
-        className="text-white px-4 pb-3 sticky top-0 z-50 bg-black"
+        className="text-white sticky top-0 z-50 bg-black"
         style={{ paddingTop: 'max(0.75rem, env(safe-area-inset-top))' }}
       >
-        <div className="max-w-2xl mx-auto flex items-center justify-between gap-3">
-          <div className="min-w-0">
-            <div className="font-display text-base tracking-wide">BuildWatch Platform</div>
-            <div className="text-[10px] text-white/50 truncate">{email}</div>
+        <div className="max-w-2xl mx-auto px-4">
+          <div className="flex items-center justify-between gap-3 pb-2">
+            <div className="min-w-0">
+              <div className="font-display text-base tracking-wide">BuildWatch Platform</div>
+              <div className="text-[10px] text-white/50 truncate">{email}</div>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={load}
+                className="p-2 border border-white/30 rounded hover:bg-white/10"
+                aria-label="Refresh"
+              >
+                <RefreshCw size={16} />
+              </button>
+              <button
+                type="button"
+                onClick={onLogout}
+                className="flex items-center gap-1.5 px-3 py-2 border border-white/30 rounded text-sm hover:bg-white/10"
+              >
+                <LogOut size={14} /> Log out
+              </button>
+            </div>
           </div>
-          <div className="flex items-center gap-2">
+          <nav className="flex border-t border-white/15" aria-label="Platform menu">
             <button
               type="button"
-              onClick={load}
-              className="p-2 border border-white/30 rounded hover:bg-white/10"
-              aria-label="Refresh"
+              onClick={() => setTab('companies')}
+              className={
+                'flex-1 py-3 text-sm font-medium border-b-2 transition-colors ' +
+                (tab === 'companies'
+                  ? 'border-[#E6B800] text-white'
+                  : 'border-transparent text-white/50 hover:text-white/80')
+              }
             >
-              <RefreshCw size={16} />
+              Companies
+              <span className="ml-1 text-white/40">({companies.length})</span>
             </button>
             <button
               type="button"
-              onClick={onLogout}
-              className="flex items-center gap-1.5 px-3 py-2 border border-white/30 rounded text-sm hover:bg-white/10"
+              onClick={() => setTab('feedback')}
+              className={
+                'flex-1 py-3 text-sm font-medium border-b-2 transition-colors ' +
+                (tab === 'feedback'
+                  ? 'border-[#E6B800] text-white'
+                  : 'border-transparent text-white/50 hover:text-white/80')
+              }
             >
-              <LogOut size={14} /> Log out
+              Feedback
+              {newCount > 0 && (
+                <span className="ml-1.5 inline-flex items-center justify-center min-w-[1.25rem] h-5 px-1 rounded-full bg-[#E6B800] text-black text-[10px] font-mono">
+                  {newCount}
+                </span>
+              )}
             </button>
-          </div>
+          </nav>
         </div>
       </header>
 
       <main className="max-w-2xl mx-auto px-4 py-5">
-        <p className="text-sm text-[#6B6E72] mb-4">
-          Overview only — companies and feedback. No project access.
-        </p>
-
-        <div className="flex gap-2 mb-4">
-          <button
-            type="button"
-            onClick={() => setTab('companies')}
-            className={
-              'flex-1 py-2.5 text-sm rounded border ' +
-              (tab === 'companies' ? 'bg-black text-white border-black' : 'border-black')
-            }
-          >
-            Companies ({companies.length})
-          </button>
-          <button
-            type="button"
-            onClick={() => setTab('feedback')}
-            className={
-              'flex-1 py-2.5 text-sm rounded border ' +
-              (tab === 'feedback' ? 'bg-black text-white border-black' : 'border-black')
-            }
-          >
-            Feedback{newCount ? ` (${newCount} new)` : ''}
-          </button>
-        </div>
-
         {error && (
           <div className="mb-4 text-sm text-[#B5533C] border border-[#B5533C] rounded p-3 bg-[#FDF2F0]">
             {error}

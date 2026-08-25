@@ -3,6 +3,8 @@ import { supabase } from './lib/supabase'
 import AuthScreen from './pages/AuthScreen'
 import SetupCompany from './pages/SetupCompany'
 import Dashboard from './pages/Dashboard'
+import PlatformAdmin from './components/PlatformAdmin'
+import { isPlatformAdmin } from './lib/platform'
 
 const PROFILE_CACHE_KEY = 'bw_profile_cache'
 
@@ -175,7 +177,11 @@ export default function App() {
     if (session?.user) return loadProfile(session.user.id, { soft: true })
   }
 
-  if (loading || (session && !profileReady && !profile?.company_id)) {
+  if (!session && !loading) {
+    return <AuthScreen />
+  }
+
+  if (loading || !session) {
     return (
       <div className="min-h-screen flex items-center justify-center text-sm text-[#6B6E72]">
         Loading…
@@ -183,8 +189,37 @@ export default function App() {
     )
   }
 
-  if (!session) {
-    return <AuthScreen />
+  const handleLogout = async () => {
+    clearCachedProfile()
+    await supabase.auth.signOut()
+    try {
+      if (navigator.clearAppBadge) await navigator.clearAppBadge()
+    } catch (_) {}
+  }
+
+  // Platform owner: ALWAYS this screen only — never company projects
+  // Check session email immediately (don't wait for profileReady)
+  const platformOwner =
+    isPlatformAdmin(session.user?.email) ||
+    isPlatformAdmin(profile) ||
+    !!profile?.is_platform_admin
+
+  if (platformOwner) {
+    return (
+      <PlatformAdmin
+        profile={profile}
+        session={session}
+        onLogout={handleLogout}
+      />
+    )
+  }
+
+  if (!profileReady && !profile?.company_id) {
+    return (
+      <div className="min-h-screen flex items-center justify-center text-sm text-[#6B6E72]">
+        Loading…
+      </div>
+    )
   }
 
   // Only show setup when we are sure profile has no company (not on a failed fetch)
@@ -213,13 +248,7 @@ export default function App() {
       profile={profile}
       company={company}
       onCompanyUpdate={refreshProfile}
-      onLogout={async () => {
-        clearCachedProfile()
-        await supabase.auth.signOut()
-        try {
-          if (navigator.clearAppBadge) await navigator.clearAppBadge()
-        } catch (_) {}
-      }}
+      onLogout={handleLogout}
     />
   )
 }
