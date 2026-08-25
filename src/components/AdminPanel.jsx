@@ -337,39 +337,7 @@ export default function AdminPanel({ profile, company, onBack, onCompanyUpdate, 
           {savingBrand ? 'Saving…' : 'Save branding'}
         </button>
       </div>
-
-      <div className="bg-white border border-black rounded-md p-4 mb-5 space-y-3">
-        <h3 className="text-[11px] font-mono uppercase text-[#6B6E72]">Schedule calendar</h3>
-        <input type="date" value={calDate} onChange={(e) => setCalDate(e.target.value)} className="w-full border border-black rounded px-3 py-2 text-sm" />
-        {calItems.length === 0 ? (
-          <p className="text-xs text-[#8A8D91]">Nothing scheduled for this day.</p>
-        ) : (
-          <div className="space-y-2">
-            {calItems.map((it, i) => (
-              <div key={i} className="text-sm border-b border-[#E5E5E5] pb-2">
-                <div className="font-medium">{it.label}</div>
-                <div className="text-xs text-[#6B6E72]">{it.detail}{it.status ? ' · ' + it.status : ''}</div>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-
-      {(digest || []).length > 0 && (
-        <div className="bg-white border border-black rounded-md p-4 mb-5">
-          <h3 className="text-[11px] font-mono uppercase text-[#6B6E72] mb-2">This week</h3>
-          <div className="space-y-2 max-h-56 overflow-auto">
-            {digest.slice(0, 20).map((d) => (
-              <div key={d.id} className="text-xs border-b border-[#E5E5E5] pb-1.5">
-                <div className="font-medium">{d.action}</div>
-                <div className="text-[#6B6E72]">{d.detail || d.user_name || d.user_email}</div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      <div className="bg-white border border-black rounded-md p-4 mb-5 space-y-3">
+<div className="bg-white border border-black rounded-md p-4 mb-5 space-y-3">
         <h3 className="text-[11px] font-mono uppercase text-[#6B6E72]">Send app link to customers</h3>
         <div className="text-xs bg-[#F5F5F5] border border-black rounded p-3 whitespace-pre-wrap">{message}</div>
         <button onClick={() => copyText(message, 'message')} className="w-full py-2.5 rounded text-sm text-white bg-black">

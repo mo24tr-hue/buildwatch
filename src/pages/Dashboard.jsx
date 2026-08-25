@@ -90,6 +90,8 @@ export default function Dashboard({ session, profile, company, onCompanyUpdate, 
   const [showNew, setShowNew] = useState(false)
   const [showAdmin, setShowAdmin] = useState(false)
   const [showPassword, setShowPassword] = useState(false)
+  const [showCalendar, setShowCalendar] = useState(false)
+  const [showWeek, setShowWeek] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
   const [headerCompany, setHeaderCompany] = useState(company)
   const [searchQ, setSearchQ] = useState('')
@@ -528,14 +530,9 @@ export default function Dashboard({ session, profile, company, onCompanyUpdate, 
 
 
   const createProject = async (form) => {
-    const basePhases = form.customPhases?.length
-      ? form.customPhases
-      : (STYLES[form.style] || STYLES.remodel).phases
-    // Permanent Finishing section phases (always added)
-    const phaseNames = [
-      ...basePhases.filter((n) => !isFinishingPhase(n)),
-      ...FINISHING_PHASES.map((n) => 'Finishing — ' + n),
-    ]
+    const phaseNames = form.customPhases?.length
+      ? form.customPhases.filter((n) => !isFinishingPhase(n))
+      : (STYLES[form.style] || STYLES.remodel).phases.filter((n) => !isFinishingPhase(n))
     const styleKey = form.customLabel || form.style || 'Remodel'
 
     // Optionally persist custom type for this company
@@ -697,11 +694,47 @@ export default function Dashboard({ session, profile, company, onCompanyUpdate, 
                         setMenuOpen(false)
                         setShowAdmin(true)
                         setShowPassword(false)
+                        setShowCalendar(false)
+                        setShowWeek(false)
                         setActiveId(null)
                         setShowNew(false)
                       }}
                     >
                       Users / Admin
+                    </button>
+                  )}
+                  {isAdmin && (
+                    <button
+                      type="button"
+                      className="w-full text-left px-3 py-2.5 text-sm hover:bg-[#F5F5F5]"
+                      onClick={() => {
+                        setMenuOpen(false)
+                        setShowCalendar(true)
+                        setShowWeek(false)
+                        setShowAdmin(false)
+                        setShowPassword(false)
+                        setActiveId(null)
+                        setShowNew(false)
+                      }}
+                    >
+                      Calendar
+                    </button>
+                  )}
+                  {isAdmin && (
+                    <button
+                      type="button"
+                      className="w-full text-left px-3 py-2.5 text-sm hover:bg-[#F5F5F5]"
+                      onClick={() => {
+                        setMenuOpen(false)
+                        setShowWeek(true)
+                        setShowCalendar(false)
+                        setShowAdmin(false)
+                        setShowPassword(false)
+                        setActiveId(null)
+                        setShowNew(false)
+                      }}
+                    >
+                      This week
                     </button>
                   )}
                   <button
@@ -711,6 +744,8 @@ export default function Dashboard({ session, profile, company, onCompanyUpdate, 
                       setMenuOpen(false)
                       setShowPassword(true)
                       setShowAdmin(false)
+                      setShowCalendar(false)
+                      setShowWeek(false)
                       setActiveId(null)
                       setShowNew(false)
                     }}
@@ -835,6 +870,25 @@ export default function Dashboard({ session, profile, company, onCompanyUpdate, 
           <ChangePasswordPanel
             email={profile?.email}
             onBack={() => setShowPassword(false)}
+          />
+        ) : showCalendar && isAdmin ? (
+          <AdminCalendarView
+            projects={projects}
+            onBack={() => setShowCalendar(false)}
+            onOpenProject={(id) => {
+              setShowCalendar(false)
+              setActiveId(id)
+            }}
+          />
+        ) : showWeek && isAdmin ? (
+          <ThisWeekView
+            digest={digest}
+            projects={projects}
+            onBack={() => setShowWeek(false)}
+            onOpenProject={(id) => {
+              setShowWeek(false)
+              setActiveId(id)
+            }}
           />
         ) : showAdmin && isAdmin ? (
           <AdminPanel
@@ -1103,6 +1157,188 @@ function ChangePasswordPanel({ email, onBack }) {
   )
 }
 
+
+function AdminCalendarView({ projects, onBack, onOpenProject }) {
+  const today = new Date()
+  const [year, setYear] = useState(today.getFullYear())
+  const [month, setMonth] = useState(today.getMonth()) // 0-11
+  const [selected, setSelected] = useState(today.toISOString().slice(0, 10))
+
+  const first = new Date(year, month, 1)
+  const startPad = first.getDay() // 0 Sun
+  const daysInMonth = new Date(year, month + 1, 0).getDate()
+  const cells = []
+  for (let i = 0; i < startPad; i++) cells.push(null)
+  for (let d = 1; d <= daysInMonth; d++) cells.push(d)
+
+  const iso = (d) => {
+    const mm = String(month + 1).padStart(2, '0')
+    const dd = String(d).padStart(2, '0')
+    return year + '-' + mm + '-' + dd
+  }
+
+  const marks = {}
+  ;(projects || []).forEach((pr) => {
+    const mark = (dateStr, info) => {
+      if (!dateStr) return
+      if (!marks[dateStr]) marks[dateStr] = []
+      marks[dateStr].push(info)
+    }
+    mark(pr.start_date, { projectId: pr.id, label: pr.address, detail: 'Project start', status: pr.status })
+    mark(pr.end_date, { projectId: pr.id, label: pr.address, detail: 'Project end', status: pr.status })
+    ;(pr.phases || []).forEach((ph) => {
+      mark(ph.start_date, { projectId: pr.id, label: pr.address + ' · ' + ph.name, detail: 'Phase start', status: ph.status })
+      mark(ph.end_date, { projectId: pr.id, label: pr.address + ' · ' + ph.name, detail: 'Phase end', status: ph.status })
+    })
+  })
+
+  // Ongoing on selected day
+  const dayItems = []
+  const day = selected
+  ;(projects || []).forEach((pr) => {
+    if (pr.start_date === day || pr.end_date === day) {
+      dayItems.push({
+        projectId: pr.id,
+        label: pr.address,
+        detail: pr.start_date === day && pr.end_date === day ? 'Start & end' : pr.start_date === day ? 'Project start' : 'Project end',
+        status: pr.status,
+      })
+    }
+    ;(pr.phases || []).forEach((ph) => {
+      if (ph.start_date === day || ph.end_date === day) {
+        dayItems.push({
+          projectId: pr.id,
+          label: pr.address + ' · ' + ph.name,
+          detail: ph.start_date === day && ph.end_date === day ? 'Start & end' : ph.start_date === day ? 'Phase start' : 'Phase target end',
+          status: ph.status,
+        })
+      }
+      if (ph.start_date && ph.end_date && ph.start_date < day && ph.end_date > day && ph.status === 'active') {
+        dayItems.push({
+          projectId: pr.id,
+          label: pr.address + ' · ' + ph.name,
+          detail: 'In progress',
+          status: ph.status,
+        })
+      }
+    })
+  })
+
+  const monthLabel = new Date(year, month, 1).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
+  const prev = () => {
+    if (month === 0) { setMonth(11); setYear((y) => y - 1) }
+    else setMonth((m) => m - 1)
+  }
+  const next = () => {
+    if (month === 11) { setMonth(0); setYear((y) => y + 1) }
+    else setMonth((m) => m + 1)
+  }
+
+  return (
+    <SwipeBack onBack={onBack}>
+      <button type="button" onClick={onBack} className="flex items-center gap-1 text-sm text-[#6B6E72] mb-4">
+        <ChevronLeft size={16} /> Back
+      </button>
+      <h2 className="font-display text-2xl mb-4">Calendar</h2>
+      <div className="bg-white border border-black rounded-md p-4 mb-4">
+        <div className="flex items-center justify-between mb-3">
+          <button type="button" onClick={prev} className="p-2 border border-black rounded"><ChevronLeft size={18} /></button>
+          <div className="font-display text-lg">{monthLabel}</div>
+          <button type="button" onClick={next} className="p-2 border border-black rounded"><ChevronRight size={18} /></button>
+        </div>
+        <div className="grid grid-cols-7 gap-1 text-center text-[10px] font-mono uppercase text-[#6B6E72] mb-1">
+          {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((d) => (
+            <div key={d}>{d}</div>
+          ))}
+        </div>
+        <div className="grid grid-cols-7 gap-1">
+          {cells.map((d, i) => {
+            if (d == null) return <div key={'e' + i} className="aspect-square" />
+            const dateStr = iso(d)
+            const has = (marks[dateStr] || []).length > 0
+            const isSel = selected === dateStr
+            const isToday = dateStr === today.toISOString().slice(0, 10)
+            return (
+              <button
+                key={dateStr}
+                type="button"
+                onClick={() => setSelected(dateStr)}
+                className={
+                  'aspect-square rounded text-sm relative border ' +
+                  (isSel ? 'bg-black text-white border-black' : isToday ? 'border-[#E6B800] bg-[#FFF8DB]' : 'border-transparent hover:border-black')
+                }
+              >
+                {d}
+                {has && !isSel && (
+                  <span className="absolute bottom-1 left-1/2 -translate-x-1/2 w-1 h-1 rounded-full bg-[#E6B800]" />
+                )}
+                {has && isSel && (
+                  <span className="absolute bottom-1 left-1/2 -translate-x-1/2 w-1 h-1 rounded-full bg-[#E6B800]" />
+                )}
+              </button>
+            )
+          })}
+        </div>
+      </div>
+      <div className="bg-white border border-black rounded-md p-4">
+        <h3 className="text-[11px] font-mono uppercase text-[#6B6E72] mb-2">
+          {fmtDate(selected)}
+        </h3>
+        {dayItems.length === 0 ? (
+          <p className="text-sm text-[#6B6E72]">Nothing scheduled.</p>
+        ) : (
+          <div className="space-y-2">
+            {dayItems.map((it, i) => (
+              <button
+                key={i}
+                type="button"
+                className="w-full text-left border border-[#E5E5E5] rounded p-3 hover:border-black"
+                onClick={() => it.projectId && onOpenProject?.(it.projectId)}
+              >
+                <div className="text-sm font-medium">{it.label}</div>
+                <div className="text-xs text-[#6B6E72]">{it.detail}{it.status ? ' · ' + it.status : ''}</div>
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+    </SwipeBack>
+  )
+}
+
+function ThisWeekView({ digest, projects, onBack, onOpenProject }) {
+  return (
+    <SwipeBack onBack={onBack}>
+      <button type="button" onClick={onBack} className="flex items-center gap-1 text-sm text-[#6B6E72] mb-4">
+        <ChevronLeft size={16} /> Back
+      </button>
+      <h2 className="font-display text-2xl mb-4">This week</h2>
+      {(digest || []).length === 0 ? (
+        <p className="text-sm text-[#6B6E72]">No activity in the last 7 days.</p>
+      ) : (
+        <div className="space-y-2">
+          {digest.map((d) => {
+            const proj = (projects || []).find((p) => p.id === d.project_id)
+            return (
+              <button
+                key={d.id}
+                type="button"
+                className="w-full text-left bg-white border border-black rounded-md p-3"
+                onClick={() => d.project_id && onOpenProject?.(d.project_id)}
+              >
+                <div className="text-sm font-medium">{titleCase(d.action)}</div>
+                {proj?.address && <div className="text-xs text-[#16324F] mt-0.5">{proj.address}</div>}
+                <div className="text-xs text-[#6B6E72] mt-0.5">{d.detail || d.user_name || d.user_email}</div>
+                <div className="text-[10px] font-mono text-[#8A8D91] mt-1">{fmtDateTime(d.created_at)}</div>
+              </button>
+            )
+          })}
+        </div>
+      )}
+    </SwipeBack>
+  )
+}
+
 function StatusBadge({ status, map }) {
   const s = map[status] || map.planning || Object.values(map)[0]
   return (
@@ -1275,6 +1511,7 @@ function ProjectDetail({ project, isAdmin, canUpload, isCustomer, profile, onBac
   const [showExport, setShowExport] = useState(false)
   const [selectedPhaseId, setSelectedPhaseId] = useState(null)
   const [newPhaseName, setNewPhaseName] = useState('')
+  const [newFinishingName, setNewFinishingName] = useState('')
   const [companyUsers, setCompanyUsers] = useState([])
   const [uploadingFile, setUploadingFile] = useState(false)
   const [editingProject, setEditingProject] = useState(false)
@@ -1360,10 +1597,13 @@ function ProjectDetail({ project, isAdmin, canUpload, isCustomer, profile, onBac
     onReload()
   }
 
-  const addPhase = async () => {
+  const addPhase = async (toFinishing = false) => {
     if (!isAdmin) return
-    const name = newPhaseName.trim()
-    if (!name) return
+    const raw = (toFinishing ? newFinishingName : newPhaseName).trim()
+    if (!raw) return
+    const name = toFinishing
+      ? (isFinishingPhase(raw) ? raw : ('Finishing — ' + raw))
+      : raw
     const maxOrder = phases.reduce((m, ph) => Math.max(m, ph.sort_order ?? 0), -1)
     const { error } = await supabase.from('phases').insert({
       project_id: project.id,
@@ -1376,7 +1616,8 @@ function ProjectDetail({ project, isAdmin, canUpload, isCustomer, profile, onBac
       alert(error.message)
       return
     }
-    setNewPhaseName('')
+    if (toFinishing) setNewFinishingName('')
+    else setNewPhaseName('')
     await logActivity('added phase', name, project.id, name)
     onReload()
   }
@@ -1586,13 +1827,10 @@ function ProjectDetail({ project, isAdmin, canUpload, isCustomer, profile, onBac
       </div>
 
       <div className="space-y-2 mb-4">
-        {phases.map((phase, i) => (
+        {phases.map((phase, i) => {
+          if (isFinishingPhase(phase.name)) return null
+          return (
           <div key={'wrap-' + phase.id}>
-          {isFinishingPhase(phase.name) && (i === 0 || !isFinishingPhase(phases[i - 1]?.name)) && (
-            <div className="text-[11px] font-mono uppercase text-[#6B6E72] pt-3 pb-1 border-t border-black mt-2">
-              Finishing
-            </div>
-          )}
           <div
             key={phase.id}
 className={`bg-white border border-black rounded-md flex items-stretch overflow-hidden ${dragIdx === i ? 'opacity-60 scale-[0.98]' : ''} ${dragOverIdx === i && dragIdx !== null && dragIdx !== i ? 'ring-2 ring-black' : ''}`}
@@ -1673,7 +1911,7 @@ className={`bg-white border border-black rounded-md flex items-stretch overflow-
             )}
           </div>
           </div>
-        ))}
+        )})}
       </div>
 
       {isAdmin && (
@@ -1681,14 +1919,84 @@ className={`bg-white border border-black rounded-md flex items-stretch overflow-
           <input
             value={newPhaseName}
             onChange={(e) => setNewPhaseName(e.target.value)}
-            placeholder="Add a custom phase"
+            placeholder="Add a phase"
             className="flex-1 border border-black rounded px-3 py-2 text-sm"
-            onKeyDown={(e) => { if (e.key === 'Enter') addPhase() }}
+            onKeyDown={(e) => { if (e.key === 'Enter') addPhase(false) }}
           />
           <button
             type="button"
-            onClick={addPhase}
+            onClick={() => addPhase(false)}
             disabled={!newPhaseName.trim()}
+            className="px-3 rounded bg-black text-white disabled:opacity-40"
+          >
+            <Plus size={16} />
+          </button>
+        </div>
+      )}
+
+      <div className="text-[11px] font-mono uppercase text-[#6B6E72] pt-2 pb-1 border-t border-black mt-1 mb-2">
+        Finishing
+      </div>
+      <div className="space-y-2 mb-2">
+        {phases.filter((ph) => isFinishingPhase(ph.name)).length === 0 && (
+          <p className="text-xs text-[#8A8D91]">No finishing phases yet. Add trades below.</p>
+        )}
+        {phases.map((phase, i) => {
+          if (!isFinishingPhase(phase.name)) return null
+          return (
+          <div key={'fin-' + phase.id}
+            className={`bg-white border border-black rounded-md flex items-stretch overflow-hidden`}
+          >
+            <div
+              className="w-9 flex items-center justify-center font-mono text-xs text-white flex-shrink-0"
+              style={{ background: (PHASE_STATUS[phase.status] || PHASE_STATUS.pending).color }}
+            >
+              {finishingLabel(phase.name).slice(0, 1)}
+            </div>
+            <button
+              type="button"
+              className="flex-1 text-left px-3 py-3 min-w-0"
+              onClick={() => setSelectedPhaseId(phase.id)}
+            >
+              <div className="text-sm font-medium truncate">{finishingLabel(phase.name)}</div>
+              <div className="text-[11px] text-[#8A8D91] mt-0.5">
+                {(phase.photos || []).length} photo{(phase.photos || []).length !== 1 ? 's' : ''}
+              </div>
+            </button>
+            {isAdmin ? (
+              <button type="button" onClick={() => cyclePhase(phase)} className="px-2 flex items-center border-l border-black/20" title="Cycle status">
+                {phase.status === 'done' ? (
+                  <Check size={16} className="text-[#3F7D58]" />
+                ) : (
+                  <div className="w-2.5 h-2.5 rounded-full" style={{ background: (PHASE_STATUS[phase.status] || PHASE_STATUS.pending).color }} />
+                )}
+              </button>
+            ) : (
+              <div className="px-2 flex items-center">
+                {phase.status === 'done' ? (
+                  <Check size={16} className="text-[#3F7D58]" />
+                ) : (
+                  <div className="w-2.5 h-2.5 rounded-full" style={{ background: (PHASE_STATUS[phase.status] || PHASE_STATUS.pending).color }} />
+                )}
+              </div>
+            )}
+          </div>
+          )
+        })}
+      </div>
+      {isAdmin && (
+        <div className="bg-white border border-dashed border-black rounded-md p-3 flex gap-2 mb-4">
+          <input
+            value={newFinishingName}
+            onChange={(e) => setNewFinishingName(e.target.value)}
+            placeholder="Add finishing phase (e.g. Electrical)"
+            className="flex-1 border border-black rounded px-3 py-2 text-sm"
+            onKeyDown={(e) => { if (e.key === 'Enter') addPhase(true) }}
+          />
+          <button
+            type="button"
+            onClick={() => addPhase(true)}
+            disabled={!newFinishingName.trim()}
             className="px-3 rounded bg-black text-white disabled:opacity-40"
           >
             <Plus size={16} />
