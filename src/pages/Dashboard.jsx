@@ -184,6 +184,34 @@ export default function Dashboard({ session, profile, company, onCompanyUpdate, 
         phases: (p.phases || []).slice().sort((a, b) => a.sort_order - b.sort_order),
         tasks: (p.tasks || []).slice().sort((a, b) => new Date(b.created_at) - new Date(a.created_at)),
       }))
+      // If nested photos(*) came back empty due to RLS nesting quirks, load photos in a second query
+      try {
+        const phaseIds = list.flatMap((p) => (p.phases || []).map((ph) => ph.id)).filter(Boolean)
+        const missing = list.some((p) => (p.phases || []).some((ph) => !Array.isArray(ph.photos)))
+        const allEmpty = list.every((p) => (p.phases || []).every((ph) => !(ph.photos && ph.photos.length)))
+        if (phaseIds.length && (missing || allEmpty)) {
+          const { data: photoRows } = await supabase
+            .from('photos')
+            .select('*')
+            .in('phase_id', phaseIds.slice(0, 200))
+          if (photoRows?.length) {
+            const byPhase = {}
+            photoRows.forEach((ph) => {
+              if (!byPhase[ph.phase_id]) byPhase[ph.phase_id] = []
+              byPhase[ph.phase_id].push(ph)
+            })
+            list = list.map((p) => ({
+              ...p,
+              phases: (p.phases || []).map((ph) => ({
+                ...ph,
+                photos: byPhase[ph.id] || ph.photos || [],
+              })),
+            }))
+          }
+        }
+      } catch (e) {
+        console.warn('photo fallback load', e)
+      }
       // Team: if a project has assigned trade members, only those trade members see it (admins see all)
       if (profile?.role === 'team') {
         list = list.filter((p) => {
