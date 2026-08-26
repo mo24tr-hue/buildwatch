@@ -2029,8 +2029,6 @@ function ProjectCostSection({ project, isAdmin, profile, onReload, logActivity }
   }
 
   const shareReceipt = async (r) => {
-    const title = (companyInfo?.name || 'BuildWatch') + ' payment receipt'
-    const text = receiptPlainText(r)
     let blob = null
     try {
       blob = await buildReceiptImage(r)
@@ -2041,14 +2039,11 @@ function ProjectCostSection({ project, isAdmin, profile, onReload, logActivity }
     try {
       if (blob && navigator.share && navigator.canShare) {
         const file = new File([blob], fileName, { type: 'image/png' })
+        // Image only — no accompanying text
         if (navigator.canShare({ files: [file] })) {
-          await navigator.share({ title, text, files: [file] })
+          await navigator.share({ files: [file] })
           return
         }
-      }
-      if (navigator.share) {
-        await navigator.share({ title, text })
-        return
       }
     } catch (err) {
       if (err && err.name === 'AbortError') return
@@ -2066,12 +2061,7 @@ function ProjectCostSection({ project, isAdmin, profile, onReload, logActivity }
       alert('Receipt image saved. Open it from Downloads/Files to share.')
       return
     }
-    try {
-      await navigator.clipboard.writeText(text)
-      alert('Receipt copied to clipboard.')
-    } catch {
-      alert(text)
-    }
+    alert('Could not create receipt image.')
   }
 
   if (receipt) {
