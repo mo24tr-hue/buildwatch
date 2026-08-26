@@ -9,7 +9,49 @@ import { isPlatformAdmin } from '../lib/platform'
 
 const QUEUE_KEY = 'ay_upload_queue'
 
+/** Compress images before upload so galleries stay fast (max edge 1600px, JPEG ~0.72). */
+async function compressImageFile(file, maxEdge = 1600, quality = 0.72) {
+  if (!file || !(file.type || '').startsWith('image/')) return file
+  if ((file.type || '').includes('svg')) return file
+  try {
+    const bitmap = await createImageBitmap(file)
+    const w = bitmap.width
+    const h = bitmap.height
+    const scale = Math.min(1, maxEdge / Math.max(w, h))
+    const tw = Math.max(1, Math.round(w * scale))
+    const th = Math.max(1, Math.round(h * scale))
+    // Skip if already small
+    if (scale >= 0.98 && file.size < 450000) {
+      bitmap.close?.()
+      return file
+    }
+    const canvas = document.createElement('canvas')
+    canvas.width = tw
+    canvas.height = th
+    const ctx = canvas.getContext('2d')
+    ctx.drawImage(bitmap, 0, 0, tw, th)
+    bitmap.close?.()
+    const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/jpeg', quality))
+    if (!blob || blob.size >= file.size * 0.95) return file
+    const name = (file.name || 'photo.jpg').replace(/\.[^.]+$/, '') + '.jpg'
+    return new File([blob], name, { type: 'image/jpeg', lastModified: Date.now() })
+  } catch {
+    return file
+  }
+}
 
+/** Prefer smaller display URL when Supabase image transforms are available; otherwise original. */
+function photoDisplayUrl(url, width = 900) {
+  if (!url || typeof url !== 'string') return url
+  if (url.startsWith('/acme/') || url.startsWith('data:')) return url
+  // Supabase Storage image transformation (works when enabled on the project)
+  if (url.includes('/storage/v1/object/public/')) {
+    const base = url.replace('/object/public/', '/render/image/public/')
+    const sep = base.includes('?') ? '&' : '?'
+    return `${base}${sep}width=${width}&quality=70&resize=contain`
+  }
+  return url
+}
 
 function SwipeBack({ onBack, children, className = '', disabled = false }) {
   const start = useRef(null)
@@ -1211,7 +1253,7 @@ export default function Dashboard({ session, profile, company, onCompanyUpdate, 
                     >
                       <div className="w-14 h-14 rounded bg-[#F5F5F5] flex items-center justify-center flex-shrink-0 overflow-hidden">
                         {thumb ? (
-                          <img src={thumb} alt="" className="w-full h-full object-cover" />
+                          <img src={photoDisplayUrl(thumb, 320)} alt="" loading="lazy" decoding="async" className="w-full h-full object-cover" />
                         ) : (
                           <ImageIcon size={20} className="text-[#C9C4B8]" />
                         )}
@@ -1611,12 +1653,14 @@ function NewProjectForm({ onCreate, onCancel, companyId, existingProjects = [] }
     if (!file || !companyId) return
     setUploadingCover(true)
     try {
-      const safeName = (file.name || 'cover.jpg').replace(/[^a-zA-Z0-9._-]/g, '_')
+      const compressed = await compressImageFile(file, 1600, 0.75)
+      const safeName = (compressed.name || file.name || 'cover.jpg').replace(/[^a-zA-Z0-9._-]/g, '_')
       const path = companyId + '/covers/' + Date.now() + '-' + safeName
-      const bytes = await file.arrayBuffer()
+      const bytes = await compressed.arrayBuffer()
       const { error: upErr } = await supabase.storage.from('project-photos').upload(path, bytes, {
         upsert: false,
-        contentType: file.type || 'image/jpeg',
+        contentType: compressed.type || 'image/jpeg',
+        cacheControl: '31536000',
       })
       if (upErr) throw upErr
       const { data: pub } = supabase.storage.from('project-photos').getPublicUrl(path)
@@ -2578,11 +2622,13 @@ function ProjectDetail({ project, isAdmin, canUpload, isCustomer, profile, onBac
     const file = e.target.files?.[0]
     e.target.value = ''
     if (!file || !profile?.company_id) return
-    const safeName = (file.name || 'cover.jpg').replace(/[^a-zA-Z0-9._-]/g, '_')
+    const compressed = await compressImageFile(file, 1600, 0.75)
+    const safeName = (compressed.name || file.name || 'cover.jpg').replace(/[^a-zA-Z0-9._-]/g, '_')
     const path = profile.company_id + '/' + project.id + '/covers/' + Date.now() + '-' + safeName
-    const bytes = await file.arrayBuffer()
+    const bytes = await compressed.arrayBuffer()
     const { error: upErr } = await supabase.storage.from('project-photos').upload(path, bytes, {
-      contentType: file.type || 'image/jpeg',
+      contentType: compressed.type || 'image/jpeg',
+      cacheControl: '31536000',
     })
     if (upErr) {
       alert(upErr.message)
@@ -2600,7 +2646,7 @@ function ProjectDetail({ project, isAdmin, canUpload, isCustomer, profile, onBac
 
       <div className="bg-white border border-black rounded-md overflow-hidden mb-4">
         {(editingProject ? editCover : project.cover_photo_url) && (
-          <img src={editingProject ? editCover : project.cover_photo_url} alt="" className="w-full h-44 object-cover" />
+          <img src={photoDisplayUrl(editingProject ? editCover : project.cover_photo_url, 800)} alt="" decoding="async" className="w-full h-44 object-cover" />
         )}
         <div className="p-5">
           {!editingProject ? (
@@ -3323,7 +3369,7 @@ className={`bg-white border border-black rounded-md flex items-stretch overflow-
               <div className="grid grid-cols-2 gap-2">
                 {phases.flatMap((ph) => (ph.photos || []).map((p) => ({ ...p, phaseName: ph.name }))).slice(0, 12).map((p) => (
                   <div key={p.id} className="border border-black/20 rounded overflow-hidden">
-                    <img src={p.url || p.dataUrl} alt="" className="w-full h-28 object-cover" />
+                    <img src={photoDisplayUrl(p.url || p.dataUrl, 480)} alt="" loading="lazy" decoding="async" className="w-full h-28 object-cover" />
                     <div className="text-[10px] p-1 text-[#6B6E72]">{p.phaseName}</div>
                   </div>
                 ))}
@@ -3563,11 +3609,13 @@ function PhaseTasks({ phase, project, isAdmin, profile, onReload, logActivity })
     if (!file) return
     setUploadingId(task.id)
     try {
-      const safeName = (file.name || 'photo.jpg').replace(/[^a-zA-Z0-9._-]/g, '_')
+      const compressed = await compressImageFile(file)
+      const safeName = (compressed.name || file.name || 'photo.jpg').replace(/[^a-zA-Z0-9._-]/g, '_')
       const path = profile.company_id + '/' + project.id + '/tasks/' + task.id + '/' + Date.now() + '-' + safeName
-      const bytes = await file.arrayBuffer()
+      const bytes = await compressed.arrayBuffer()
       const { error: upErr } = await supabase.storage.from('project-photos').upload(path, bytes, {
-        contentType: file.type || 'image/jpeg',
+        contentType: compressed.type || 'image/jpeg',
+        cacheControl: '31536000',
       })
       if (upErr) throw upErr
       const { data: pub } = supabase.storage.from('project-photos').getPublicUrl(path)
@@ -3653,7 +3701,7 @@ function PhaseTasks({ phase, project, isAdmin, profile, onReload, logActivity })
                 <div className="grid grid-cols-3 gap-2 mt-2">
                   {(task.task_photos || []).map((ph) => (
                     <a key={ph.id} href={ph.public_url} target="_blank" rel="noreferrer">
-                      <img src={ph.public_url} alt="" className="w-full h-20 object-cover rounded border border-black" />
+                      <img src={photoDisplayUrl(ph.public_url, 400)} alt="" loading="lazy" decoding="async" className="w-full h-20 object-cover rounded border border-black" />
                     </a>
                   ))}
                 </div>
@@ -4291,7 +4339,9 @@ function PhaseDetail({ phase, project, isAdmin, canUpload, isCustomer, profile, 
         continue
       }
       const isVideo = (file.type || '').startsWith('video/')
-      const safeName = (file.name || (isVideo ? 'video.mp4' : 'photo.jpg')).replace(/[^a-zA-Z0-9._-]/g, '_')
+      // Shrink phone photos so grids load quickly (videos left as-is)
+      const uploadFile = isVideo ? file : await compressImageFile(file)
+      const safeName = (uploadFile.name || file.name || (isVideo ? 'video.mp4' : 'photo.jpg')).replace(/[^a-zA-Z0-9._-]/g, '_')
       const path =
         String(profile.company_id) +
         '/' +
@@ -4304,23 +4354,23 @@ function PhaseDetail({ phase, project, isAdmin, canUpload, isCustomer, profile, 
         Math.random().toString(36).slice(2, 6) +
         '-' +
         safeName
-      const contentType = file.type || (isVideo ? 'video/mp4' : 'image/jpeg')
+      const contentType = uploadFile.type || file.type || (isVideo ? 'video/mp4' : 'image/jpeg')
       try {
         let upErr = null
         // Prefer raw bytes — more reliable on iOS / HEIC / large files than File object quirks
         try {
-          const bytes = await file.arrayBuffer()
+          const bytes = await uploadFile.arrayBuffer()
           const res = await supabase.storage.from('project-photos').upload(path, bytes, {
             upsert: true,
             contentType,
-            cacheControl: '3600',
+            cacheControl: '31536000',
           })
           upErr = res.error
         } catch (inner) {
-          const res2 = await supabase.storage.from('project-photos').upload(path, file, {
+          const res2 = await supabase.storage.from('project-photos').upload(path, uploadFile, {
             upsert: true,
             contentType,
-            cacheControl: '3600',
+            cacheControl: '31536000',
           })
           upErr = res2.error || inner
         }
@@ -4760,7 +4810,7 @@ function PhaseDetail({ phase, project, isAdmin, canUpload, isCustomer, profile, 
                     <Video size={28} />
                   </div>
                 ) : (
-                  <img src={p.public_url} alt="" className="w-full h-32 object-cover" />
+                  <img src={photoDisplayUrl(p.public_url, 480)} alt="" loading="lazy" decoding="async" className="w-full h-32 object-cover" />
                 )}
               </button>
               <div className="p-2">
@@ -4810,7 +4860,7 @@ function PhaseDetail({ phase, project, isAdmin, canUpload, isCustomer, profile, 
             {lb.media_type === 'video' ? (
               <video src={lb.public_url} controls className="max-h-full max-w-full" playsInline />
             ) : (
-              <img src={lb.public_url} alt="" className="max-h-full max-w-full object-contain" />
+              <img src={photoDisplayUrl(lb.public_url, 1400)} alt="" decoding="async" className="max-h-full max-w-full object-contain" />
             )}
             <button
               type="button"
