@@ -630,6 +630,10 @@ export default function Dashboard({ session, profile, company, onCompanyUpdate, 
 
     let coverUrl = form.coverPhotoUrl || null
 
+    const baseCost =
+      form.baseCost != null && form.baseCost !== ''
+        ? Number(form.baseCost)
+        : null
     const { data: project, error } = await supabase
       .from('projects')
       .insert({
@@ -641,6 +645,8 @@ export default function Dashboard({ session, profile, company, onCompanyUpdate, 
         end_date: form.endDate || null,
         cover_photo_url: coverUrl,
         created_by: profile.id,
+        base_cost: baseCost != null && !Number.isNaN(baseCost) ? baseCost : null,
+        amount_paid: 0,
       })
       .select()
       .single()
@@ -1523,6 +1529,7 @@ function NewProjectForm({ onCreate, onCancel, companyId, existingProjects = [] }
   const [coverUrl, setCoverUrl] = useState(null)
   const [uploadingCover, setUploadingCover] = useState(false)
   const [templateId, setTemplateId] = useState('')
+  const [baseCost, setBaseCost] = useState('')
 
   const uploadCover = async (e) => {
     const file = e.target.files?.[0]
@@ -1568,10 +1575,11 @@ function NewProjectForm({ onCreate, onCancel, companyId, existingProjects = [] }
         customLabel: lab,
         customPhases: phases,
         coverPhotoUrl: coverUrl,
+        baseCost,
       })
       return
     }
-    onCreate({ address: address.trim(), style, startDate, endDate, coverPhotoUrl: coverUrl })
+    onCreate({ address: address.trim(), style, startDate, endDate, coverPhotoUrl: coverUrl, baseCost })
   }
 
   return (
@@ -1654,6 +1662,21 @@ function NewProjectForm({ onCreate, onCancel, companyId, existingProjects = [] }
             <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} className="w-full max-w-full min-w-0 box-border border border-black rounded px-2 py-2 text-sm" />
           </div>
         </div>
+        <div>
+          <label className="block text-[11px] font-mono uppercase text-[#6B6E72] mb-1">Cost of construction (optional)</label>
+          <div className="flex items-center gap-2">
+            <span className="text-sm text-[#6B6E72]">$</span>
+            <input
+              type="number"
+              min="0"
+              step="0.01"
+              value={baseCost}
+              onChange={(e) => setBaseCost(e.target.value)}
+              className="w-full border border-black rounded px-3 py-2 text-sm"
+              placeholder="0.00"
+            />
+          </div>
+        </div>
         {formError && <p className="text-xs text-[#B5533C]">{formError}</p>}
         <div className="flex gap-2 pt-2">
           <button type="button" onClick={onCancel} className="flex-1 py-2 rounded text-sm border border-black">Cancel</button>
@@ -1666,6 +1689,169 @@ function NewProjectForm({ onCreate, onCancel, companyId, existingProjects = [] }
   )
 }
 
+
+function money(n) {
+  if (n == null || Number.isNaN(Number(n))) return '—'
+  return '$' + Number(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+}
+
+/** Contractor + customer only. Total = base_cost + approved change orders. */
+function ProjectCostSection({ project, isAdmin, profile, onReload, logActivity }) {
+  const [editing, setEditing] = useState(false)
+  const [baseInput, setBaseInput] = useState(
+    project.base_cost != null ? String(project.base_cost) : ''
+  )
+  const [paidInput, setPaidInput] = useState(
+    project.amount_paid != null ? String(project.amount_paid) : '0'
+  )
+  const [saving, setSaving] = useState(false)
+
+  useEffect(() => {
+    setBaseInput(project.base_cost != null ? String(project.base_cost) : '')
+    setPaidInput(project.amount_paid != null ? String(project.amount_paid) : '0')
+  }, [project.id, project.base_cost, project.amount_paid])
+
+  const approvedCos = (project.change_orders || []).filter(
+    (c) => (c.status || '') === 'approved' && c.amount != null
+  )
+  const changeOrderTotal = approvedCos.reduce((s, c) => s + (Number(c.amount) || 0), 0)
+  const base = project.base_cost != null ? Number(project.base_cost) : null
+  const total =
+    base != null || changeOrderTotal
+      ? (base || 0) + changeOrderTotal
+      : null
+  const paid = Number(project.amount_paid) || 0
+  const remaining = total != null ? total - paid : null
+
+  const save = async () => {
+    setSaving(true)
+    const baseVal = baseInput === '' ? null : Number(baseInput)
+    const paidVal = paidInput === '' ? 0 : Number(paidInput)
+    if (baseVal != null && (Number.isNaN(baseVal) || baseVal < 0)) {
+      alert('Enter a valid construction cost.')
+      setSaving(false)
+      return
+    }
+    if (Number.isNaN(paidVal) || paidVal < 0) {
+      alert('Enter a valid amount paid.')
+      setSaving(false)
+      return
+    }
+    const { error } = await supabase
+      .from('projects')
+      .update({
+        base_cost: baseVal,
+        amount_paid: paidVal,
+      })
+      .eq('id', project.id)
+    setSaving(false)
+    if (error) {
+      alert(error.message)
+      return
+    }
+    await logActivity?.('updated project cost', project.address)
+    setEditing(false)
+    onReload()
+  }
+
+  return (
+    <div className="bg-white border border-black rounded-md p-4 mb-4">
+      <div className="flex items-center justify-between gap-2 mb-3">
+        <h3 className="text-[11px] font-mono uppercase text-[#6B6E72]">Cost of construction</h3>
+        {isAdmin && !editing && (
+          <button type="button" onClick={() => setEditing(true)} className="text-xs underline text-[#6B6E72]">
+            Update
+          </button>
+        )}
+      </div>
+
+      {!editing ? (
+        <div className="space-y-2 text-sm">
+          <div className="flex justify-between gap-3">
+            <span className="text-[#6B6E72]">Original contract</span>
+            <span className="font-medium tabular-nums">{money(base)}</span>
+          </div>
+          <div className="flex justify-between gap-3">
+            <span className="text-[#6B6E72]">
+              Approved change orders{approvedCos.length ? ` (${approvedCos.length})` : ''}
+            </span>
+            <span className="font-medium tabular-nums">
+              {changeOrderTotal ? '+' + money(changeOrderTotal) : money(0)}
+            </span>
+          </div>
+          <div className="flex justify-between gap-3 border-t border-black/10 pt-2">
+            <span className="font-medium">Total</span>
+            <span className="font-semibold tabular-nums">{money(total)}</span>
+          </div>
+          <div className="flex justify-between gap-3">
+            <span className="text-[#6B6E72]">Paid</span>
+            <span className="font-medium tabular-nums text-[#3F7D58]">{money(paid)}</span>
+          </div>
+          <div className="flex justify-between gap-3">
+            <span className="text-[#6B6E72]">Remaining</span>
+            <span
+              className={
+                'font-semibold tabular-nums ' +
+                (remaining != null && remaining > 0 ? 'text-[#B5533C]' : 'text-[#3F7D58]')
+              }
+            >
+              {money(remaining)}
+            </span>
+          </div>
+          {base == null && !changeOrderTotal && (
+            <p className="text-xs text-[#6B6E72] pt-1">
+              {isAdmin ? 'Set the original contract amount to track costs.' : 'No cost set yet.'}
+            </p>
+          )}
+        </div>
+      ) : (
+        <div className="space-y-3">
+          <div>
+            <label className="block text-[11px] font-mono uppercase text-[#6B6E72] mb-1">Original contract</label>
+            <div className="flex items-center gap-2">
+              <span className="text-sm">$</span>
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                value={baseInput}
+                onChange={(e) => setBaseInput(e.target.value)}
+                className="w-full border border-black rounded px-3 py-2 text-sm"
+                placeholder="0.00"
+              />
+            </div>
+          </div>
+          <div>
+            <label className="block text-[11px] font-mono uppercase text-[#6B6E72] mb-1">Amount paid</label>
+            <div className="flex items-center gap-2">
+              <span className="text-sm">$</span>
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                value={paidInput}
+                onChange={(e) => setPaidInput(e.target.value)}
+                className="w-full border border-black rounded px-3 py-2 text-sm"
+                placeholder="0.00"
+              />
+            </div>
+          </div>
+          <p className="text-xs text-[#6B6E72]">
+            Approved change orders ({money(changeOrderTotal)}) are added to the total automatically when the customer accepts.
+          </p>
+          <div className="flex gap-2">
+            <button type="button" onClick={() => setEditing(false)} className="flex-1 py-2 border border-black rounded text-sm">
+              Cancel
+            </button>
+            <button type="button" disabled={saving} onClick={save} className="flex-1 py-2 bg-black text-white rounded text-sm disabled:opacity-50">
+              {saving ? 'Saving…' : 'Save'}
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
 
 function ProjectDetail({ project, isAdmin, canUpload, isCustomer, profile, onBack, onReload, onDelete, logActivity }) {
   const [showExport, setShowExport] = useState(false)
@@ -1988,6 +2174,16 @@ function ProjectDetail({ project, isAdmin, canUpload, isCustomer, profile, onBac
 
         </div>
       </div>
+
+      {(isAdmin || isCustomer) && (
+        <ProjectCostSection
+          project={project}
+          isAdmin={isAdmin}
+          profile={profile}
+          onReload={onReload}
+          logActivity={logActivity}
+        />
+      )}
 
       <div className="space-y-2 mb-4">
         {phases.map((phase, i) => {
