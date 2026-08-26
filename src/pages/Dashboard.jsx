@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState, useRef } from 'react'
-import { HardHat, Plus, Image as ImageIcon, MapPin, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Camera, Trash2, Check, FileText, X, Video, Menu, Share2, Bell, Search, Copy, Archive, Printer, CalendarDays, Users, FolderOpen, DollarSign, Activity, CircleDot, Clock } from 'lucide-react'
+import { HardHat, Plus, Image as ImageIcon, MapPin, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Camera, Trash2, Check, FileText, X, Video, Menu, Share2, Bell, Search, Copy, Archive, Printer, CalendarDays, Users, FolderOpen, DollarSign, Activity, CircleDot, Clock, ListChecks } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { STYLES, PROJECT_STATUS, PHASE_STATUS, nextPhaseStatus, fmtDate, fmtDateTime, isFinishingPhase, FINISHING_PHASES, finishingLabel, roleLabel } from '../lib/styles'
 import AdminPanel from '../components/AdminPanel'
@@ -3279,9 +3279,10 @@ function ProjectDetail({ project, isAdmin, canUpload, isCustomer, profile, onBac
       patch.end_date = today
       if (!phase.start_date) patch.start_date = today
     }
-    // Cycling back to pending clears completion date only
+    // Back to pending (undo) — clear start and end dates
     if (next === 'pending') {
-      // leave dates as historical record
+      patch.start_date = null
+      patch.end_date = null
     }
     await supabase.from('phases').update(patch).eq('id', phase.id)
     await logActivity('updated phase status', phase.name + ' → ' + next, project.id, phase.name)
@@ -4775,6 +4776,7 @@ function PhaseDetail({ phase, project, isAdmin, canUpload, isCustomer, profile, 
   const [lightboxIdx, setLightboxIdx] = useState(null)
   const [uploadingPhaseFile, setUploadingPhaseFile] = useState(false)
   const [showMarkup, setShowMarkup] = useState(false)
+  const [phasePage, setPhasePage] = useState(null)
   const markupCanvasRef = useRef(null)
   const markupDrawing = useRef(false)
   const touchX = useRef(null)
@@ -4796,6 +4798,24 @@ function PhaseDetail({ phase, project, isAdmin, canUpload, isCustomer, profile, 
       start_date: phaseStart || null,
       end_date: phaseEnd || null,
     }).eq('id', phase.id)
+    onReload()
+  }
+
+  const setPhaseStatus = async (next) => {
+    if (!isAdmin) return
+    const today = new Date().toISOString().slice(0, 10)
+    const patch = { status: next }
+    if (next === 'active') {
+      if (!phase.start_date) patch.start_date = today
+    } else if (next === 'done') {
+      patch.end_date = today
+      if (!phase.start_date) patch.start_date = today
+    } else if (next === 'pending') {
+      patch.start_date = null
+      patch.end_date = null
+    }
+    await supabase.from('phases').update(patch).eq('id', phase.id)
+    await logActivity?.('updated phase status', phase.name + ' → ' + next, project.id, phase.name)
     onReload()
   }
 
@@ -5163,6 +5183,159 @@ function PhaseDetail({ phase, project, isAdmin, canUpload, isCustomer, profile, 
   }
 
   const lb = lightboxIdx != null ? photos[lightboxIdx] : null
+  const phaseCos = (project.change_orders || []).filter((c) => c.phase_id === phase.id)
+  const punchCount = (() => {
+    try {
+      const raw = phase.admin_notes
+      if (!raw) return 0
+      const parsed = JSON.parse(raw)
+      return Array.isArray(parsed) ? parsed.length : 0
+    } catch {
+      return 0
+    }
+  })()
+  const taskCount = (phase.tasks || []).length
+  const phaseBack = (
+    <button type="button" onClick={() => setPhasePage(null)} className="flex items-center gap-1 text-sm text-[#6B6E72] mb-4">
+      <ChevronLeft size={16} /> {phase.name}
+    </button>
+  )
+
+  if (phasePage === 'status' && isAdmin) {
+    return (
+      <SwipeBack onBack={() => setPhasePage(null)}>
+        {phaseBack}
+        <h2 className="font-display text-2xl mb-4">Phase status</h2>
+        <div className="bg-white border border-black rounded-md p-4">
+          <div className="flex gap-2 flex-wrap">
+            {Object.entries(PHASE_STATUS).map(([key, s]) => (
+              <button
+                key={key}
+                type="button"
+                onClick={() => setPhaseStatus(key)}
+                className="text-[11px] font-mono uppercase tracking-wide px-2 py-1 rounded-sm border-2"
+                style={{
+                  color: phase.status === key ? '#fff' : s.color,
+                  background: phase.status === key ? s.color : s.bg,
+                  borderColor: s.color,
+                }}
+              >
+                {s.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      </SwipeBack>
+    )
+  }
+
+  if (phasePage === 'files' && showPhaseFiles) {
+    return (
+      <SwipeBack onBack={() => setPhasePage(null)}>
+        {phaseBack}
+        <h2 className="font-display text-2xl mb-4">Plans & files</h2>
+        <div className="bg-white border border-black rounded-md p-4">
+          {phaseFiles.length > 0 && (
+            <div className="space-y-2 mb-3">
+              {phaseFiles.map((f) => (
+                <div key={f.id} className="flex items-center justify-between gap-2 text-sm border-b border-[#E5E5E5] py-1.5">
+                  <a href={f.public_url} target="_blank" rel="noreferrer" className="flex items-center gap-1.5 min-w-0 truncate underline">
+                    <FileText size={14} /> <span className="truncate">{f.file_name || 'File'}</span>
+                  </a>
+                  {isAdmin && (
+                    <button
+                      type="button"
+                      className="text-[#B5533C] flex-shrink-0"
+                      onClick={async () => {
+                        if (!confirm('Delete this file?')) return
+                        if (f.storage_path) await supabase.storage.from('project-photos').remove([f.storage_path])
+                        await supabase.from('phase_files').delete().eq('id', f.id)
+                        onReload()
+                      }}
+                    >
+                      <Trash2 size={12} />
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+          {phaseFiles.length === 0 && <p className="text-sm text-[#6B6E72] mb-3">No files on this phase yet.</p>}
+          <label className="w-full flex items-center justify-center gap-1.5 text-sm border border-black rounded px-3 py-2 cursor-pointer">
+            {uploadingPhaseFile ? 'Uploading…' : 'Upload plan / file'}
+            <input type="file" className="hidden" disabled={uploadingPhaseFile} onChange={uploadPhaseFile} />
+          </label>
+        </div>
+      </SwipeBack>
+    )
+  }
+
+  if (phasePage === 'tasks' && (isAdmin || canUpload) && !isCustomer) {
+    return (
+      <SwipeBack onBack={() => setPhasePage(null)}>
+        {phaseBack}
+        <h2 className="font-display text-2xl mb-4">Tasks</h2>
+        <PhaseTasks
+          phase={phase}
+          project={project}
+          isAdmin={isAdmin}
+          profile={profile}
+          onReload={onReload}
+          logActivity={logActivity}
+        />
+      </SwipeBack>
+    )
+  }
+
+  if (phasePage === 'changes') {
+    return (
+      <SwipeBack onBack={() => setPhasePage(null)}>
+        {phaseBack}
+        <h2 className="font-display text-2xl mb-4">Change orders</h2>
+        <div className="bg-white border border-black rounded-md p-4 mb-4">
+          <ChangeOrderForm
+            project={project}
+            profile={profile}
+            isAdmin={isAdmin}
+            isTeam={!isAdmin && !isCustomer}
+            defaultPhaseId={phase.id}
+            onDone={onReload}
+            logActivity={logActivity}
+          />
+        </div>
+        {phaseCos.length > 0 && (
+          <div className="space-y-2">
+            {phaseCos.map((co) => (
+              <div key={co.id} className="bg-white border border-black rounded-md p-3">
+                <div className="text-sm font-medium">{co.title}</div>
+                <div className="text-xs text-[#6B6E72] mt-0.5">
+                  {(co.status || 'pending')}
+                  {co.amount != null && isAdmin ? ` · $${Number(co.amount).toLocaleString()}` : ''}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </SwipeBack>
+    )
+  }
+
+  if (phasePage === 'punch' && isAdmin) {
+    return (
+      <SwipeBack onBack={() => setPhasePage(null)}>
+        {phaseBack}
+        <h2 className="font-display text-2xl mb-4">Punch list</h2>
+        <div className="bg-white border border-black rounded-md p-4">
+          <AdminPunchList
+            phase={phase}
+            value={adminNotes}
+            onChange={setAdminNotes}
+            onSave={saveNotes}
+          />
+        </div>
+      </SwipeBack>
+    )
+  }
 
   return (
     <SwipeBack onBack={onBack} disabled={lightboxIdx != null || showMarkup}>
@@ -5192,8 +5365,33 @@ function PhaseDetail({ phase, project, isAdmin, canUpload, isCustomer, profile, 
               <h2 className="font-display text-xl">{phase.name}</h2>
             )}
           </div>
-          <StatusBadge status={phase.status} map={PHASE_STATUS} />
+          {isAdmin ? (
+            <button type="button" onClick={() => setPhasePage('status')}>
+              <StatusBadge status={phase.status} map={PHASE_STATUS} />
+            </button>
+          ) : (
+            <StatusBadge status={phase.status} map={PHASE_STATUS} />
+          )}
         </div>
+        {isAdmin && (
+          <div className="flex gap-2 flex-wrap mb-3">
+            {Object.entries(PHASE_STATUS).map(([key, s]) => (
+              <button
+                key={key}
+                type="button"
+                onClick={() => setPhaseStatus(key)}
+                className="text-[11px] font-mono uppercase tracking-wide px-2 py-1 rounded-sm border-2"
+                style={{
+                  color: phase.status === key ? '#fff' : s.color,
+                  background: phase.status === key ? s.color : s.bg,
+                  borderColor: s.color,
+                }}
+              >
+                {s.label}
+              </button>
+            ))}
+          </div>
+        )}
         {!isCustomer && (
           <div className="mb-3">
             <label className="block text-[11px] font-mono uppercase text-[#6B6E72] mb-1">Trade</label>
@@ -5266,82 +5464,24 @@ function PhaseDetail({ phase, project, isAdmin, canUpload, isCustomer, profile, 
           </div>
         )}
         {isAdmin && (
-          <AdminPunchList
-            phase={phase}
-            value={adminNotes}
-            onChange={setAdminNotes}
-            onSave={saveNotes}
-          />
-        )}
-        {isAdmin && (
           <button type="button" onClick={deletePhase} className="mt-3 text-xs text-[#B5533C] flex items-center gap-1">
             <Trash2 size={13} /> Delete this phase
           </button>
         )}
       </div>
 
-      {(isAdmin || isCustomer || (!isAdmin && !isCustomer)) && (
-        <div className="bg-white border border-black rounded-md p-4 mb-4">
-          <h3 className="text-[11px] font-mono uppercase text-[#6B6E72] mb-1">
-            {isAdmin ? 'Change order for this phase' : (!isAdmin && !isCustomer) ? 'Request change order (to contractor)' : 'Request change for this phase'}
-          </h3>
-          <ChangeOrderForm
-            project={project}
-            profile={profile}
-            isAdmin={isAdmin}
-            isTeam={!isAdmin && !isCustomer}
-            defaultPhaseId={phase.id}
-            onDone={onReload}
-            logActivity={logActivity}
-          />
-        </div>
-      )}
-
-      {(isAdmin || canUpload) && !isCustomer && (
-        <PhaseTasks
-          phase={phase}
-          project={project}
-          isAdmin={isAdmin}
-          profile={profile}
-          onReload={onReload}
-          logActivity={logActivity}
-        />
-      )}
-
-      {showPhaseFiles && (
-        <div className="bg-white border border-black rounded-md p-4 mb-4">
-          <h3 className="text-[11px] font-mono uppercase text-[#6B6E72] mb-1">Plans & files (this phase only)</h3>
-          {phaseFiles.length > 0 && (
-            <div className="space-y-2 mb-2">
-              {phaseFiles.map((f) => (
-                <div key={f.id} className="flex items-center justify-between gap-2 text-sm border-b border-[#E5E5E5] py-1.5">
-                  <a href={f.public_url} target="_blank" rel="noreferrer" className="flex items-center gap-1.5 min-w-0 truncate underline">
-                    <FileText size={14} /> <span className="truncate">{f.file_name || 'File'}</span>
-                  </a>
-                  {isAdmin && (
-                    <button
-                      type="button"
-                      className="text-[#B5533C] flex-shrink-0"
-                      onClick={async () => {
-                        if (!confirm('Delete this file?')) return
-                        if (f.storage_path) await supabase.storage.from('project-photos').remove([f.storage_path])
-                        await supabase.from('phase_files').delete().eq('id', f.id)
-                        onReload()
-                      }}
-                    >
-                      <Trash2 size={12} />
-                    </button>
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
-          <label className="w-full flex items-center justify-center gap-1.5 text-sm border border-black rounded px-3 py-2 cursor-pointer">
-            {uploadingPhaseFile ? 'Uploading…' : 'Upload plan / file to this phase'}
-            <input type="file" className="hidden" disabled={uploadingPhaseFile} onChange={uploadPhaseFile} />
-          </label>
-        </div>
-      )}
+      <div className="space-y-2 mb-4">
+        {showPhaseFiles && (
+          <ProjectNavRow icon={<FolderOpen size={16} />} label="Plans & files" count={phaseFiles.length || null} onClick={() => setPhasePage('files')} />
+        )}
+        {(isAdmin || canUpload) && !isCustomer && (
+          <ProjectNavRow icon={<Check size={16} />} label="Tasks" count={taskCount || null} onClick={() => setPhasePage('tasks')} />
+        )}
+        <ProjectNavRow icon={<FileText size={16} />} label="Change orders" count={phaseCos.length || null} onClick={() => setPhasePage('changes')} />
+        {isAdmin && (
+          <ProjectNavRow icon={<ListChecks size={16} />} label="Punch list" count={punchCount || null} onClick={() => setPhasePage('punch')} />
+        )}
+      </div>
 
       {canUpload && (
         <div className="bg-white border border-black rounded-md p-4 mb-4">
