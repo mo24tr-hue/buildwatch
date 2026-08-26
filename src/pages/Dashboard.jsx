@@ -1451,7 +1451,7 @@ function ChangePasswordPanel({ email, onBack }) {
 }
 
 
-function MeetingForm({ companyId, profile, projects, defaultDate, defaultProjectId, allowNoProject, onSaved }) {
+function MeetingForm({ companyId, profile, projects, defaultDate, defaultProjectId, allowNoProject, onSaved, hideHeading }) {
   const [title, setTitle] = useState('')
   const [date, setDate] = useState(defaultDate || '')
   const [time, setTime] = useState('')
@@ -1487,43 +1487,49 @@ function MeetingForm({ companyId, profile, projects, defaultDate, defaultProject
     onSaved?.()
   }
 
+  // iOS date/time pickers overflow without overflow-hidden + full width constraints
+  const fieldCls =
+    'w-full max-w-full min-w-0 box-border border border-black rounded px-2.5 py-2.5 text-base appearance-none bg-white'
+
   return (
-    <form onSubmit={submit} className="bg-white border border-black rounded-md p-4 space-y-3">
-      <h3 className="text-[11px] font-mono uppercase text-[#6B6E72]">Schedule a meeting</h3>
-      <div>
+    <form onSubmit={submit} className="bg-white border border-black rounded-md p-4 space-y-3 overflow-hidden">
+      {!hideHeading && (
+        <h3 className="text-[11px] font-mono uppercase text-[#6B6E72]">Schedule a meeting</h3>
+      )}
+      <div className="min-w-0">
         <label className="block text-[11px] font-mono uppercase text-[#6B6E72] mb-1">Title</label>
         <input
           value={title}
           onChange={(e) => setTitle(e.target.value)}
           placeholder="Walkthrough, estimate, inspection…"
-          className="w-full border border-black rounded px-3 py-2 text-sm"
+          className={fieldCls}
           required
         />
       </div>
-      <div className="grid grid-cols-2 gap-3 min-w-0">
-        <div className="min-w-0">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 min-w-0">
+        <div className="min-w-0 overflow-hidden">
           <label className="block text-[11px] font-mono uppercase text-[#6B6E72] mb-1">Date</label>
-          <input type="date" value={date} onChange={(e) => setDate(e.target.value)} required className="w-full max-w-full min-w-0 box-border border border-black rounded px-2 py-2 text-sm" />
+          <input type="date" value={date} onChange={(e) => setDate(e.target.value)} required className={fieldCls} />
         </div>
-        <div className="min-w-0">
+        <div className="min-w-0 overflow-hidden">
           <label className="block text-[11px] font-mono uppercase text-[#6B6E72] mb-1">Time</label>
-          <input type="time" value={time} onChange={(e) => setTime(e.target.value)} className="w-full max-w-full min-w-0 box-border border border-black rounded px-2 py-2 text-sm" />
+          <input type="time" value={time} onChange={(e) => setTime(e.target.value)} className={fieldCls} />
         </div>
       </div>
       {allowNoProject && (
-        <div>
-          <label className="block text-[11px] font-mono uppercase text-[#6B6E72] mb-1">Project (optional)</label>
-          <select value={projectId} onChange={(e) => setProjectId(e.target.value)} className="w-full border border-black rounded px-3 py-2 text-sm bg-white">
-            <option value="">None — general / future job</option>
+        <div className="min-w-0">
+          <label className="block text-[11px] font-mono uppercase text-[#6B6E72] mb-1">Project</label>
+          <select value={projectId} onChange={(e) => setProjectId(e.target.value)} className={fieldCls}>
+            <option value="">General / future job</option>
             {(projects || []).filter((p) => !p.archived).map((p) => (
               <option key={p.id} value={p.id}>{p.address}</option>
             ))}
           </select>
         </div>
       )}
-      <div>
+      <div className="min-w-0">
         <label className="block text-[11px] font-mono uppercase text-[#6B6E72] mb-1">Notes</label>
-        <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} className="w-full border border-black rounded px-3 py-2 text-sm" />
+        <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} className={fieldCls + ' resize-none'} />
       </div>
       <button type="submit" disabled={saving || !title.trim() || !date} className="w-full py-2.5 bg-black text-white rounded text-sm disabled:opacity-40">
         {saving ? 'Saving…' : 'Add meeting'}
@@ -1613,6 +1619,7 @@ function AdminCalendarView({ projects, role, profile, onBack, onOpenProject, hid
   const [month, setMonth] = useState(today.getMonth()) // 0-11
   const [selected, setSelected] = useState(today.toISOString().slice(0, 10))
   const [meetings, setMeetings] = useState([])
+  const [showSchedule, setShowSchedule] = useState(false)
   const isTrade = role === 'team'
   const isCustomer = role === 'customer'
   const isAdmin = role === 'admin'
@@ -1739,6 +1746,30 @@ function AdminCalendarView({ projects, role, profile, onBack, onOpenProject, hid
     else setMonth((m) => m + 1)
   }
 
+  if (showSchedule) {
+    return (
+      <SwipeBack onBack={() => setShowSchedule(false)}>
+        <button type="button" onClick={() => setShowSchedule(false)} className="flex items-center gap-1 text-sm text-[#6B6E72] mb-4">
+          <ChevronLeft size={16} /> Calendar
+        </button>
+        <h2 className="font-display text-2xl mb-4">Schedule a meeting</h2>
+        <MeetingForm
+          companyId={profile?.company_id}
+          profile={profile}
+          projects={projects}
+          defaultDate={selected}
+          defaultProjectId=""
+          allowNoProject
+          hideHeading
+          onSaved={() => {
+            loadMeetings()
+            setShowSchedule(false)
+          }}
+        />
+      </SwipeBack>
+    )
+  }
+
   return (
     <SwipeBack onBack={hideBack ? undefined : onBack} disabled={hideBack}>
       {!hideBack && (
@@ -1860,15 +1891,15 @@ function AdminCalendarView({ projects, role, profile, onBack, onOpenProject, hid
       </div>
 
       {canSchedule && (
-        <MeetingForm
-          companyId={profile?.company_id}
-          profile={profile}
-          projects={projects}
-          defaultDate={selected}
-          defaultProjectId=""
-          allowNoProject
-          onSaved={loadMeetings}
-        />
+        <button
+          type="button"
+          onClick={() => setShowSchedule(true)}
+          className="w-full py-3 px-4 rounded border border-black bg-white text-left flex items-center gap-3 hover:bg-[#F5F5F5]"
+        >
+          <Clock size={16} />
+          <span className="flex-1 text-sm font-medium">Schedule a meeting</span>
+          <ChevronRight size={16} className="text-[#8A8D91]" />
+        </button>
       )}
     </SwipeBack>
   )
