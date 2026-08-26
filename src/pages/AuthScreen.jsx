@@ -34,7 +34,10 @@ export default function AuthScreen() {
     }
     setLoading(true)
     const { error: err } = await supabase.auth.resetPasswordForEmail(cleanEmail, {
-      redirectTo: typeof window !== 'undefined' ? window.location.origin : undefined,
+      redirectTo:
+        typeof window !== 'undefined'
+          ? window.location.origin + '/'
+          : undefined,
     })
     setLoading(false)
     if (err) setError(err.message)
