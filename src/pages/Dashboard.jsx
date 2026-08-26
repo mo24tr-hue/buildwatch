@@ -841,21 +841,40 @@ export default function Dashboard({ session, profile, company, onCompanyUpdate, 
             </div>
             <div className="text-[10px] text-white/50 truncate leading-tight mt-0.5">{profile?.email}</div>
           </div>
-          {/* Center: logo — kept shorter so it stays under the island */}
-          <div className="flex justify-center items-center min-w-0 self-center">
+          {/* Center: logo — always returns to projects list */}
+          <button
+            type="button"
+            className="flex justify-center items-center min-w-0 self-center py-1 px-2 -my-1 rounded active:opacity-70"
+            title="Back to projects"
+            aria-label="Back to projects"
+            onClick={() => {
+              goTab('projects')
+              setActiveId(null)
+              setShowNotifs(false)
+              setShowNew(false)
+              setShowPassword(false)
+              setShowHelp(false)
+              setShowPlatform(false)
+              setShowFeedback(false)
+              setMenuOpen(false)
+              try {
+                window.scrollTo({ top: 0, behavior: 'smooth' })
+              } catch (_) {}
+            }}
+          >
             {(headerCompany?.logo_url || company?.logo_url) ? (
               <img
                 src={headerCompany?.logo_url || company?.logo_url}
                 alt={headerCompany?.name || company?.name || 'Logo'}
-                className="h-9 w-auto max-w-[100px] object-contain"
+                className="h-9 w-auto max-w-[100px] object-contain pointer-events-none"
                 onError={(e) => {
                   e.currentTarget.style.display = 'none'
                 }}
               />
             ) : (
-              <div className="font-display text-sm tracking-wide text-white/80">AY</div>
+              <div className="font-display text-sm tracking-wide text-white/80 pointer-events-none">BW</div>
             )}
-          </div>
+          </button>
           {/* Right: role + menu */}
           <div className="flex items-center justify-end gap-2 relative">
             <span className="hidden sm:inline text-[10px] font-mono uppercase tracking-wide px-1.5 py-0.5 border border-white/40 rounded">
