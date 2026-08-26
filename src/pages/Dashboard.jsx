@@ -2432,6 +2432,284 @@ function ProjectCostSection({ project, isAdmin, profile, onReload, logActivity }
   )
 }
 
+function ProjectSummaryShare({ project, phases, doneCount, isAdmin, isCustomer, onClose }) {
+  const [sharing, setSharing] = useState(false)
+  const approvedCos = (project.change_orders || []).filter((c) => (c.status || '') === 'approved')
+  const coSum = approvedCos.reduce((s, c) => s + (Number(c.amount) || 0), 0)
+  const base = project.base_cost != null ? Number(project.base_cost) : null
+  const total = base != null || coSum ? (base || 0) + coSum : null
+  const paid = Number(project.amount_paid) || 0
+  const remaining = total != null ? total - paid : null
+  const pct = phases.length ? Math.round((doneCount / phases.length) * 100) : 0
+
+  const statusLabel = (st) => {
+    if (st === 'done') return 'Complete'
+    if (st === 'active') return 'In progress'
+    if (st === 'hold') return 'On hold'
+    return 'Not started'
+  }
+
+  const buildSummaryImage = async () => {
+    const W = 720
+    const PAD = 48
+    let lines = 0
+    lines += 6 // header block
+    lines += phases.length + 2
+    lines += approvedCos.length + 2
+    if (isAdmin || isCustomer) lines += 8
+    lines += 3
+    const H = Math.max(1100, PAD * 2 + lines * 36 + 80)
+
+    const canvas = document.createElement('canvas')
+    canvas.width = W
+    canvas.height = H
+    const ctx = canvas.getContext('2d')
+    ctx.fillStyle = '#ffffff'
+    ctx.fillRect(0, 0, W, H)
+
+    let y = PAD
+    ctx.fillStyle = '#000000'
+    ctx.font = '600 28px "Cinzel", "Times New Roman", serif'
+    ctx.textAlign = 'left'
+    ctx.fillText('PROJECT SUMMARY', PAD, y + 28)
+    y += 48
+
+    ctx.font = '500 22px system-ui, -apple-system, sans-serif'
+    ctx.fillText(project.address || 'Project', PAD, y + 22)
+    y += 36
+
+    ctx.fillStyle = '#6B6E72'
+    ctx.font = '400 15px system-ui, -apple-system, sans-serif'
+    ctx.fillText(
+      `${formatStyleLabel(project.style)}  ·  ${PROJECT_STATUS[project.status]?.label || project.status}`,
+      PAD,
+      y + 16
+    )
+    y += 28
+    ctx.fillText(
+      `${fmtDate(project.start_date) || '—'} – ${project.end_date ? fmtDate(project.end_date) : 'TBD'}`,
+      PAD,
+      y + 16
+    )
+    y += 28
+    ctx.fillStyle = '#000000'
+    ctx.font = '600 15px system-ui, -apple-system, sans-serif'
+    ctx.fillText(`${doneCount} of ${phases.length} phases complete  (${pct}%)`, PAD, y + 16)
+    y += 40
+
+    // divider
+    ctx.strokeStyle = '#000000'
+    ctx.lineWidth = 1
+    ctx.beginPath()
+    ctx.moveTo(PAD, y)
+    ctx.lineTo(W - PAD, y)
+    ctx.stroke()
+    y += 32
+
+    ctx.fillStyle = '#000000'
+    ctx.font = '600 16px system-ui, -apple-system, sans-serif'
+    ctx.fillText('PHASES', PAD, y)
+    y += 28
+    phases.forEach((ph) => {
+      ctx.fillStyle = '#000000'
+      ctx.font = '500 15px system-ui, -apple-system, sans-serif'
+      const name = isFinishingPhase(ph.name) ? finishingLabel(ph.name) : ph.name
+      ctx.fillText(name, PAD, y)
+      ctx.fillStyle = '#6B6E72'
+      ctx.font = '400 14px system-ui, -apple-system, sans-serif'
+      ctx.textAlign = 'right'
+      ctx.fillText(statusLabel(ph.status), W - PAD, y)
+      ctx.textAlign = 'left'
+      y += 26
+    })
+    y += 16
+
+    ctx.strokeStyle = '#E5E5E5'
+    ctx.beginPath()
+    ctx.moveTo(PAD, y)
+    ctx.lineTo(W - PAD, y)
+    ctx.stroke()
+    y += 28
+
+    ctx.fillStyle = '#000000'
+    ctx.font = '600 16px system-ui, -apple-system, sans-serif'
+    ctx.fillText('APPROVED CHANGE ORDERS', PAD, y)
+    y += 28
+    if (!approvedCos.length) {
+      ctx.fillStyle = '#6B6E72'
+      ctx.font = '400 15px system-ui, -apple-system, sans-serif'
+      ctx.fillText('None', PAD, y)
+      y += 26
+    } else {
+      approvedCos.forEach((c) => {
+        ctx.fillStyle = '#000000'
+        ctx.font = '500 15px system-ui, -apple-system, sans-serif'
+        let title = c.title || 'Change order'
+        while (ctx.measureText(title).width > W - PAD * 2 - 120 && title.length > 4) title = title.slice(0, -2) + '…'
+        ctx.fillText(title, PAD, y)
+        if (c.amount != null) {
+          ctx.textAlign = 'right'
+          ctx.fillText(money(c.amount), W - PAD, y)
+          ctx.textAlign = 'left'
+        }
+        y += 26
+      })
+    }
+    y += 16
+
+    if (isAdmin || isCustomer) {
+      ctx.strokeStyle = '#E5E5E5'
+      ctx.beginPath()
+      ctx.moveTo(PAD, y)
+      ctx.lineTo(W - PAD, y)
+      ctx.stroke()
+      y += 28
+      ctx.fillStyle = '#000000'
+      ctx.font = '600 16px system-ui, -apple-system, sans-serif'
+      ctx.fillText('COST', PAD, y)
+      y += 28
+      const costRows = [
+        ['Original contract', money(base)],
+        ['Approved change orders', money(coSum)],
+        ['Total', money(total)],
+        ['Paid', money(paid)],
+        ['Remaining', money(remaining)],
+      ]
+      costRows.forEach(([lab, val], i) => {
+        ctx.fillStyle = i === 2 || i === 4 ? '#000000' : '#6B6E72'
+        ctx.font = (i === 2 || i === 4 ? '600 ' : '400 ') + '15px system-ui, -apple-system, sans-serif'
+        ctx.textAlign = 'left'
+        ctx.fillText(lab, PAD, y)
+        ctx.textAlign = 'right'
+        ctx.fillStyle = '#000000'
+        ctx.fillText(val, W - PAD, y)
+        ctx.textAlign = 'left'
+        y += 26
+      })
+      y += 16
+    }
+
+    y += 12
+    ctx.fillStyle = '#9A9A9A'
+    ctx.font = '400 12px system-ui, -apple-system, sans-serif'
+    ctx.textAlign = 'center'
+    ctx.fillText('BuildWatch  ·  ' + new Date().toLocaleDateString(), W / 2, Math.min(y + 20, H - 24))
+
+    // Trim unused canvas height
+    const usedH = Math.min(H, Math.max(y + 40, 600))
+    const out = document.createElement('canvas')
+    out.width = W
+    out.height = usedH
+    out.getContext('2d').drawImage(canvas, 0, 0)
+    return await new Promise((resolve) => out.toBlob((b) => resolve(b), 'image/png'))
+  }
+
+  const shareAsPhoto = async () => {
+    setSharing(true)
+    try {
+      const blob = await buildSummaryImage()
+      if (!blob) throw new Error('Could not create image')
+      const file = new File([blob], `project-summary-${(project.address || 'job').replace(/[^a-z0-9]+/gi, '-').slice(0, 40)}.png`, {
+        type: 'image/png',
+      })
+      if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
+        await navigator.share({ files: [file] })
+      } else {
+        const url = URL.createObjectURL(blob)
+        const a = document.createElement('a')
+        a.href = url
+        a.download = file.name
+        a.click()
+        URL.revokeObjectURL(url)
+        alert('Summary image saved. Open it from Downloads to share.')
+      }
+    } catch (err) {
+      if (err?.name !== 'AbortError') alert(err.message || 'Could not share summary')
+    }
+    setSharing(false)
+  }
+
+  return (
+    <SwipeBack onBack={onClose}>
+      <div className="fixed inset-0 z-[60] bg-white flex flex-col" style={{ paddingTop: 'env(safe-area-inset-top)' }}>
+        <div className="flex items-center justify-between px-4 py-3 border-b border-black gap-2">
+          <button type="button" onClick={onClose} className="flex items-center gap-1 text-sm text-[#6B6E72]">
+            <ChevronLeft size={16} /> Close
+          </button>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              className="text-sm font-medium px-3 py-1.5 border border-black rounded flex items-center gap-1"
+              onClick={shareAsPhoto}
+              disabled={sharing}
+            >
+              <Share2 size={14} />
+              {sharing ? '…' : 'Share photo'}
+            </button>
+            <button
+              type="button"
+              className="text-sm font-medium px-3 py-1.5 bg-black text-white rounded"
+              onClick={() => window.print()}
+            >
+              Print
+            </button>
+          </div>
+        </div>
+        <div className="flex-1 overflow-auto p-6 max-w-2xl mx-auto w-full" id="export-print-area">
+          <p className="text-[11px] font-mono uppercase tracking-wide text-[#6B6E72] mb-2">Project summary</p>
+          <h1 className="font-display text-2xl mb-1 leading-tight">{project.address}</h1>
+          <p className="text-sm text-[#6B6E72] mb-1">
+            <span className="font-semibold text-black">{formatStyleLabel(project.style)}</span>
+            {' · '}
+            {PROJECT_STATUS[project.status]?.label || project.status}
+          </p>
+          <p className="text-sm text-[#6B6E72] mb-1">
+            {fmtDate(project.start_date) || '—'} – {project.end_date ? fmtDate(project.end_date) : 'TBD'}
+          </p>
+          <p className="text-sm font-medium mb-6">
+            {doneCount} of {phases.length} phases complete ({pct}%)
+          </p>
+
+          {(isAdmin || isCustomer) && (
+            <div className="mb-6 text-sm border border-black rounded p-4 space-y-2">
+              <h2 className="text-[11px] font-mono uppercase text-[#6B6E72] mb-1">Cost</h2>
+              <div className="flex justify-between"><span className="text-[#6B6E72]">Original contract</span><span>{money(base)}</span></div>
+              <div className="flex justify-between"><span className="text-[#6B6E72]">Approved change orders</span><span>{money(coSum)}</span></div>
+              <div className="flex justify-between font-medium border-t border-[#E5E5E5] pt-2"><span>Total</span><span>{money(total)}</span></div>
+              <div className="flex justify-between"><span className="text-[#6B6E72]">Paid</span><span>{money(paid)}</span></div>
+              <div className="flex justify-between font-medium"><span>Remaining</span><span>{money(remaining)}</span></div>
+            </div>
+          )}
+
+          <h2 className="text-[11px] font-mono uppercase text-[#6B6E72] mb-2">Phases</h2>
+          <ul className="text-sm space-y-2 mb-6 border border-black rounded p-3">
+            {phases.map((ph) => (
+              <li key={ph.id} className="flex justify-between gap-3 border-b border-[#E5E5E5] last:border-0 pb-2 last:pb-0">
+                <span className="font-medium">{isFinishingPhase(ph.name) ? finishingLabel(ph.name) : ph.name}</span>
+                <span className="text-[#6B6E72] flex-shrink-0">{statusLabel(ph.status)}</span>
+              </li>
+            ))}
+          </ul>
+
+          <h2 className="text-[11px] font-mono uppercase text-[#6B6E72] mb-2">Approved change orders</h2>
+          <ul className="text-sm space-y-2 mb-6 border border-black rounded p-3">
+            {approvedCos.length
+              ? approvedCos.map((c) => (
+                  <li key={c.id} className="flex justify-between gap-3 border-b border-[#E5E5E5] last:border-0 pb-2 last:pb-0">
+                    <span>{c.title}</span>
+                    <span className="flex-shrink-0 font-medium">{c.amount != null ? money(c.amount) : ''}</span>
+                  </li>
+                ))
+              : <li className="text-[#6B6E72]">None</li>}
+          </ul>
+
+          <p className="text-[10px] text-[#6B6E72] mt-4 text-center">BuildWatch · {new Date().toLocaleDateString()}</p>
+        </div>
+      </div>
+    </SwipeBack>
+  )
+}
+
 function ProjectNavRow({ icon, label, count, extra, onClick }) {
   return (
     <button
@@ -2949,7 +3227,7 @@ function ProjectDetail({ project, isAdmin, canUpload, isCustomer, profile, onBac
     )
   }
 
-  if (projectPage === 'activity') {
+  if (projectPage === 'activity' && isAdmin) {
     return (
       <SwipeBack onBack={() => setProjectPage(null)}>
         {pageBack}
@@ -3302,7 +3580,7 @@ className={`bg-white border border-black rounded-md flex items-stretch overflow-
         {(isAdmin || isCustomer) && (
           <ProjectNavRow icon={<DollarSign size={16} />} label="Cost of construction" onClick={() => setProjectPage('cost')} />
         )}
-        {(isAdmin || isCustomer) && (
+        {isAdmin && (
           <ProjectNavRow icon={<Activity size={16} />} label="Activity" onClick={() => setProjectPage('activity')} />
         )}
         {isAdmin && (
@@ -3359,75 +3637,14 @@ className={`bg-white border border-black rounded-md flex items-stretch overflow-
 
 
       {showExport && (
-        <SwipeBack onBack={() => setShowExport(false)}>
-          <div className="fixed inset-0 z-[60] bg-white flex flex-col" style={{ paddingTop: 'env(safe-area-inset-top)' }}>
-            <div className="flex items-center justify-between px-4 py-3 border-b border-black">
-              <button type="button" onClick={() => setShowExport(false)} className="flex items-center gap-1 text-sm text-[#6B6E72]">
-                <ChevronLeft size={16} /> Close
-              </button>
-              <button
-                type="button"
-                className="text-sm font-medium px-3 py-1.5 bg-black text-white rounded"
-                onClick={() => window.print()}
-              >
-                Print
-              </button>
-            </div>
-            <div className="flex-1 overflow-auto p-6 max-w-2xl mx-auto w-full" id="export-print-area">
-              <h1 className="font-display text-2xl mb-1">{project.address}</h1>
-              <p className="text-sm text-[#6B6E72] mb-1">{formatStyleLabel(project.style)} · {PROJECT_STATUS[project.status]?.label || project.status}</p>
-              <p className="text-sm text-[#6B6E72] mb-4">
-                {fmtDate(project.start_date)} – {project.end_date ? fmtDate(project.end_date) : 'TBD'} · {doneCount}/{phases.length} phases complete
-              </p>
-              {(isAdmin || isCustomer) && (
-                <div className="mb-6 text-sm border border-black rounded p-3 space-y-1">
-                  <h2 className="text-sm font-medium mb-2">Cost summary</h2>
-                  {(() => {
-                    const cos = (project.change_orders || []).filter((c) => c.status === 'approved' && c.amount != null)
-                    const coSum = cos.reduce((s, c) => s + (Number(c.amount) || 0), 0)
-                    const base = project.base_cost != null ? Number(project.base_cost) : null
-                    const total = base != null || coSum ? (base || 0) + coSum : null
-                    const paid = Number(project.amount_paid) || 0
-                    return (
-                      <>
-                        <div className="flex justify-between"><span>Original contract</span><span>{money(base)}</span></div>
-                        <div className="flex justify-between"><span>Approved change orders</span><span>{money(coSum)}</span></div>
-                        <div className="flex justify-between font-medium"><span>Total</span><span>{money(total)}</span></div>
-                        <div className="flex justify-between"><span>Paid</span><span>{money(paid)}</span></div>
-                        <div className="flex justify-between font-medium"><span>Remaining</span><span>{money(total != null ? total - paid : null)}</span></div>
-                      </>
-                    )
-                  })()}
-                </div>
-              )}
-              <h2 className="text-sm font-medium mb-2">Phases</h2>
-              <ul className="text-sm space-y-1 mb-6">
-                {phases.map((ph) => (
-                  <li key={ph.id}>{ph.name} — {ph.status}{(ph.photos || []).length ? ` · ${(ph.photos || []).length} photos` : ''}</li>
-                ))}
-              </ul>
-              <h2 className="text-sm font-medium mb-2">Approved change orders</h2>
-              <ul className="text-sm space-y-1 mb-6">
-                {(project.change_orders || []).filter((c) => (c.status || '') === 'approved').length
-                  ? (project.change_orders || []).filter((c) => (c.status || '') === 'approved').map((c) => (
-                      <li key={c.id}>{c.title}{c.amount != null ? ` — $${Number(c.amount).toFixed(2)}` : ''}</li>
-                    ))
-                  : <li>None</li>}
-              </ul>
-              <h2 className="text-sm font-medium mb-2">Key photos</h2>
-              <div className="grid grid-cols-2 gap-2">
-                {phases.flatMap((ph) => (ph.photos || []).map((p) => ({ ...p, phaseName: ph.name }))).slice(0, 12).map((p) => (
-                  <div key={p.id} className="border border-black/20 rounded overflow-hidden">
-                    <img src={photoDisplayUrl(p.url || p.dataUrl, 480)} alt="" loading="lazy" decoding="async" className="w-full h-28 object-cover" />
-                    <div className="text-[10px] p-1 text-[#6B6E72]">{p.phaseName}</div>
-                  </div>
-                ))}
-                {phases.every((ph) => !(ph.photos || []).length) && <p className="text-sm text-[#6B6E72]">No photos yet.</p>}
-              </div>
-              <p className="text-[10px] text-[#6B6E72] mt-8 text-center">BuildWatch project summary · {new Date().toLocaleDateString()}</p>
-            </div>
-          </div>
-        </SwipeBack>
+        <ProjectSummaryShare
+          project={project}
+          phases={phases}
+          doneCount={doneCount}
+          isAdmin={isAdmin}
+          isCustomer={isCustomer}
+          onClose={() => setShowExport(false)}
+        />
       )}
 
       {isAdmin && (
