@@ -128,6 +128,7 @@ export default function Dashboard({ session, profile, company, onCompanyUpdate, 
   const [showFeedback, setShowFeedback] = useState(false)
   const [showWeek, setShowWeek] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
+  const [showHelp, setShowHelp] = useState(false)
   const [headerCompany, setHeaderCompany] = useState(company)
   const [searchQ, setSearchQ] = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
@@ -418,7 +419,9 @@ export default function Dashboard({ session, profile, company, onCompanyUpdate, 
     if (detail) bodyParts.push(who + ': ' + detail)
     else bodyParts.push(who)
     const notifBody = bodyParts.join('\n')
+    const a = (action || '').toLowerCase()
 
+    // Notify company admins for non-admin actions (photos, CO requests, etc.)
     if (profile?.company_id && profile?.role !== 'admin') {
       try {
         await supabase.rpc('notify_company_admins', {
@@ -435,8 +438,9 @@ export default function Dashboard({ session, profile, company, onCompanyUpdate, 
         'approved change order',
         'rejected change order',
         'sent change order offer',
+        'accepted change order',
       ]
-      if (shareWithAdmins.some((k) => action.includes(k) || action === k)) {
+      if (shareWithAdmins.some((k) => a.includes(k))) {
         try {
           await supabase.rpc('notify_company_admins', {
             p_company_id: profile.company_id,
@@ -447,6 +451,28 @@ export default function Dashboard({ session, profile, company, onCompanyUpdate, 
           })
         } catch (_) {}
       }
+    }
+
+    // Customer-visible events: payments, approved/declined change orders
+    const customerKinds = [
+      'recorded payment',
+      'accepted change order',
+      'approved change order',
+      'declined change order',
+      'rejected change order',
+      'sent change order offer',
+      'quoted change order',
+    ]
+    if (pid && profile?.company_id && customerKinds.some((k) => a.includes(k))) {
+      try {
+        await supabase.rpc('notify_project_customers', {
+          p_company_id: profile.company_id,
+          p_project_id: pid,
+          p_title: notifTitle,
+          p_body: notifBody,
+          p_kind: action,
+        })
+      } catch (_) {}
     }
   }
 
@@ -720,6 +746,42 @@ export default function Dashboard({ session, profile, company, onCompanyUpdate, 
     await loadProjects()
   }
 
+  const createDemoProject = async () => {
+    if (!profile?.company_id) return
+    const { data: project, error } = await supabase
+      .from('projects')
+      .insert({
+        company_id: profile.company_id,
+        address: '142 Maple Street (Demo)',
+        style: 'Remodel',
+        status: 'active',
+        start_date: new Date().toISOString().slice(0, 10),
+        end_date: null,
+        created_by: profile.id,
+        base_cost: 85000,
+        amount_paid: 25000,
+      })
+      .select()
+      .single()
+    if (error) {
+      alert(error.message)
+      return
+    }
+    const names = ['Demo', 'Framing', 'Electrical', 'Drywall', 'Paint', 'Flooring']
+    await supabase.from('phases').insert(
+      names.map((name, i) => ({
+        project_id: project.id,
+        name,
+        sort_order: i,
+        status: i < 2 ? 'done' : i === 2 ? 'active' : 'pending',
+        trade: '',
+      }))
+    )
+    await logActivity('created project', project.address, project.id)
+    await loadProjects()
+    setActiveId(project.id)
+  }
+
 
   return (
     <div className="min-h-screen bg-white">
@@ -876,12 +938,44 @@ export default function Dashboard({ session, profile, company, onCompanyUpdate, 
                       setShowWeek(false)
                       setShowPlatform(false)
                       setShowFeedback(false)
+                      setShowHelp(false)
                       setActiveId(null)
                       setShowNew(false)
                     }}
                   >
                     Change password
                   </button>
+                  <button
+                    type="button"
+                    className="w-full text-left px-3 py-2.5 text-sm hover:bg-[#F5F5F5]"
+                    onClick={() => {
+                      setMenuOpen(false)
+                      setShowHelp(true)
+                      setShowPassword(false)
+                      setShowAdmin(false)
+                      setShowCalendar(false)
+                      setShowWeek(false)
+                      setShowPlatform(false)
+                      setShowFeedback(false)
+                      setActiveId(null)
+                      setShowNew(false)
+                    }}
+                  >
+                    How to invite
+                  </button>
+                  {isAdmin && (
+                    <button
+                      type="button"
+                      className="w-full text-left px-3 py-2.5 text-sm hover:bg-[#F5F5F5]"
+                      onClick={async () => {
+                        setMenuOpen(false)
+                        if (!confirm('Create a demo project with sample phases and cost? Safe to delete later.')) return
+                        await createDemoProject()
+                      }}
+                    >
+                      Add demo project
+                    </button>
+                  )}
                   <button
                     type="button"
                     className="w-full text-left px-3 py-2.5 text-sm hover:bg-[#F5F5F5] border-t border-[#E5E5E5]"
@@ -1011,6 +1105,11 @@ export default function Dashboard({ session, profile, company, onCompanyUpdate, 
           <ChangePasswordPanel
             email={profile?.email}
             onBack={() => setShowPassword(false)}
+          />
+        ) : showHelp ? (
+          <InviteHelpGuide
+            company={headerCompany || company}
+            onBack={() => setShowHelp(false)}
           />
         ) : showCalendar ? (
           <AdminCalendarView
@@ -2374,6 +2473,11 @@ function ProjectDetail({ project, isAdmin, canUpload, isCustomer, profile, onBac
     if (!isAdmin) return
     await supabase.from('projects').update({ status }).eq('id', project.id)
     await logActivity('updated project status', status)
+    if (status === 'done' && !project.archived) {
+      if (confirm('Project marked complete. Archive it so it leaves the active list? You can restore it anytime from Archived.')) {
+        await supabase.from('projects').update({ archived: true }).eq('id', project.id)
+      }
+    }
     onReload()
   }
 
@@ -3046,7 +3150,7 @@ className={`bg-white border border-black rounded-md flex items-stretch overflow-
 
 
 
-      {isAdmin && (
+      {(isAdmin || isCustomer) && (
         <div className="bg-white border border-black rounded-md p-4 mb-4">
           <h3 className="text-[11px] font-mono uppercase text-[#6B6E72] mb-2">Activity</h3>
           <ProjectActivity projectId={project.id} />
@@ -3141,26 +3245,28 @@ className={`bg-white border border-black rounded-md flex items-stretch overflow-
         />
       )}
 
-      {isAdmin && (
+      {(isAdmin || isCustomer) && (
         <div className="flex flex-wrap gap-3 mb-4">
           <button
             type="button"
             className="text-xs border border-black rounded px-3 py-1.5 flex items-center gap-1"
             onClick={() => setShowExport(true)}
           >
-            <Printer size={13} /> Export / Print
+            <Printer size={13} /> Project summary
           </button>
-          <button
-            type="button"
-            className="text-xs border border-black rounded px-3 py-1.5 flex items-center gap-1"
-            onClick={async () => {
-              await supabase.from('projects').update({ archived: !project.archived }).eq('id', project.id)
-              onReload()
-              onBack()
-            }}
-          >
-            <Archive size={13} /> {project.archived ? 'Unarchive' : 'Archive'}
-
+          {isAdmin && (
+            <button
+              type="button"
+              className="text-xs border border-black rounded px-3 py-1.5 flex items-center gap-1"
+              onClick={async () => {
+                await supabase.from('projects').update({ archived: !project.archived }).eq('id', project.id)
+                onReload()
+                onBack()
+              }}
+            >
+              <Archive size={13} /> {project.archived ? 'Unarchive' : 'Archive'}
+            </button>
+          )}
           {isAdmin && project.status === 'done' && !(project.phases || []).some((ph) => /punch/i.test(ph.name || '')) && (
             <button
               type="button"
@@ -3185,7 +3291,6 @@ className={`bg-white border border-black rounded-md flex items-stretch overflow-
               Punch list
             </button>
           )}
-          </button>
         </div>
       )}
 
@@ -3205,29 +3310,70 @@ className={`bg-white border border-black rounded-md flex items-stretch overflow-
               </button>
             </div>
             <div className="flex-1 overflow-auto p-6 max-w-2xl mx-auto w-full" id="export-print-area">
-              <h1 className="font-display text-2xl mb-2">{project.address}</h1>
-              <p className="text-sm text-[#6B6E72] mb-4">{doneCount} / {phases.length} phases complete</p>
+              <h1 className="font-display text-2xl mb-1">{project.address}</h1>
+              <p className="text-sm text-[#6B6E72] mb-1">{formatStyleLabel(project.style)} · {PROJECT_STATUS[project.status]?.label || project.status}</p>
+              <p className="text-sm text-[#6B6E72] mb-4">
+                {fmtDate(project.start_date)} – {project.end_date ? fmtDate(project.end_date) : 'TBD'} · {doneCount}/{phases.length} phases complete
+              </p>
+              {(isAdmin || isCustomer) && (
+                <div className="mb-6 text-sm border border-black rounded p-3 space-y-1">
+                  <h2 className="text-sm font-medium mb-2">Cost summary</h2>
+                  {(() => {
+                    const cos = (project.change_orders || []).filter((c) => c.status === 'approved' && c.amount != null)
+                    const coSum = cos.reduce((s, c) => s + (Number(c.amount) || 0), 0)
+                    const base = project.base_cost != null ? Number(project.base_cost) : null
+                    const total = base != null || coSum ? (base || 0) + coSum : null
+                    const paid = Number(project.amount_paid) || 0
+                    return (
+                      <>
+                        <div className="flex justify-between"><span>Original contract</span><span>{money(base)}</span></div>
+                        <div className="flex justify-between"><span>Approved change orders</span><span>{money(coSum)}</span></div>
+                        <div className="flex justify-between font-medium"><span>Total</span><span>{money(total)}</span></div>
+                        <div className="flex justify-between"><span>Paid</span><span>{money(paid)}</span></div>
+                        <div className="flex justify-between font-medium"><span>Remaining</span><span>{money(total != null ? total - paid : null)}</span></div>
+                      </>
+                    )
+                  })()}
+                </div>
+              )}
               <h2 className="text-sm font-medium mb-2">Phases</h2>
               <ul className="text-sm space-y-1 mb-6">
                 {phases.map((ph) => (
-                  <li key={ph.id}>{ph.name} — {ph.status}</li>
+                  <li key={ph.id}>{ph.name} — {ph.status}{(ph.photos || []).length ? ` · ${(ph.photos || []).length} photos` : ''}</li>
                 ))}
               </ul>
               <h2 className="text-sm font-medium mb-2">Approved change orders</h2>
-              <ul className="text-sm space-y-1">
-                {(project.change_orders || []).filter((c) => (c.status || 'approved') === 'approved').length
-                  ? (project.change_orders || []).filter((c) => (c.status || 'approved') === 'approved').map((c) => (
+              <ul className="text-sm space-y-1 mb-6">
+                {(project.change_orders || []).filter((c) => (c.status || '') === 'approved').length
+                  ? (project.change_orders || []).filter((c) => (c.status || '') === 'approved').map((c) => (
                       <li key={c.id}>{c.title}{c.amount != null ? ` — $${Number(c.amount).toFixed(2)}` : ''}</li>
                     ))
                   : <li>None</li>}
               </ul>
+              <h2 className="text-sm font-medium mb-2">Key photos</h2>
+              <div className="grid grid-cols-2 gap-2">
+                {phases.flatMap((ph) => (ph.photos || []).map((p) => ({ ...p, phaseName: ph.name }))).slice(0, 12).map((p) => (
+                  <div key={p.id} className="border border-black/20 rounded overflow-hidden">
+                    <img src={p.url || p.dataUrl} alt="" className="w-full h-28 object-cover" />
+                    <div className="text-[10px] p-1 text-[#6B6E72]">{p.phaseName}</div>
+                  </div>
+                ))}
+                {phases.every((ph) => !(ph.photos || []).length) && <p className="text-sm text-[#6B6E72]">No photos yet.</p>}
+              </div>
+              <p className="text-[10px] text-[#6B6E72] mt-8 text-center">BuildWatch project summary · {new Date().toLocaleDateString()}</p>
             </div>
           </div>
         </SwipeBack>
       )}
 
       {isAdmin && (
-        <button onClick={() => onDelete(project.id)} className="text-xs text-[#B5533C] flex items-center gap-1">
+        <button
+          onClick={() => {
+            if (!confirm('Permanently delete this project and all photos, files, and history? Prefer Archive if you only want it off the active list.')) return
+            onDelete(project.id)
+          }}
+          className="text-xs text-[#B5533C] flex items-center gap-1"
+        >
           <Trash2 size={13} /> Delete this project
         </button>
       )}
@@ -3606,7 +3752,7 @@ function ProjectActivity({ projectId }) {
       .select('*')
       .eq('project_id', projectId)
       .order('created_at', { ascending: false })
-      .limit(25)
+      .limit(40)
       .then(({ data }) => setItems(data || []))
   }, [projectId])
   if (!items.length) return <p className="text-xs text-[#8A8D91]">No activity yet.</p>
@@ -3615,10 +3761,48 @@ function ProjectActivity({ projectId }) {
       {items.map((a) => (
         <div key={a.id} className="text-xs border-b border-[#E5E5E5] pb-2">
           <div className="font-medium">{a.action}{a.detail ? ` — ${a.detail}` : ''}</div>
-          <div className="text-[10px] font-mono text-[#8A8D91]">{a.user_name || a.user_email} · {fmtDate(a.created_at)}</div>
+          <div className="text-[10px] font-mono text-[#8A8D91]">{a.user_name || a.user_email} · {fmtDateTime(a.created_at) || fmtDate(a.created_at)}</div>
         </div>
       ))}
     </div>
+  )
+}
+
+function InviteHelpGuide({ company, onBack }) {
+  const origin = typeof window !== 'undefined' ? window.location.origin : 'https://your-app.vercel.app'
+  const shareUrl = company?.app_share_url || origin
+  return (
+    <SwipeBack onBack={onBack}>
+      <button type="button" onClick={onBack} className="flex items-center gap-1 text-sm text-[#6B6E72] mb-4">
+        <ChevronLeft size={16} /> Back
+      </button>
+      <h2 className="font-display text-2xl mb-2">How to invite</h2>
+      <p className="text-sm text-[#6B6E72] mb-4">Share BuildWatch with customers and trades in a few steps.</p>
+      <div className="space-y-4 text-sm">
+        <div className="border border-black rounded-md p-4">
+          <div className="text-[11px] font-mono uppercase text-[#6B6E72] mb-1">1. App link</div>
+          <p className="mb-2">Send this link so they can open the app on any phone or computer:</p>
+          <code className="block text-xs bg-[#F5F5F5] border border-black/20 rounded px-2 py-2 break-all">{shareUrl}</code>
+        </div>
+        <div className="border border-black rounded-md p-4">
+          <div className="text-[11px] font-mono uppercase text-[#6B6E72] mb-1">2. Invite by email</div>
+          <p>In the menu open <strong>Users / Contractor</strong>. Enter their email and choose a role:</p>
+          <ul className="list-disc ml-5 mt-2 space-y-1">
+            <li><strong>Contractor</strong> — full access (same as you)</li>
+            <li><strong>Trade</strong> — only projects and phases you assign; can upload photos</li>
+            <li><strong>Customer</strong> — only projects you add them to; photos, progress, costs, change orders</li>
+          </ul>
+        </div>
+        <div className="border border-black rounded-md p-4">
+          <div className="text-[11px] font-mono uppercase text-[#6B6E72] mb-1">3. What they do next</div>
+          <p>They open the link, choose join / invited, sign up with the <strong>same email</strong> you invited, then set a personal password when prompted.</p>
+        </div>
+        <div className="border border-black rounded-md p-4">
+          <div className="text-[11px] font-mono uppercase text-[#6B6E72] mb-1">4. Attach to a project</div>
+          <p>Open the project → <strong>Who’s on this project</strong> → assign the customer to the job or the trade to specific phases.</p>
+        </div>
+      </div>
+    </SwipeBack>
   )
 }
 
