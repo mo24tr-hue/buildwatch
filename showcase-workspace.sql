@@ -136,37 +136,37 @@ begin
   loop
     n := lower(ph.name);
     if n like '%demo%' then
-      u := '/acme/phase-demo.jpg'; u2 := '/acme/phase-demo.jpg';
+      u := '/acme/phase-demo-a.jpg'; u2 := '/acme/phase-demo-b.jpg';
     elsif n like '%excav%' then
-      u := '/acme/phase-excavation.jpg'; u2 := '/acme/phase-excavation.jpg';
+      u := '/acme/phase-excavation-a.jpg'; u2 := '/acme/phase-excavation-b.jpg';
     elsif n like '%foot%' or n like '%found%' then
-      u := '/acme/phase-foundation.jpg'; u2 := '/acme/phase-foundation.jpg';
+      u := '/acme/phase-foundation-a.jpg'; u2 := '/acme/phase-foundation-b.jpg';
     elsif n like '%fram%' then
-      u := '/acme/phase-framing.jpg'; u2 := '/acme/phase-framing.jpg';
+      u := '/acme/phase-framing-a.jpg'; u2 := '/acme/phase-framing-b.jpg';
     elsif n like '%roof%' then
-      u := '/acme/phase-roofing.jpg'; u2 := '/acme/phase-roofing.jpg';
+      u := '/acme/phase-roofing-a.jpg'; u2 := '/acme/phase-roofing-b.jpg';
     elsif n like '%plumb%' then
-      u := '/acme/phase-plumbing.jpg'; u2 := '/acme/phase-plumbing.jpg';
+      u := '/acme/phase-plumbing-a.jpg'; u2 := '/acme/phase-plumbing-b.jpg';
     elsif n like '%electr%' then
-      u := '/acme/phase-electrical.jpg'; u2 := '/acme/phase-electrical.jpg';
+      u := '/acme/phase-electrical-a.jpg'; u2 := '/acme/phase-electrical-b.jpg';
     elsif n like '%insul%' then
-      u := '/acme/phase-insulation.jpg'; u2 := '/acme/phase-insulation.jpg';
+      u := '/acme/phase-insulation-a.jpg'; u2 := '/acme/phase-insulation-b.jpg';
     elsif n like '%drywall%' then
-      u := '/acme/phase-drywall.jpg'; u2 := '/acme/phase-drywall.jpg';
+      u := '/acme/phase-drywall-a.jpg'; u2 := '/acme/phase-drywall-b.jpg';
     elsif n like '%paint%' then
-      u := '/acme/phase-paint.jpg'; u2 := '/acme/phase-paint.jpg';
+      u := '/acme/phase-paint-a.jpg'; u2 := '/acme/phase-paint-b.jpg';
     elsif n like '%floor%' then
-      u := '/acme/phase-flooring.jpg'; u2 := '/acme/phase-flooring.jpg';
+      u := '/acme/phase-flooring-a.jpg'; u2 := '/acme/phase-flooring-b.jpg';
     elsif n like '%cabinet%' then
-      u := '/acme/phase-cabinets.jpg'; u2 := '/acme/phase-cabinets.jpg';
+      u := '/acme/phase-cabinets-a.jpg'; u2 := '/acme/phase-cabinets-b.jpg';
     elsif n like '%counter%' then
-      u := '/acme/phase-countertops.jpg'; u2 := '/acme/phase-countertops.jpg';
+      u := '/acme/phase-countertops-a.jpg'; u2 := '/acme/phase-countertops-b.jpg';
     elsif n like '%appliance%' then
-      u := '/acme/phase-appliances.jpg'; u2 := '/acme/phase-appliances.jpg';
+      u := '/acme/phase-appliances-a.jpg'; u2 := '/acme/phase-appliances-b.jpg';
     elsif n like '%finish%' then
-      u := '/acme/phase-finishings.jpg'; u2 := '/acme/phase-finishings.jpg';
+      u := '/acme/phase-finishings-a.jpg'; u2 := '/acme/phase-finishings-b.jpg';
     else
-      u := '/acme/phase-finishings.jpg'; u2 := '/acme/phase-framing.jpg';
+      u := '/acme/phase-finishings-a.jpg'; u2 := '/acme/phase-framing-a.jpg';
     end if;
 
     insert into public.photos (project_id, phase_id, public_url, storage_path, media_type, uploaded_by)
