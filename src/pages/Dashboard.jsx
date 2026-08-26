@@ -13,23 +13,25 @@ const QUEUE_KEY = 'ay_upload_queue'
 
 function SwipeBack({ onBack, children, className = '', disabled = false }) {
   const start = useRef(null)
+  // Wider edge + clearer horizontal swipe so back works without fighting scroll
+  const EDGE = 48
+  const MIN_DX = 72
   const onTouchStart = (e) => {
     if (disabled) return
     const t = e.touches[0]
-    // Only start back-gesture near the left edge so vertical scrolling never exits
-    if (t.clientX > 28) {
+    if (t.clientX > EDGE) {
       start.current = null
       return
     }
-    start.current = { x: t.clientX, y: t.clientY }
+    start.current = { x: t.clientX, y: t.clientY, t: Date.now() }
   }
   const onTouchMove = (e) => {
     if (!start.current) return
     const t = e.touches[0]
     const dx = t.clientX - start.current.x
     const dy = t.clientY - start.current.y
-    // Cancel if user is clearly scrolling vertically
-    if (Math.abs(dy) > Math.abs(dx) && Math.abs(dy) > 12) {
+    // Cancel if clearly scrolling vertically
+    if (Math.abs(dy) > 18 && Math.abs(dy) > Math.abs(dx) * 1.1) {
       start.current = null
     }
   }
@@ -38,9 +40,12 @@ function SwipeBack({ onBack, children, className = '', disabled = false }) {
     const t = e.changedTouches[0]
     const dx = t.clientX - start.current.x
     const dy = t.clientY - start.current.y
+    const dt = Date.now() - (start.current.t || Date.now())
     start.current = null
-    // Require clear horizontal swipe (rightward) and little vertical movement
-    if (dx > 100 && Math.abs(dx) > Math.abs(dy) * 2) onBack?.()
+    // Rightward swipe from left edge; allow quicker flicks with slightly less distance
+    const quick = dt < 280 && dx > 48
+    const long = dx >= MIN_DX
+    if ((quick || long) && dx > Math.abs(dy) * 1.4) onBack?.()
   }
   return (
     <div
@@ -48,6 +53,7 @@ function SwipeBack({ onBack, children, className = '', disabled = false }) {
       onTouchStart={onTouchStart}
       onTouchMove={onTouchMove}
       onTouchEnd={onTouchEnd}
+      onTouchCancel={() => { start.current = null }}
     >
       {children}
     </div>
@@ -2513,16 +2519,6 @@ function ProjectDetail({ project, isAdmin, canUpload, isCustomer, profile, onBac
     setEditCover(pub.publicUrl)
   }
 
-  const onTouchStart = (e) => {
-    touchX.current = e.touches[0].clientX
-  }
-  const onTouchEnd = (e) => {
-    if (touchX.current == null) return
-    const dx = e.changedTouches[0].clientX - touchX.current
-    touchX.current = null
-    if (dx > 90) onBack()
-  }
-
   return (
     <SwipeBack onBack={onBack}>
             <button onClick={onBack} className="flex items-center gap-1 text-sm text-[#6B6E72] mb-4">
@@ -4030,7 +4026,7 @@ function PhaseDetail({ phase, project, isAdmin, canUpload, isCustomer, profile, 
 
   const onTouchStart = (e) => {
     const t = e.touches[0]
-    touchX.current = { x: t.clientX, y: t.clientY, edge: t.clientX <= 28 }
+    touchX.current = { x: t.clientX, y: t.clientY, edge: t.clientX <= 48, t: Date.now() }
   }
   const onTouchEnd = (e) => {
     if (touchX.current == null) return
@@ -4038,15 +4034,18 @@ function PhaseDetail({ phase, project, isAdmin, canUpload, isCustomer, profile, 
     const dx = t.clientX - touchX.current.x
     const dy = t.clientY - touchX.current.y
     const fromEdge = touchX.current.edge
+    const dt = Date.now() - (touchX.current.t || Date.now())
     touchX.current = null
-    // Swipe photos in lightbox
+    // Swipe photos in lightbox (anywhere)
     if (lightboxIdx != null) {
       if (Math.abs(dx) > Math.abs(dy) && dx < -50 && lightboxIdx < photos.length - 1) setLightboxIdx((i) => i + 1)
       else if (Math.abs(dx) > Math.abs(dy) && dx > 50 && lightboxIdx > 0) setLightboxIdx((i) => i - 1)
       return
     }
     // Back only from left edge + clear horizontal swipe
-    if (fromEdge && dx > 100 && Math.abs(dx) > Math.abs(dy) * 2) onBack()
+    const quick = dt < 280 && dx > 48
+    const long = dx >= 72
+    if (fromEdge && (quick || long) && dx > Math.abs(dy) * 1.4) onBack()
   }
 
   const lbTouchStart = (e) => { touchX.current = e.touches[0].clientX }
