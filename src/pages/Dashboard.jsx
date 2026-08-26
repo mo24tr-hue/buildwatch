@@ -177,12 +177,17 @@ export default function Dashboard({ session, profile, company, onCompanyUpdate, 
     let data = null
     let error = null
     {
-      const res = await supabase.from('projects').select(fullSelect).order('created_at', { ascending: false })
+      let q = supabase.from('projects').select(fullSelect).order('created_at', { ascending: false })
+      // Always scope to this company so platform admins never see other companies' jobs
+      if (profile?.company_id) q = q.eq('company_id', profile.company_id)
+      const res = await q
       data = res.data
       error = res.error
       if (error) {
         console.warn('full select failed, retry basic', error.message)
-        const res2 = await supabase.from('projects').select(basicSelect).order('created_at', { ascending: false })
+        let q2 = supabase.from('projects').select(basicSelect).order('created_at', { ascending: false })
+        if (profile?.company_id) q2 = q2.eq('company_id', profile.company_id)
+        const res2 = await q2
         data = res2.data
         error = res2.error
       }
@@ -284,7 +289,7 @@ export default function Dashboard({ session, profile, company, onCompanyUpdate, 
       } catch (_) {}
     }
     setLoading(false)
-  }, [profile?.id, profile?.role])
+  }, [profile?.id, profile?.role, profile?.company_id])
 
   const visibleProjects = projects.filter((p) => {
     if (!showArchived && p.archived) return false
