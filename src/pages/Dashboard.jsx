@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState, useRef } from 'react'
-import { HardHat, Plus, Image as ImageIcon, MapPin, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Camera, Trash2, Check, FileText, X, Video, Menu, Share2, Bell, Search, Copy, Archive, Printer, CalendarDays, Users, FolderOpen, DollarSign, Activity, CircleDot } from 'lucide-react'
+import { HardHat, Plus, Image as ImageIcon, MapPin, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Camera, Trash2, Check, FileText, X, Video, Menu, Share2, Bell, Search, Copy, Archive, Printer, CalendarDays, Users, FolderOpen, DollarSign, Activity, CircleDot, Clock } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { STYLES, PROJECT_STATUS, PHASE_STATUS, nextPhaseStatus, fmtDate, fmtDateTime, isFinishingPhase, FINISHING_PHASES, finishingLabel, roleLabel } from '../lib/styles'
 import AdminPanel from '../components/AdminPanel'
@@ -154,6 +154,17 @@ function formatStyleLabel(style) {
     .replace(/^custom_/i, '')
     .replace(/_/g, ' ')
     .trim() || style
+}
+
+function fmtMeetTime(t) {
+  if (!t) return ''
+  const raw = String(t).slice(0, 5)
+  const [hStr, mStr] = raw.split(':')
+  let h = Number(hStr)
+  if (Number.isNaN(h)) return raw
+  const ampm = h >= 12 ? 'PM' : 'AM'
+  h = h % 12 || 12
+  return `${h}:${mStr || '00'} ${ampm}`
 }
 
 export default function Dashboard({ session, profile, company, onCompanyUpdate, onLogout, platformOwner = false, onLeavePlatformWorkspace }) {
@@ -1101,6 +1112,7 @@ export default function Dashboard({ session, profile, company, onCompanyUpdate, 
           <AdminCalendarView
             projects={projects}
             role={profile?.role}
+            profile={profile}
             onBack={() => goTab('projects')}
             hideBack
             onOpenProject={(id) => {
@@ -1439,13 +1451,190 @@ function ChangePasswordPanel({ email, onBack }) {
 }
 
 
-function AdminCalendarView({ projects, role, onBack, onOpenProject, hideBack }) {
+function MeetingForm({ companyId, profile, projects, defaultDate, defaultProjectId, allowNoProject, onSaved }) {
+  const [title, setTitle] = useState('')
+  const [date, setDate] = useState(defaultDate || '')
+  const [time, setTime] = useState('')
+  const [projectId, setProjectId] = useState(defaultProjectId || '')
+  const [notes, setNotes] = useState('')
+  const [saving, setSaving] = useState(false)
+
+  useEffect(() => {
+    if (defaultDate) setDate(defaultDate)
+  }, [defaultDate])
+
+  const submit = async (e) => {
+    e?.preventDefault?.()
+    if (!title.trim() || !date || !companyId) return
+    setSaving(true)
+    const { error } = await supabase.from('meetings').insert({
+      company_id: companyId,
+      project_id: projectId || null,
+      title: title.trim(),
+      notes: notes.trim() || null,
+      meet_date: date,
+      meet_time: time || null,
+      created_by: profile?.id || null,
+    })
+    setSaving(false)
+    if (error) {
+      alert(error.message || 'Could not save meeting')
+      return
+    }
+    setTitle('')
+    setTime('')
+    setNotes('')
+    onSaved?.()
+  }
+
+  return (
+    <form onSubmit={submit} className="bg-white border border-black rounded-md p-4 space-y-3">
+      <h3 className="text-[11px] font-mono uppercase text-[#6B6E72]">Schedule a meeting</h3>
+      <div>
+        <label className="block text-[11px] font-mono uppercase text-[#6B6E72] mb-1">Title</label>
+        <input
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+          placeholder="Walkthrough, estimate, inspection…"
+          className="w-full border border-black rounded px-3 py-2 text-sm"
+          required
+        />
+      </div>
+      <div className="grid grid-cols-2 gap-3 min-w-0">
+        <div className="min-w-0">
+          <label className="block text-[11px] font-mono uppercase text-[#6B6E72] mb-1">Date</label>
+          <input type="date" value={date} onChange={(e) => setDate(e.target.value)} required className="w-full max-w-full min-w-0 box-border border border-black rounded px-2 py-2 text-sm" />
+        </div>
+        <div className="min-w-0">
+          <label className="block text-[11px] font-mono uppercase text-[#6B6E72] mb-1">Time</label>
+          <input type="time" value={time} onChange={(e) => setTime(e.target.value)} className="w-full max-w-full min-w-0 box-border border border-black rounded px-2 py-2 text-sm" />
+        </div>
+      </div>
+      {allowNoProject && (
+        <div>
+          <label className="block text-[11px] font-mono uppercase text-[#6B6E72] mb-1">Project (optional)</label>
+          <select value={projectId} onChange={(e) => setProjectId(e.target.value)} className="w-full border border-black rounded px-3 py-2 text-sm bg-white">
+            <option value="">None — general / future job</option>
+            {(projects || []).filter((p) => !p.archived).map((p) => (
+              <option key={p.id} value={p.id}>{p.address}</option>
+            ))}
+          </select>
+        </div>
+      )}
+      <div>
+        <label className="block text-[11px] font-mono uppercase text-[#6B6E72] mb-1">Notes</label>
+        <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} className="w-full border border-black rounded px-3 py-2 text-sm" />
+      </div>
+      <button type="submit" disabled={saving || !title.trim() || !date} className="w-full py-2.5 bg-black text-white rounded text-sm disabled:opacity-40">
+        {saving ? 'Saving…' : 'Add meeting'}
+      </button>
+    </form>
+  )
+}
+
+function ProjectMeetingsPage({ project, profile, isAdmin, isCustomer, onBack }) {
+  const [meetings, setMeetings] = useState([])
+  const canSchedule = isAdmin || (!isCustomer && profile?.role === 'team')
+
+  const load = useCallback(async () => {
+    const { data, error } = await supabase
+      .from('meetings')
+      .select('*')
+      .eq('project_id', project.id)
+      .order('meet_date', { ascending: true })
+      .order('meet_time', { ascending: true })
+    if (error) {
+      console.warn(error.message)
+      return
+    }
+    setMeetings(data || [])
+  }, [project.id])
+
+  useEffect(() => { load() }, [load])
+
+  return (
+    <SwipeBack onBack={onBack}>
+      <button type="button" onClick={onBack} className="flex items-center gap-1 text-sm text-[#6B6E72] mb-4">
+        <ChevronLeft size={16} /> {project.address}
+      </button>
+      <h2 className="font-display text-2xl mb-4">Meetings</h2>
+      {meetings.length === 0 ? (
+        <p className="text-sm text-[#6B6E72] mb-4">No meetings on this project yet.</p>
+      ) : (
+        <div className="space-y-2 mb-4">
+          {meetings.map((m) => (
+            <div key={m.id} className="bg-white border border-black rounded-md p-3">
+              <div className="flex justify-between gap-2 items-start">
+                <div>
+                  <div className="text-sm font-medium">{m.title}</div>
+                  <div className="text-xs text-[#6B6E72] mt-0.5">
+                    {fmtDate(m.meet_date)}
+                    {m.meet_time ? ` · ${fmtMeetTime(m.meet_time)}` : ''}
+                  </div>
+                  {m.notes && <div className="text-xs text-[#6B6E72] mt-1 whitespace-pre-wrap">{m.notes}</div>}
+                </div>
+                {(isAdmin || m.created_by === profile?.id) && (
+                  <button
+                    type="button"
+                    className="text-[#B5533C] p-1"
+                    onClick={async () => {
+                      if (!confirm('Delete this meeting?')) return
+                      const { error } = await supabase.from('meetings').delete().eq('id', m.id)
+                      if (error) { alert(error.message); return }
+                      load()
+                    }}
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+      {canSchedule && (
+        <MeetingForm
+          companyId={profile?.company_id}
+          profile={profile}
+          projects={[project]}
+          defaultDate=""
+          defaultProjectId={project.id}
+          allowNoProject={false}
+          onSaved={load}
+        />
+      )}
+    </SwipeBack>
+  )
+}
+
+function AdminCalendarView({ projects, role, profile, onBack, onOpenProject, hideBack }) {
   const today = new Date()
   const [year, setYear] = useState(today.getFullYear())
   const [month, setMonth] = useState(today.getMonth()) // 0-11
   const [selected, setSelected] = useState(today.toISOString().slice(0, 10))
+  const [meetings, setMeetings] = useState([])
   const isTrade = role === 'team'
   const isCustomer = role === 'customer'
+  const isAdmin = role === 'admin'
+  const canSchedule = isAdmin || isTrade
+
+  const loadMeetings = useCallback(async () => {
+    if (!profile?.company_id) return
+    const { data, error } = await supabase
+      .from('meetings')
+      .select('*')
+      .eq('company_id', profile.company_id)
+      .order('meet_date', { ascending: true })
+      .order('meet_time', { ascending: true })
+    if (error) {
+      console.warn('meetings', error.message)
+      return
+    }
+    setMeetings(data || [])
+  }, [profile?.company_id])
+
+  useEffect(() => { loadMeetings() }, [loadMeetings])
+
   // projects list is already scoped: customers → assigned jobs; trade → assigned phases only
 
   const first = new Date(year, month, 1)
@@ -1474,8 +1663,6 @@ function AdminCalendarView({ projects, role, onBack, onOpenProject, hideBack }) 
       mark(pr.end_date, { projectId: pr.id, label: pr.address, detail: 'Project end', status: pr.status })
     }
     ;(pr.phases || []).forEach((ph) => {
-      // Trade: only their phase start/end (list already filtered to assigned phases)
-      // Customer/contractor: all phases on visible projects
       mark(ph.start_date, {
         projectId: pr.id,
         label: isTrade ? (ph.name || 'Phase') : (pr.address + ' · ' + ph.name),
@@ -1488,6 +1675,16 @@ function AdminCalendarView({ projects, role, onBack, onOpenProject, hideBack }) 
         detail: isTrade ? 'Your end' : 'Phase end',
         status: ph.status,
       })
+    })
+  })
+  ;(meetings || []).forEach((m) => {
+    const proj = (projects || []).find((p) => p.id === m.project_id)
+    mark(m.meet_date, {
+      meetingId: m.id,
+      projectId: m.project_id || null,
+      label: m.title,
+      detail: 'Meeting',
+      status: 'meeting',
     })
   })
 
@@ -1593,28 +1790,86 @@ function AdminCalendarView({ projects, role, onBack, onOpenProject, hideBack }) 
           })}
         </div>
       </div>
-      <div className="bg-white border border-black rounded-md p-4">
+      <div className="bg-white border border-black rounded-md p-4 mb-4">
         <h3 className="text-[11px] font-mono uppercase text-[#6B6E72] mb-2">
           {fmtDate(selected)}
         </h3>
-        {dayItems.length === 0 ? (
-          <p className="text-sm text-[#6B6E72]">Nothing scheduled.</p>
-        ) : (
-          <div className="space-y-2">
-            {dayItems.map((it, i) => (
-              <button
-                key={i}
-                type="button"
-                className="w-full text-left border border-[#E5E5E5] rounded p-3 hover:border-black"
-                onClick={() => it.projectId && onOpenProject?.(it.projectId)}
-              >
-                <div className="text-sm font-medium">{it.label}</div>
-                <div className="text-xs text-[#6B6E72]">{it.detail}{it.status ? ' · ' + it.status : ''}</div>
-              </button>
-            ))}
-          </div>
-        )}
+        {(() => {
+          const dayMeetings = (meetings || []).filter((m) => m.meet_date === selected)
+          return (
+            <>
+              {dayMeetings.length > 0 && (
+                <div className="space-y-2 mb-3">
+                  {dayMeetings.map((m) => {
+                    const proj = (projects || []).find((p) => p.id === m.project_id)
+                    return (
+                      <div key={m.id} className="border border-black rounded p-3">
+                        <div className="flex justify-between gap-2 items-start">
+                          <button
+                            type="button"
+                            className="text-left min-w-0 flex-1"
+                            onClick={() => m.project_id && onOpenProject?.(m.project_id)}
+                          >
+                            <div className="text-sm font-medium">{m.title}</div>
+                            <div className="text-xs text-[#6B6E72] mt-0.5">
+                              {fmtMeetTime(m.meet_time) || 'Time TBD'}
+                              {proj ? ` · ${proj.address}` : ' · General'}
+                            </div>
+                            {m.notes && <div className="text-xs text-[#6B6E72] mt-1 whitespace-pre-wrap">{m.notes}</div>}
+                          </button>
+                          {(isAdmin || m.created_by === profile?.id) && (
+                            <button
+                              type="button"
+                              className="text-[#B5533C] p-1 flex-shrink-0"
+                              onClick={async () => {
+                                if (!confirm('Delete this meeting?')) return
+                                const { error } = await supabase.from('meetings').delete().eq('id', m.id)
+                                if (error) { alert(error.message); return }
+                                loadMeetings()
+                              }}
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+              {dayItems.length === 0 && dayMeetings.length === 0 ? (
+                <p className="text-sm text-[#6B6E72] mb-3">Nothing scheduled.</p>
+              ) : (
+                <div className="space-y-2 mb-3">
+                  {dayItems.map((it, i) => (
+                    <button
+                      key={i}
+                      type="button"
+                      className="w-full text-left border border-[#E5E5E5] rounded p-3 hover:border-black"
+                      onClick={() => it.projectId && onOpenProject?.(it.projectId)}
+                    >
+                      <div className="text-sm font-medium">{it.label}</div>
+                      <div className="text-xs text-[#6B6E72]">{it.detail}{it.status ? ' · ' + it.status : ''}</div>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </>
+          )
+        })()}
       </div>
+
+      {canSchedule && (
+        <MeetingForm
+          companyId={profile?.company_id}
+          profile={profile}
+          projects={projects}
+          defaultDate={selected}
+          defaultProjectId=""
+          allowNoProject
+          onSaved={loadMeetings}
+        />
+      )}
     </SwipeBack>
   )
 }
@@ -3127,6 +3382,18 @@ function ProjectDetail({ project, isAdmin, canUpload, isCustomer, profile, onBac
     </button>
   )
 
+  if (projectPage === 'meetings') {
+    return (
+      <ProjectMeetingsPage
+        project={project}
+        profile={profile}
+        isAdmin={isAdmin}
+        isCustomer={isCustomer}
+        onBack={() => setProjectPage(null)}
+      />
+    )
+  }
+
   if (projectPage === 'files') {
     return (
       <SwipeBack onBack={() => setProjectPage(null)}>
@@ -3579,6 +3846,7 @@ className={`bg-white border border-black rounded-md flex items-stretch overflow-
 
       <div className="space-y-2 mb-6">
         <ProjectNavRow icon={<FolderOpen size={16} />} label="Plans & files" count={files.length || null} onClick={() => setProjectPage('files')} />
+        <ProjectNavRow icon={<Clock size={16} />} label="Meetings" onClick={() => setProjectPage('meetings')} />
         <ProjectNavRow
           icon={<FileText size={16} />}
           label="Change orders"
