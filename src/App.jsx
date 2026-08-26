@@ -36,6 +36,42 @@ function clearCachedProfile() {
 }
 
 const WORKSPACE_KEY = 'bw_platform_workspace'
+const RECOVERY_KEY = 'bw_password_recovery'
+
+function markPasswordRecovery() {
+  try {
+    sessionStorage.setItem(RECOVERY_KEY, '1')
+  } catch (_) {}
+}
+
+function clearPasswordRecoveryFlag() {
+  try {
+    sessionStorage.removeItem(RECOVERY_KEY)
+  } catch (_) {}
+}
+
+function isPasswordRecoveryMarked() {
+  try {
+    return sessionStorage.getItem(RECOVERY_KEY) === '1'
+  } catch {
+    return false
+  }
+}
+
+function urlLooksLikeRecovery() {
+  try {
+    const hash = window.location.hash || ''
+    const search = window.location.search || ''
+    const full = (hash + ' ' + search).toLowerCase()
+    return (
+      full.includes('type=recovery') ||
+      full.includes('type%3drecovery') ||
+      full.includes('type=recovery'.toLowerCase())
+    )
+  } catch {
+    return false
+  }
+}
 
 function SetNewPasswordScreen({ onDone }) {
   const [password, setPassword] = useState('')
@@ -63,11 +99,10 @@ function SetNewPasswordScreen({ onDone }) {
       return
     }
     setDone(true)
-    // Clear recovery hash from URL
+    clearPasswordRecoveryFlag()
+    // Clear recovery tokens from URL
     try {
-      const url = new URL(window.location.href)
-      url.hash = ''
-      window.history.replaceState({}, '', url.pathname + url.search)
+      window.history.replaceState({}, '', window.location.pathname)
     } catch (_) {}
     setTimeout(() => onDone?.(), 800)
   }
@@ -128,7 +163,14 @@ export default function App() {
   const [company, setCompany] = useState(null)
   const [loading, setLoading] = useState(true)
   const [profileReady, setProfileReady] = useState(false)
-  const [passwordRecovery, setPasswordRecovery] = useState(false)
+  const [passwordRecovery, setPasswordRecovery] = useState(() => {
+    if (typeof window === 'undefined') return false
+    if (urlLooksLikeRecovery()) {
+      markPasswordRecovery()
+      return true
+    }
+    return isPasswordRecoveryMarked()
+  })
   const [platformWorkspace, setPlatformWorkspace] = useState(() => {
     try {
       return localStorage.getItem(WORKSPACE_KEY) === '1'
@@ -228,21 +270,35 @@ export default function App() {
   useEffect(() => {
     let mounted = true
 
-    // Detect recovery link in the URL (hash or query) before routing to dashboard
-    try {
-      const hash = window.location.hash || ''
-      const search = window.location.search || ''
-      if (
-        hash.includes('type=recovery') ||
-        search.includes('type=recovery') ||
-        hash.includes('type%3Drecovery')
-      ) {
-        setPasswordRecovery(true)
+    const enterRecovery = () => {
+      markPasswordRecovery()
+      if (mounted) setPasswordRecovery(true)
+    }
+
+    if (urlLooksLikeRecovery()) enterRecovery()
+
+    // Newer Supabase email links: ?token_hash=...&type=recovery
+    ;(async () => {
+      try {
+        const params = new URLSearchParams(window.location.search || '')
+        const token_hash = params.get('token_hash')
+        const type = params.get('type')
+        if (token_hash && type === 'recovery') {
+          enterRecovery()
+          const { error } = await supabase.auth.verifyOtp({ token_hash, type: 'recovery' })
+          if (error) console.error('recovery verifyOtp', error)
+          try {
+            window.history.replaceState({}, '', window.location.pathname)
+          } catch (_) {}
+        }
+      } catch (err) {
+        console.error('recovery parse', err)
       }
-    } catch (_) {}
+    })()
 
     supabase.auth.getSession().then(({ data: { session: s } }) => {
       if (!mounted) return
+      if (urlLooksLikeRecovery() || isPasswordRecoveryMarked()) enterRecovery()
       setSession(s)
       if (s?.user) {
         const cached = readCachedProfile(s.user.id)
@@ -263,7 +319,11 @@ export default function App() {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((event, s) => {
       if (event === 'PASSWORD_RECOVERY') {
-        setPasswordRecovery(true)
+        enterRecovery()
+      }
+      // SIGNED_IN from a recovery link also carries type=recovery in the URL momentarily
+      if (event === 'SIGNED_IN' && (urlLooksLikeRecovery() || isPasswordRecoveryMarked())) {
+        enterRecovery()
       }
       setSession(s)
       if (!s?.user) {
@@ -271,10 +331,10 @@ export default function App() {
         setCompany(null)
         clearCachedProfile()
         setProfileReady(true)
+        clearPasswordRecoveryFlag()
         setPasswordRecovery(false)
         return
       }
-      // TOKEN_REFRESHED / USER_UPDATED: soft reload — never flash setup
       const soft = event === 'TOKEN_REFRESHED' || event === 'USER_UPDATED'
       loadProfile(s.user.id, { soft })
     })
@@ -301,11 +361,14 @@ export default function App() {
     )
   }
 
-  // Password reset link landed here with a recovery session — force set-password UI
-  if (passwordRecovery) {
+  // Password reset link — always show set-password before dashboard
+  if (passwordRecovery || isPasswordRecoveryMarked()) {
     return (
       <SetNewPasswordScreen
-        onDone={() => setPasswordRecovery(false)}
+        onDone={() => {
+          clearPasswordRecoveryFlag()
+          setPasswordRecovery(false)
+        }}
       />
     )
   }

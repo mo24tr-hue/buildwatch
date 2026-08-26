@@ -7,6 +7,8 @@ if (!url || !key) {
   console.error('Missing VITE_SUPABASE_URL or VITE_SUPABASE_ANON_KEY in .env')
 }
 
+// Default (implicit) flow so email recovery links with #access_token work.
+// detectSessionInUrl picks up tokens from the reset email redirect.
 export const supabase = createClient(url, key, {
   realtime: {
     params: {
@@ -17,6 +19,5 @@ export const supabase = createClient(url, key, {
     persistSession: true,
     autoRefreshToken: true,
     detectSessionInUrl: true,
-    flowType: 'pkce',
   },
 })
