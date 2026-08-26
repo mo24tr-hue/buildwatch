@@ -24,3 +24,25 @@ body {
   margin: 0;
   background: #000;
 }
+
+@media print {
+  body * {
+    visibility: hidden !important;
+  }
+  #payment-receipt-print,
+  #payment-receipt-print * {
+    visibility: visible !important;
+  }
+  #payment-receipt-print {
+    position: absolute !important;
+    left: 0 !important;
+    top: 0 !important;
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 16px !important;
+    background: white !important;
+  }
+  .print-hide {
+    display: none !important;
+  }
+}
