@@ -1,5 +1,5 @@
--- Showcase workspace: Acme Builders only, seeded logo / covers / phase photos
--- Isolated from real companies. Run full script in Supabase SQL Editor.
+-- Acme Builders showcase workspace with custom logo, home covers, phase-matched photos
+-- Images ship in the app at /acme/*.jpg (deployed with Vercel)
 
 alter table public.companies
   add column if not exists is_showcase boolean not null default false;
@@ -17,6 +17,8 @@ alter table public.photos
   add column if not exists project_id uuid,
   add column if not exists uploaded_by uuid;
 
+alter table public.photos alter column storage_path drop not null;
+
 create or replace function public.ensure_showcase_workspace()
 returns uuid
 language plpgsql
@@ -29,19 +31,13 @@ declare
   p2 uuid;
   p3 uuid;
   ph record;
-  logo text := 'https://images.unsplash.com/photo-1503387762-592deb58ef4e?auto=format&fit=crop&w=256&h=256&q=80';
-  c1 text := 'https://images.unsplash.com/photo-1484154218962-a197022b5858?auto=format&fit=crop&w=1200&q=80';
-  c2 text := 'https://images.unsplash.com/photo-1503387762-592deb58ef4e?auto=format&fit=crop&w=1200&q=80';
-  c3 text := 'https://images.unsplash.com/photo-1556912173-3bb406ef7e77?auto=format&fit=crop&w=1200&q=80';
-  imgs text[] := array[
-    'https://images.unsplash.com/photo-1504307651254-35680f356dfd?auto=format&fit=crop&w=800&q=80',
-    'https://images.unsplash.com/photo-1541888946425-d81bb19240f5?auto=format&fit=crop&w=800&q=80',
-    'https://images.unsplash.com/photo-1621905252507-b35492cc74b4?auto=format&fit=crop&w=800&q=80',
-    'https://images.unsplash.com/photo-1581578731548-c64695cc6952?auto=format&fit=crop&w=800&q=80',
-    'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=800&q=80',
-    'https://images.unsplash.com/photo-1600607687939-ce8a6c25118c?auto=format&fit=crop&w=800&q=80'
-  ];
-  i int;
+  logo text := '/acme/logo.jpg';
+  c1 text := '/acme/cover-maple.jpg';
+  c2 text := '/acme/cover-oak.jpg';
+  c3 text := '/acme/cover-birch.jpg';
+  u text;
+  u2 text;
+  n text;
 begin
   if not public.is_platform_admin() then
     raise exception 'Not allowed';
@@ -55,24 +51,22 @@ begin
 
   if cid is null then
     insert into public.companies (name, header_color, logo_url)
-    values ('Acme Builders', '#000000', logo)
+    values ('Acme Builders', '#0B1C2C', logo)
     returning id into cid;
     update public.companies set is_showcase = true where id = cid;
   else
     update public.companies
     set name = 'Acme Builders',
         logo_url = logo,
-        header_color = coalesce(header_color, '#000000')
+        header_color = '#0B1C2C'
     where id = cid;
   end if;
 
-  -- Platform owner becomes contractor on THIS workspace only
   update public.profiles
   set company_id = cid,
       role = 'admin'
   where id = auth.uid();
 
-  -- Wipe prior showcase projects so we always reseed clean fake data
   delete from public.photos
   where project_id in (select id from public.projects where company_id = cid);
   delete from public.phases
@@ -81,7 +75,6 @@ begin
   where project_id in (select id from public.projects where company_id = cid);
   delete from public.projects where company_id = cid;
 
-  -- Project 1
   insert into public.projects (
     company_id, address, style, status, start_date, end_date, created_by,
     base_cost, amount_paid, cover_photo_url
@@ -100,7 +93,6 @@ begin
     (p1, 'Flooring', 6, 'pending', ''),
     (p1, 'Finishings', 7, 'pending', '');
 
-  -- Project 2
   insert into public.projects (
     company_id, address, style, status, start_date, end_date, created_by,
     base_cost, amount_paid, cover_photo_url
@@ -119,7 +111,6 @@ begin
     (p2, 'Insulation', 6, 'pending', ''),
     (p2, 'Drywall', 7, 'pending', '');
 
-  -- Project 3
   insert into public.projects (
     company_id, address, style, status, start_date, end_date, created_by,
     base_cost, amount_paid, cover_photo_url
@@ -138,18 +129,50 @@ begin
     (p3, 'Appliances', 6, 'done', ''),
     (p3, 'Finishings', 7, 'done', '');
 
-  -- Photos on every phase (2 each) using public construction images
-  i := 1;
   for ph in
-    select id, project_id from public.phases
+    select id, project_id, name from public.phases
     where project_id in (p1, p2, p3)
     order by project_id, sort_order
   loop
-    insert into public.photos (project_id, phase_id, public_url, media_type, uploaded_by)
+    n := lower(ph.name);
+    if n like '%demo%' then
+      u := '/acme/phase-demo.jpg'; u2 := '/acme/phase-demo.jpg';
+    elsif n like '%excav%' then
+      u := '/acme/phase-excavation.jpg'; u2 := '/acme/phase-excavation.jpg';
+    elsif n like '%foot%' or n like '%found%' then
+      u := '/acme/phase-foundation.jpg'; u2 := '/acme/phase-foundation.jpg';
+    elsif n like '%fram%' then
+      u := '/acme/phase-framing.jpg'; u2 := '/acme/phase-framing.jpg';
+    elsif n like '%roof%' then
+      u := '/acme/phase-roofing.jpg'; u2 := '/acme/phase-roofing.jpg';
+    elsif n like '%plumb%' then
+      u := '/acme/phase-plumbing.jpg'; u2 := '/acme/phase-plumbing.jpg';
+    elsif n like '%electr%' then
+      u := '/acme/phase-electrical.jpg'; u2 := '/acme/phase-electrical.jpg';
+    elsif n like '%insul%' then
+      u := '/acme/phase-insulation.jpg'; u2 := '/acme/phase-insulation.jpg';
+    elsif n like '%drywall%' then
+      u := '/acme/phase-drywall.jpg'; u2 := '/acme/phase-drywall.jpg';
+    elsif n like '%paint%' then
+      u := '/acme/phase-paint.jpg'; u2 := '/acme/phase-paint.jpg';
+    elsif n like '%floor%' then
+      u := '/acme/phase-flooring.jpg'; u2 := '/acme/phase-flooring.jpg';
+    elsif n like '%cabinet%' then
+      u := '/acme/phase-cabinets.jpg'; u2 := '/acme/phase-cabinets.jpg';
+    elsif n like '%counter%' then
+      u := '/acme/phase-countertops.jpg'; u2 := '/acme/phase-countertops.jpg';
+    elsif n like '%appliance%' then
+      u := '/acme/phase-appliances.jpg'; u2 := '/acme/phase-appliances.jpg';
+    elsif n like '%finish%' then
+      u := '/acme/phase-finishings.jpg'; u2 := '/acme/phase-finishings.jpg';
+    else
+      u := '/acme/phase-finishings.jpg'; u2 := '/acme/phase-framing.jpg';
+    end if;
+
+    insert into public.photos (project_id, phase_id, public_url, storage_path, media_type, uploaded_by)
     values
-      (ph.project_id, ph.id, imgs[1 + ((i - 1) % array_length(imgs, 1))], 'image', auth.uid()),
-      (ph.project_id, ph.id, imgs[1 + (i % array_length(imgs, 1))], 'image', auth.uid());
-    i := i + 1;
+      (ph.project_id, ph.id, u, 'showcase/' || ph.id::text || '/a.jpg', 'image', auth.uid()),
+      (ph.project_id, ph.id, u2, 'showcase/' || ph.id::text || '/b.jpg', 'image', auth.uid());
   end loop;
 
   return cid;
