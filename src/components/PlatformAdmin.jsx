@@ -1,21 +1,100 @@
 import { useCallback, useEffect, useState } from 'react'
-import { Building2, MessageSquare, Users, FolderKanban, LogOut, RefreshCw } from 'lucide-react'
+import { Building2, MessageSquare, Users, FolderKanban, LogOut, RefreshCw, ChevronLeft, MapPin } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { FEEDBACK_EMAIL } from '../lib/platform'
 import { fmtDateTime } from '../lib/styles'
 
+const DEMO_COMPANY = {
+  name: 'Acme Builders (Demo)',
+  email: 'contractor@acme-demo.local',
+}
+
+const DEMO_PROJECTS = [
+  {
+    id: 'demo-1',
+    address: '142 Maple Street',
+    style: 'Remodel',
+    status: 'In progress',
+    statusColor: '#E8622C',
+    done: 5,
+    total: 11,
+    base: 98000,
+    paid: 40000,
+    cos: 4500,
+    phases: [
+      { name: 'Demo', status: 'done' },
+      { name: 'Framing', status: 'done' },
+      { name: 'Electrical', status: 'done' },
+      { name: 'Insulation', status: 'done' },
+      { name: 'Drywall', status: 'done' },
+      { name: 'Paint', status: 'active' },
+      { name: 'Flooring', status: 'pending' },
+      { name: 'Finishings', status: 'pending' },
+    ],
+    changeOrders: [
+      { title: 'Foundation waterproofing', amount: 2500, status: 'Approved' },
+      { title: 'Upgrade to quartz counters', amount: 2000, status: 'Approved' },
+    ],
+  },
+  {
+    id: 'demo-2',
+    address: '88 Oak Avenue',
+    style: 'Addition',
+    status: 'In progress',
+    statusColor: '#E8622C',
+    done: 9,
+    total: 14,
+    base: 210000,
+    paid: 120000,
+    cos: 8500,
+    phases: [
+      { name: 'Excavation', status: 'done' },
+      { name: 'Foundation', status: 'done' },
+      { name: 'Framing', status: 'done' },
+      { name: 'Roofing', status: 'active' },
+      { name: 'Electrical', status: 'pending' },
+    ],
+    changeOrders: [{ title: 'Extra egress window', amount: 3200, status: 'Offer sent' }],
+  },
+  {
+    id: 'demo-3',
+    address: '21 Birch Lane',
+    style: 'Kitchen',
+    status: 'Complete',
+    statusColor: '#3F7D58',
+    done: 8,
+    total: 8,
+    base: 42000,
+    paid: 42000,
+    cos: 0,
+    phases: [
+      { name: 'Demo', status: 'done' },
+      { name: 'Cabinets', status: 'done' },
+      { name: 'Countertops', status: 'done' },
+      { name: 'Appliances', status: 'done' },
+    ],
+    changeOrders: [],
+  },
+]
+
+function money(n) {
+  if (n == null || Number.isNaN(Number(n))) return '—'
+  return '$' + Number(n).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })
+}
+
 /**
- * Standalone platform owner screen.
- * Only companies (name + counts) and feedback — no project access.
+ * Platform owner screen: companies, feedback, and isolated mock company for demos.
+ * Mock data never touches real company workspaces.
  */
 export default function PlatformAdmin({ profile, session, onLogout }) {
-  const [tab, setTab] = useState('companies') // companies | feedback
+  const [tab, setTab] = useState('companies') // companies | feedback | demo
   const [companies, setCompanies] = useState([])
   const [feedback, setFeedback] = useState([])
   const [loading, setLoading] = useState(true)
   const [statusFilter, setStatusFilter] = useState('all')
   const [search, setSearch] = useState('')
   const [error, setError] = useState('')
+  const [demoProjectId, setDemoProjectId] = useState(null)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -108,6 +187,7 @@ export default function PlatformAdmin({ profile, session, onLogout }) {
 
   const newCount = feedback.filter((f) => (f.status || 'new') === 'new').length
   const email = profile?.email || session?.user?.email || ''
+  const demoProject = DEMO_PROJECTS.find((p) => p.id === demoProjectId) || null
 
   return (
     <div className="min-h-screen bg-white">
@@ -142,7 +222,7 @@ export default function PlatformAdmin({ profile, session, onLogout }) {
           <nav className="flex border-t border-white/15" aria-label="Platform menu">
             <button
               type="button"
-              onClick={() => setTab('companies')}
+              onClick={() => { setTab('companies'); setDemoProjectId(null) }}
               className={
                 'flex-1 py-3 text-sm font-medium border-b-2 transition-colors ' +
                 (tab === 'companies'
@@ -155,7 +235,7 @@ export default function PlatformAdmin({ profile, session, onLogout }) {
             </button>
             <button
               type="button"
-              onClick={() => setTab('feedback')}
+              onClick={() => { setTab('feedback'); setDemoProjectId(null) }}
               className={
                 'flex-1 py-3 text-sm font-medium border-b-2 transition-colors ' +
                 (tab === 'feedback'
@@ -170,6 +250,18 @@ export default function PlatformAdmin({ profile, session, onLogout }) {
                 </span>
               )}
             </button>
+            <button
+              type="button"
+              onClick={() => { setTab('demo'); setDemoProjectId(null) }}
+              className={
+                'flex-1 py-3 text-sm font-medium border-b-2 transition-colors ' +
+                (tab === 'demo'
+                  ? 'border-[#E6B800] text-white'
+                  : 'border-transparent text-white/50 hover:text-white/80')
+              }
+            >
+              Demo
+            </button>
           </nav>
         </div>
       </header>
@@ -181,7 +273,7 @@ export default function PlatformAdmin({ profile, session, onLogout }) {
           </div>
         )}
 
-        {loading ? (
+        {loading && tab !== 'demo' ? (
           <p className="text-sm text-[#6B6E72]">Loading…</p>
         ) : tab === 'companies' ? (
           <div className="space-y-2">
@@ -218,7 +310,7 @@ export default function PlatformAdmin({ profile, session, onLogout }) {
               ))
             )}
           </div>
-        ) : (
+        ) : tab === 'feedback' ? (
           <div>
             <div className="flex flex-col sm:flex-row gap-2 mb-3">
               <input
@@ -300,20 +392,154 @@ export default function PlatformAdmin({ profile, session, onLogout }) {
                           Mark new
                         </button>
                       )}
-                      {f.email && (
-                        <a
-                          href={`mailto:${f.email}?subject=${encodeURIComponent('Re: BuildWatch feedback')}`}
-                          className="text-xs px-2 py-1 border border-black rounded"
-                        >
-                          Reply by email
-                        </a>
-                      )}
                     </div>
                   </div>
                 ))}
               </div>
             )}
-            <p className="text-[11px] text-[#6B6E72] mt-4">Inbox also at {FEEDBACK_EMAIL}</p>
+            <p className="text-[11px] text-[#6B6E72] mt-4">
+              Feedback also goes to {FEEDBACK_EMAIL || 'buildwatchfeedback@gmail.com'}.
+            </p>
+          </div>
+        ) : (
+          /* Demo mock company — local only, never writes to real companies */
+          <div>
+            <div className="mb-4 border border-black rounded-md p-4 bg-[#FAFAFA]">
+              <div className="font-display text-lg">{DEMO_COMPANY.name}</div>
+              <div className="text-xs text-[#6B6E72] mt-1">
+                Showcase workspace · fake data only · does not touch real companies
+              </div>
+            </div>
+
+            {!demoProject ? (
+              <div className="space-y-2">
+                <p className="text-sm text-[#6B6E72] mb-2">
+                  Open a mock project for screenshots or walkthroughs.
+                </p>
+                {DEMO_PROJECTS.map((p) => (
+                  <button
+                    key={p.id}
+                    type="button"
+                    onClick={() => setDemoProjectId(p.id)}
+                    className="w-full text-left bg-white border border-black rounded-md p-4 hover:border-[#E6B800]"
+                  >
+                    <div className="flex justify-between items-start gap-2">
+                      <div>
+                        <div className="font-medium flex items-center gap-1.5">
+                          <MapPin size={14} className="text-[#6B6E72]" />
+                          {p.address}
+                        </div>
+                        <div className="text-xs text-[#6B6E72] mt-1">
+                          {p.style} · {p.done} of {p.total} phases
+                        </div>
+                      </div>
+                      <span
+                        className="text-[10px] font-mono uppercase px-2 py-0.5 rounded"
+                        style={{ background: p.statusColor + '22', color: p.statusColor }}
+                      >
+                        {p.status}
+                      </span>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <div>
+                <button
+                  type="button"
+                  onClick={() => setDemoProjectId(null)}
+                  className="flex items-center gap-1 text-sm text-[#6B6E72] mb-4"
+                >
+                  <ChevronLeft size={16} /> All demo projects
+                </button>
+                <div className="bg-white border border-black rounded-md p-5 mb-4">
+                  <div className="text-sm font-semibold">{demoProject.style}</div>
+                  <h2 className="font-display text-2xl flex items-center gap-1.5 mt-1">
+                    <MapPin size={16} className="text-[#6B6E72]" />
+                    {demoProject.address}
+                  </h2>
+                  <div className="text-[11px] font-mono text-[#6B6E72] mt-2">
+                    {demoProject.done} of {demoProject.total} phases complete
+                  </div>
+                  <div className="h-2 rounded-full bg-[#E9E9E7] overflow-hidden mt-2">
+                    <div
+                      className="h-full bg-[#3F7D58]"
+                      style={{ width: `${(demoProject.done / demoProject.total) * 100}%` }}
+                    />
+                  </div>
+                </div>
+
+                <div className="bg-white border border-black rounded-md p-4 mb-4 space-y-2 text-sm">
+                  <div className="text-[11px] font-mono uppercase text-[#6B6E72]">Cost of construction</div>
+                  <div className="flex justify-between">
+                    <span className="text-[#6B6E72]">Original contract</span>
+                    <span>{money(demoProject.base)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-[#6B6E72]">Approved change orders</span>
+                    <span>{money(demoProject.cos)}</span>
+                  </div>
+                  <div className="flex justify-between font-medium border-t border-black/10 pt-2">
+                    <span>Total</span>
+                    <span>{money(demoProject.base + demoProject.cos)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-[#6B6E72]">Paid</span>
+                    <span className="text-[#3F7D58]">{money(demoProject.paid)}</span>
+                  </div>
+                  <div className="flex justify-between font-medium">
+                    <span className="text-[#6B6E72]">Remaining</span>
+                    <span className="text-[#B5533C]">
+                      {money(demoProject.base + demoProject.cos - demoProject.paid)}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="space-y-2 mb-4">
+                  <div className="text-[11px] font-mono uppercase text-[#6B6E72]">Phases</div>
+                  {demoProject.phases.map((ph, i) => (
+                    <div
+                      key={ph.name}
+                      className="bg-white border border-black rounded-md flex overflow-hidden"
+                    >
+                      <div
+                        className="w-9 flex items-center justify-center font-mono text-xs text-white"
+                        style={{
+                          background:
+                            ph.status === 'done'
+                              ? '#3F7D58'
+                              : ph.status === 'active'
+                                ? '#E6B800'
+                                : '#9A9A9A',
+                        }}
+                      >
+                        {i + 1}
+                      </div>
+                      <div className="px-3 py-3 text-sm font-medium">{ph.name}</div>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="bg-white border border-black rounded-md p-4 mb-4">
+                  <div className="text-[11px] font-mono uppercase text-[#6B6E72] mb-2">Change orders</div>
+                  {demoProject.changeOrders.length === 0 ? (
+                    <p className="text-sm text-[#6B6E72]">None</p>
+                  ) : (
+                    <ul className="text-sm space-y-2">
+                      {demoProject.changeOrders.map((c) => (
+                        <li key={c.title} className="flex justify-between gap-2">
+                          <span>
+                            {c.title}{' '}
+                            <span className="text-[#6B6E72]">· {c.status}</span>
+                          </span>
+                          <span className="tabular-nums">{money(c.amount)}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
         )}
       </main>

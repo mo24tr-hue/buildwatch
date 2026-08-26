@@ -746,43 +746,6 @@ export default function Dashboard({ session, profile, company, onCompanyUpdate, 
     await loadProjects()
   }
 
-  const createDemoProject = async () => {
-    if (!profile?.company_id) return
-    const { data: project, error } = await supabase
-      .from('projects')
-      .insert({
-        company_id: profile.company_id,
-        address: '142 Maple Street (Demo)',
-        style: 'Remodel',
-        status: 'active',
-        start_date: new Date().toISOString().slice(0, 10),
-        end_date: null,
-        created_by: profile.id,
-        base_cost: 85000,
-        amount_paid: 25000,
-      })
-      .select()
-      .single()
-    if (error) {
-      alert(error.message)
-      return
-    }
-    const names = ['Demo', 'Framing', 'Electrical', 'Drywall', 'Paint', 'Flooring']
-    await supabase.from('phases').insert(
-      names.map((name, i) => ({
-        project_id: project.id,
-        name,
-        sort_order: i,
-        status: i < 2 ? 'done' : i === 2 ? 'active' : 'pending',
-        trade: '',
-      }))
-    )
-    await logActivity('created project', project.address, project.id)
-    await loadProjects()
-    setActiveId(project.id)
-  }
-
-
   return (
     <div className="min-h-screen bg-white">
       <header className="text-white px-4 pb-3 sticky top-0 z-50" style={{ paddingTop: "max(0.75rem, env(safe-area-inset-top))", background: (headerCompany?.header_color || company?.header_color || '#000000') }}>
@@ -945,35 +908,24 @@ export default function Dashboard({ session, profile, company, onCompanyUpdate, 
                   >
                     Change password
                   </button>
-                  <button
-                    type="button"
-                    className="w-full text-left px-3 py-2.5 text-sm hover:bg-[#F5F5F5]"
-                    onClick={() => {
-                      setMenuOpen(false)
-                      setShowHelp(true)
-                      setShowPassword(false)
-                      setShowAdmin(false)
-                      setShowCalendar(false)
-                      setShowWeek(false)
-                      setShowPlatform(false)
-                      setShowFeedback(false)
-                      setActiveId(null)
-                      setShowNew(false)
-                    }}
-                  >
-                    How to invite
-                  </button>
                   {isAdmin && (
                     <button
                       type="button"
                       className="w-full text-left px-3 py-2.5 text-sm hover:bg-[#F5F5F5]"
-                      onClick={async () => {
+                      onClick={() => {
                         setMenuOpen(false)
-                        if (!confirm('Create a demo project with sample phases and cost? Safe to delete later.')) return
-                        await createDemoProject()
+                        setShowHelp(true)
+                        setShowPassword(false)
+                        setShowAdmin(false)
+                        setShowCalendar(false)
+                        setShowWeek(false)
+                        setShowPlatform(false)
+                        setShowFeedback(false)
+                        setActiveId(null)
+                        setShowNew(false)
                       }}
                     >
-                      Add demo project
+                      How to invite
                     </button>
                   )}
                   <button
