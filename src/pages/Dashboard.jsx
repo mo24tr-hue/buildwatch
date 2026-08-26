@@ -1695,21 +1695,44 @@ function money(n) {
   return '$' + Number(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 }
 
-/** Contractor + customer only. Total = base_cost + approved change orders. */
+/** Contractor + customer only. Total = base_cost + approved change orders. Receipts from payment history. */
 function ProjectCostSection({ project, isAdmin, profile, onReload, logActivity }) {
   const [editing, setEditing] = useState(false)
+  const [recordingPay, setRecordingPay] = useState(false)
   const [baseInput, setBaseInput] = useState(
     project.base_cost != null ? String(project.base_cost) : ''
   )
-  const [paidInput, setPaidInput] = useState(
-    project.amount_paid != null ? String(project.amount_paid) : '0'
-  )
+  const [payAmount, setPayAmount] = useState('')
+  const [payNote, setPayNote] = useState('')
   const [saving, setSaving] = useState(false)
+  const [payments, setPayments] = useState([])
+  const [receipt, setReceipt] = useState(null)
+  const [companyInfo, setCompanyInfo] = useState(null)
 
   useEffect(() => {
     setBaseInput(project.base_cost != null ? String(project.base_cost) : '')
-    setPaidInput(project.amount_paid != null ? String(project.amount_paid) : '0')
-  }, [project.id, project.base_cost, project.amount_paid])
+  }, [project.id, project.base_cost])
+
+  useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      const { data } = await supabase
+        .from('project_payments')
+        .select('*')
+        .eq('project_id', project.id)
+        .order('created_at', { ascending: false })
+      if (!cancelled) setPayments(data || [])
+      if (profile?.company_id) {
+        const { data: co } = await supabase
+          .from('companies')
+          .select('name, logo_url')
+          .eq('id', profile.company_id)
+          .maybeSingle()
+        if (!cancelled) setCompanyInfo(co)
+      }
+    })()
+    return () => { cancelled = true }
+  }, [project.id, project.amount_paid, profile?.company_id])
 
   const approvedCos = (project.change_orders || []).filter(
     (c) => (c.status || '') === 'approved' && c.amount != null
@@ -1723,26 +1746,17 @@ function ProjectCostSection({ project, isAdmin, profile, onReload, logActivity }
   const paid = Number(project.amount_paid) || 0
   const remaining = total != null ? total - paid : null
 
-  const save = async () => {
+  const saveBase = async () => {
     setSaving(true)
     const baseVal = baseInput === '' ? null : Number(baseInput)
-    const paidVal = paidInput === '' ? 0 : Number(paidInput)
     if (baseVal != null && (Number.isNaN(baseVal) || baseVal < 0)) {
       alert('Enter a valid construction cost.')
       setSaving(false)
       return
     }
-    if (Number.isNaN(paidVal) || paidVal < 0) {
-      alert('Enter a valid amount paid.')
-      setSaving(false)
-      return
-    }
     const { error } = await supabase
       .from('projects')
-      .update({
-        base_cost: baseVal,
-        amount_paid: paidVal,
-      })
+      .update({ base_cost: baseVal })
       .eq('id', project.id)
     setSaving(false)
     if (error) {
@@ -1754,18 +1768,209 @@ function ProjectCostSection({ project, isAdmin, profile, onReload, logActivity }
     onReload()
   }
 
+  const recordPayment = async () => {
+    const amt = Number(payAmount)
+    if (!amt || Number.isNaN(amt) || amt <= 0) {
+      alert('Enter a payment amount greater than zero.')
+      return
+    }
+    setSaving(true)
+    const newPaid = paid + amt
+    const remAfter = total != null ? total - newPaid : null
+    const { data: payRow, error: payErr } = await supabase
+      .from('project_payments')
+      .insert({
+        project_id: project.id,
+        company_id: profile.company_id,
+        amount: amt,
+        note: payNote.trim() || null,
+        total_at_payment: total,
+        paid_after: newPaid,
+        remaining_after: remAfter,
+        recorded_by: profile.id,
+      })
+      .select()
+      .single()
+    if (payErr) {
+      setSaving(false)
+      alert(payErr.message)
+      return
+    }
+    const { error } = await supabase
+      .from('projects')
+      .update({ amount_paid: newPaid })
+      .eq('id', project.id)
+    setSaving(false)
+    if (error) {
+      alert(error.message)
+      return
+    }
+    await logActivity?.('recorded payment ' + money(amt), project.address)
+    setPayAmount('')
+    setPayNote('')
+    setRecordingPay(false)
+    setPayments((prev) => [payRow, ...prev])
+    setReceipt(payRow)
+    onReload()
+  }
+
+  const openReceipt = (p) => setReceipt(p)
+
+  if (receipt) {
+    return (
+      <div className="fixed inset-0 z-[80] bg-white flex flex-col">
+        <div className="flex items-center justify-between gap-2 px-4 py-3 border-b border-black print:hidden" style={{ paddingTop: 'max(0.75rem, env(safe-area-inset-top))' }}>
+          <button type="button" onClick={() => setReceipt(null)} className="flex items-center gap-1 text-sm text-[#6B6E72]">
+            <ChevronLeft size={16} /> Back
+          </button>
+          <button
+            type="button"
+            onClick={() => window.print()}
+            className="flex items-center gap-1.5 text-sm px-3 py-1.5 bg-black text-white rounded"
+          >
+            <Printer size={14} /> Print / Save PDF
+          </button>
+        </div>
+        <div className="flex-1 overflow-auto p-6 max-w-lg mx-auto w-full" id="payment-receipt-print">
+          <div className="border border-black rounded-md p-6">
+            <div className="text-center mb-6">
+              {companyInfo?.logo_url && (
+                <img src={companyInfo.logo_url} alt="" className="h-12 mx-auto mb-2 object-contain" />
+              )}
+              <div className="font-display text-xl">{companyInfo?.name || 'BuildWatch'}</div>
+              <div className="text-[11px] font-mono uppercase text-[#6B6E72] mt-1">Payment receipt</div>
+            </div>
+            <div className="space-y-2 text-sm mb-6">
+              <div className="flex justify-between gap-3">
+                <span className="text-[#6B6E72]">Project</span>
+                <span className="font-medium text-right">{project.address}</span>
+              </div>
+              <div className="flex justify-between gap-3">
+                <span className="text-[#6B6E72]">Date</span>
+                <span>{fmtDateTime(receipt.created_at) || fmtDate(receipt.created_at)}</span>
+              </div>
+              {receipt.note && (
+                <div className="flex justify-between gap-3">
+                  <span className="text-[#6B6E72]">Note</span>
+                  <span className="text-right">{receipt.note}</span>
+                </div>
+              )}
+            </div>
+            <div className="border-t border-black/20 pt-4 space-y-2 text-sm">
+              <div className="flex justify-between gap-3">
+                <span className="text-[#6B6E72]">Payment received</span>
+                <span className="font-semibold text-lg tabular-nums">{money(receipt.amount)}</span>
+              </div>
+              {receipt.total_at_payment != null && (
+                <div className="flex justify-between gap-3">
+                  <span className="text-[#6B6E72]">Project total</span>
+                  <span className="tabular-nums">{money(receipt.total_at_payment)}</span>
+                </div>
+              )}
+              {receipt.paid_after != null && (
+                <div className="flex justify-between gap-3">
+                  <span className="text-[#6B6E72]">Total paid to date</span>
+                  <span className="tabular-nums">{money(receipt.paid_after)}</span>
+                </div>
+              )}
+              {receipt.remaining_after != null && (
+                <div className="flex justify-between gap-3 border-t border-black/10 pt-2">
+                  <span className="font-medium">Balance remaining</span>
+                  <span className="font-semibold tabular-nums">{money(receipt.remaining_after)}</span>
+                </div>
+              )}
+            </div>
+            <p className="text-[10px] text-[#6B6E72] mt-8 text-center">
+              Generated by BuildWatch · Receipt ID {String(receipt.id).slice(0, 8)}
+            </p>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="bg-white border border-black rounded-md p-4 mb-4">
       <div className="flex items-center justify-between gap-2 mb-3">
         <h3 className="text-[11px] font-mono uppercase text-[#6B6E72]">Cost of construction</h3>
-        {isAdmin && !editing && (
-          <button type="button" onClick={() => setEditing(true)} className="text-xs underline text-[#6B6E72]">
-            Update
-          </button>
+        {isAdmin && !editing && !recordingPay && (
+          <div className="flex gap-3">
+            <button type="button" onClick={() => setRecordingPay(true)} className="text-xs underline text-[#6B6E72]">
+              Record payment
+            </button>
+            <button type="button" onClick={() => setEditing(true)} className="text-xs underline text-[#6B6E72]">
+              Edit contract
+            </button>
+          </div>
         )}
       </div>
 
-      {!editing ? (
+      {recordingPay && isAdmin ? (
+        <div className="space-y-3">
+          <div>
+            <label className="block text-[11px] font-mono uppercase text-[#6B6E72] mb-1">Payment amount</label>
+            <div className="flex items-center gap-2">
+              <span className="text-sm">$</span>
+              <input
+                type="number"
+                min="0.01"
+                step="0.01"
+                value={payAmount}
+                onChange={(e) => setPayAmount(e.target.value)}
+                className="w-full border border-black rounded px-3 py-2 text-sm"
+                placeholder="0.00"
+                autoFocus
+              />
+            </div>
+          </div>
+          <div>
+            <label className="block text-[11px] font-mono uppercase text-[#6B6E72] mb-1">Note (optional)</label>
+            <input
+              value={payNote}
+              onChange={(e) => setPayNote(e.target.value)}
+              className="w-full border border-black rounded px-3 py-2 text-sm"
+              placeholder="e.g. Deposit, Progress draw 2"
+            />
+          </div>
+          <div className="flex gap-2">
+            <button type="button" onClick={() => setRecordingPay(false)} className="flex-1 py-2 border border-black rounded text-sm">
+              Cancel
+            </button>
+            <button type="button" disabled={saving} onClick={recordPayment} className="flex-1 py-2 bg-black text-white rounded text-sm disabled:opacity-50">
+              {saving ? 'Saving…' : 'Save & receipt'}
+            </button>
+          </div>
+        </div>
+      ) : editing && isAdmin ? (
+        <div className="space-y-3">
+          <div>
+            <label className="block text-[11px] font-mono uppercase text-[#6B6E72] mb-1">Original contract</label>
+            <div className="flex items-center gap-2">
+              <span className="text-sm">$</span>
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                value={baseInput}
+                onChange={(e) => setBaseInput(e.target.value)}
+                className="w-full border border-black rounded px-3 py-2 text-sm"
+                placeholder="0.00"
+              />
+            </div>
+          </div>
+          <p className="text-xs text-[#6B6E72]">
+            Use Record payment to log payments and generate receipts. Approved change orders add to the total automatically.
+          </p>
+          <div className="flex gap-2">
+            <button type="button" onClick={() => setEditing(false)} className="flex-1 py-2 border border-black rounded text-sm">
+              Cancel
+            </button>
+            <button type="button" disabled={saving} onClick={saveBase} className="flex-1 py-2 bg-black text-white rounded text-sm disabled:opacity-50">
+              {saving ? 'Saving…' : 'Save'}
+            </button>
+          </div>
+        </div>
+      ) : (
         <div className="space-y-2 text-sm">
           <div className="flex justify-between gap-3">
             <span className="text-[#6B6E72]">Original contract</span>
@@ -1798,55 +2003,29 @@ function ProjectCostSection({ project, isAdmin, profile, onReload, logActivity }
               {money(remaining)}
             </span>
           </div>
+          {payments.length > 0 && (
+            <div className="pt-3 mt-1 border-t border-black/10">
+              <div className="text-[11px] font-mono uppercase text-[#6B6E72] mb-2">Payment receipts</div>
+              <div className="space-y-1.5">
+                {payments.map((p) => (
+                  <button
+                    key={p.id}
+                    type="button"
+                    onClick={() => openReceipt(p)}
+                    className="w-full flex justify-between items-center gap-2 text-left text-sm py-1.5 px-2 rounded border border-black/15 hover:border-black"
+                  >
+                    <span className="text-[#6B6E72] text-xs">{fmtDate(p.created_at)}{p.note ? ` · ${p.note}` : ''}</span>
+                    <span className="font-medium tabular-nums">{money(p.amount)}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
           {base == null && !changeOrderTotal && (
             <p className="text-xs text-[#6B6E72] pt-1">
               {isAdmin ? 'Set the original contract amount to track costs.' : 'No cost set yet.'}
             </p>
           )}
-        </div>
-      ) : (
-        <div className="space-y-3">
-          <div>
-            <label className="block text-[11px] font-mono uppercase text-[#6B6E72] mb-1">Original contract</label>
-            <div className="flex items-center gap-2">
-              <span className="text-sm">$</span>
-              <input
-                type="number"
-                min="0"
-                step="0.01"
-                value={baseInput}
-                onChange={(e) => setBaseInput(e.target.value)}
-                className="w-full border border-black rounded px-3 py-2 text-sm"
-                placeholder="0.00"
-              />
-            </div>
-          </div>
-          <div>
-            <label className="block text-[11px] font-mono uppercase text-[#6B6E72] mb-1">Amount paid</label>
-            <div className="flex items-center gap-2">
-              <span className="text-sm">$</span>
-              <input
-                type="number"
-                min="0"
-                step="0.01"
-                value={paidInput}
-                onChange={(e) => setPaidInput(e.target.value)}
-                className="w-full border border-black rounded px-3 py-2 text-sm"
-                placeholder="0.00"
-              />
-            </div>
-          </div>
-          <p className="text-xs text-[#6B6E72]">
-            Approved change orders ({money(changeOrderTotal)}) are added to the total automatically when the customer accepts.
-          </p>
-          <div className="flex gap-2">
-            <button type="button" onClick={() => setEditing(false)} className="flex-1 py-2 border border-black rounded text-sm">
-              Cancel
-            </button>
-            <button type="button" disabled={saving} onClick={save} className="flex-1 py-2 bg-black text-white rounded text-sm disabled:opacity-50">
-              {saving ? 'Saving…' : 'Save'}
-            </button>
-          </div>
         </div>
       )}
     </div>
