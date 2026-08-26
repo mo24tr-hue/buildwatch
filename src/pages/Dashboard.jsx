@@ -1458,6 +1458,7 @@ function MeetingForm({ companyId, profile, projects, defaultDate, defaultProject
   const [date, setDate] = useState(defaultDate || '')
   const [time, setTime] = useState('')
   const [projectId, setProjectId] = useState(defaultProjectId || '')
+  const [location, setLocation] = useState('')
   const [notes, setNotes] = useState('')
   const [saving, setSaving] = useState(false)
 
@@ -1465,19 +1466,33 @@ function MeetingForm({ companyId, profile, projects, defaultDate, defaultProject
     if (defaultDate) setDate(defaultDate)
   }, [defaultDate])
 
+  // When a project is chosen, prefill address if location is empty
+  useEffect(() => {
+    if (!projectId) return
+    const p = (projects || []).find((x) => x.id === projectId)
+    if (p?.address && !location.trim()) setLocation(p.address)
+  }, [projectId])
+
   const submit = async (e) => {
     e?.preventDefault?.()
     if (!title.trim() || !date || !companyId) return
     setSaving(true)
-    const { error } = await supabase.from('meetings').insert({
+    const payload = {
       company_id: companyId,
       project_id: projectId || null,
       title: title.trim(),
       notes: notes.trim() || null,
       meet_date: date,
       meet_time: time || null,
+      location: location.trim() || null,
       created_by: profile?.id || null,
-    })
+    }
+    let { error } = await supabase.from('meetings').insert(payload)
+    // Fallback if location column not migrated yet
+    if (error && /location|column/i.test(error.message || '')) {
+      const { location: _l, ...withoutLoc } = payload
+      ;({ error } = await supabase.from('meetings').insert(withoutLoc))
+    }
     setSaving(false)
     if (error) {
       alert(error.message || 'Could not save meeting')
@@ -1486,6 +1501,7 @@ function MeetingForm({ companyId, profile, projects, defaultDate, defaultProject
     setTitle('')
     setTime('')
     setNotes('')
+    setLocation('')
     onSaved?.()
   }
 
@@ -1517,6 +1533,15 @@ function MeetingForm({ companyId, profile, projects, defaultDate, defaultProject
           <label className="block text-[11px] font-mono uppercase text-[#6B6E72] mb-1">Time</label>
           <input type="time" value={time} onChange={(e) => setTime(e.target.value)} className={fieldCls} />
         </div>
+      </div>
+      <div className="min-w-0">
+        <label className="block text-[11px] font-mono uppercase text-[#6B6E72] mb-1">Address</label>
+        <input
+          value={location}
+          onChange={(e) => setLocation(e.target.value)}
+          placeholder="214 Maple St"
+          className={fieldCls}
+        />
       </div>
       {allowNoProject && (
         <div className="min-w-0">
@@ -1578,6 +1603,7 @@ function ProjectMeetingsPage({ project, profile, isAdmin, isCustomer, onBack }) 
                   <div className="text-xs text-[#6B6E72] mt-0.5">
                     {fmtDate(m.meet_date)}
                     {m.meet_time ? ` · ${fmtMeetTime(m.meet_time)}` : ''}
+                    {m.location ? ` · ${m.location}` : ''}
                   </div>
                   {m.notes && <div className="text-xs text-[#6B6E72] mt-1 whitespace-pre-wrap">{m.notes}</div>}
                 </div>
@@ -1846,7 +1872,7 @@ function AdminCalendarView({ projects, role, profile, onBack, onOpenProject, hid
                             <div className="text-sm font-medium">{m.title}</div>
                             <div className="text-xs text-[#6B6E72] mt-0.5">
                               {fmtMeetTime(m.meet_time) || 'Time TBD'}
-                              {proj ? ` · ${proj.address}` : ' · General'}
+                              {m.location ? ` · ${m.location}` : proj ? ` · ${proj.address}` : ' · General'}
                             </div>
                             {m.notes && <div className="text-xs text-[#6B6E72] mt-1 whitespace-pre-wrap">{m.notes}</div>}
                           </button>
@@ -3723,45 +3749,13 @@ className={`bg-white border border-black rounded-md flex items-stretch overflow-
                 <span>{(phase.photos || []).length} photo{(phase.photos || []).length !== 1 ? 's' : ''}</span>
               </div>
             </button>
-            {isAdmin && (
-              <div className="flex flex-col border-l border-black/20">
-                <button
-                  type="button"
-                  disabled={i === 0}
-                  onClick={() => movePhaseBy(i, -1)}
-                  className="px-2.5 py-1.5 disabled:opacity-25"
-                  title="Move up"
-                >
-                  <ChevronUp size={18} />
-                </button>
-                <button
-                  type="button"
-                  disabled={i === phases.length - 1}
-                  onClick={() => movePhaseBy(i, 1)}
-                  className="px-2.5 py-1.5 disabled:opacity-25"
-                  title="Move down"
-                >
-                  <ChevronDown size={18} />
-                </button>
-              </div>
-            )}
-            {isAdmin ? (
-              <button type="button" onClick={() => cyclePhase(phase)} className="px-2 flex items-center border-l border-black/20" title="Cycle status">
-                {phase.status === 'done' ? (
-                  <Check size={16} className="text-[#3F7D58]" />
-                ) : (
-                  <div className="w-2.5 h-2.5 rounded-full" style={{ background: (PHASE_STATUS[phase.status] || PHASE_STATUS.pending).color }} />
-                )}
-              </button>
-            ) : (
-              <div className="px-2 flex items-center">
-                {phase.status === 'done' ? (
-                  <Check size={16} className="text-[#3F7D58]" />
-                ) : (
-                  <div className="w-2.5 h-2.5 rounded-full" style={{ background: (PHASE_STATUS[phase.status] || PHASE_STATUS.pending).color }} />
-                )}
-              </div>
-            )}
+            <div className="px-2 flex items-center border-l border-black/20">
+              {phase.status === 'done' ? (
+                <Check size={16} className="text-[#3F7D58]" />
+              ) : (
+                <div className="w-2.5 h-2.5 rounded-full" style={{ background: (PHASE_STATUS[phase.status] || PHASE_STATUS.pending).color }} />
+              )}
+            </div>
           </div>
           </div>
         )})}
@@ -3819,55 +3813,13 @@ className={`bg-white border border-black rounded-md flex items-stretch overflow-
                     {(phase.photos || []).length} photo{(phase.photos || []).length !== 1 ? 's' : ''}
                   </div>
                 </button>
-                {isAdmin && (
-                  <div className="flex flex-col border-l border-black/20">
-                    <button
-                      type="button"
-                      disabled={fi === 0}
-                      onClick={() => {
-                        if (globalIdx <= 0) return
-                        // swap with previous finishing only
-                        const prevFin = finishing[fi - 1]
-                        const prevIdx = phases.findIndex((p) => p.id === prevFin.id)
-                        movePhaseBy(globalIdx, prevIdx - globalIdx)
-                      }}
-                      className="px-2.5 py-1.5 disabled:opacity-25"
-                      title="Move up"
-                    >
-                      <ChevronUp size={18} />
-                    </button>
-                    <button
-                      type="button"
-                      disabled={fi === finishing.length - 1}
-                      onClick={() => {
-                        const nextFin = finishing[fi + 1]
-                        const nextIdx = phases.findIndex((p) => p.id === nextFin.id)
-                        movePhaseBy(globalIdx, nextIdx - globalIdx)
-                      }}
-                      className="px-2.5 py-1.5 disabled:opacity-25"
-                      title="Move down"
-                    >
-                      <ChevronDown size={18} />
-                    </button>
-                  </div>
-                )}
-                {isAdmin ? (
-                  <button type="button" onClick={() => cyclePhase(phase)} className="px-2 flex items-center border-l border-black/20" title="Cycle status">
-                    {phase.status === 'done' ? (
-                      <Check size={16} className="text-[#3F7D58]" />
-                    ) : (
-                      <div className="w-2.5 h-2.5 rounded-full" style={{ background: (PHASE_STATUS[phase.status] || PHASE_STATUS.pending).color }} />
-                    )}
-                  </button>
-                ) : (
-                  <div className="px-2 flex items-center">
-                    {phase.status === 'done' ? (
-                      <Check size={16} className="text-[#3F7D58]" />
-                    ) : (
-                      <div className="w-2.5 h-2.5 rounded-full" style={{ background: (PHASE_STATUS[phase.status] || PHASE_STATUS.pending).color }} />
-                    )}
-                  </div>
-                )}
+                <div className="px-2 flex items-center border-l border-black/20">
+                  {phase.status === 'done' ? (
+                    <Check size={16} className="text-[#3F7D58]" />
+                  ) : (
+                    <div className="w-2.5 h-2.5 rounded-full" style={{ background: (PHASE_STATUS[phase.status] || PHASE_STATUS.pending).color }} />
+                  )}
+                </div>
               </div>
             )
           })
