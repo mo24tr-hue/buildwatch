@@ -811,22 +811,30 @@ export default function Dashboard({ session, profile, company, onCompanyUpdate, 
 
   return (
     <div className="min-h-screen bg-white">
-      <header className="text-white px-4 pb-3 sticky top-0 z-50" style={{ paddingTop: "max(0.75rem, env(safe-area-inset-top))", background: (headerCompany?.header_color || company?.header_color || '#000000') }}>
-        <div className="max-w-2xl mx-auto grid grid-cols-3 items-center gap-2">
+      <header
+        className="text-white px-4 sticky top-0 z-50"
+        style={{
+          // Extra offset so content clears Dynamic Island / notch on iPhone
+          paddingTop: 'calc(env(safe-area-inset-top, 0px) + 18px)',
+          paddingBottom: '14px',
+          background: (headerCompany?.header_color || company?.header_color || '#000000'),
+        }}
+      >
+        <div className="max-w-2xl mx-auto grid grid-cols-3 items-center gap-2 min-h-[40px]">
           {/* Left: company + email */}
           <div className="min-w-0 text-left">
             <div className="font-display text-sm sm:text-base tracking-wide truncate leading-tight">
               {headerCompany?.name || company?.name || 'Workspace'}
             </div>
-            <div className="text-[10px] text-white/50 truncate">{profile?.email}</div>
+            <div className="text-[10px] text-white/50 truncate leading-tight mt-0.5">{profile?.email}</div>
           </div>
-          {/* Center: logo */}
-          <div className="flex justify-center items-center min-w-0">
+          {/* Center: logo — kept shorter so it stays under the island */}
+          <div className="flex justify-center items-center min-w-0 self-center">
             {(headerCompany?.logo_url || company?.logo_url) ? (
               <img
                 src={headerCompany?.logo_url || company?.logo_url}
                 alt={headerCompany?.name || company?.name || 'Logo'}
-                className="h-11 w-auto max-w-[120px] object-contain"
+                className="h-9 w-auto max-w-[100px] object-contain"
                 onError={(e) => {
                   e.currentTarget.style.display = 'none'
                 }}
