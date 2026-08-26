@@ -9,6 +9,14 @@ body {
   color: #000000;
 }
 
+/* iOS Safari zooms focused inputs under 16px — keep layout stable */
+input,
+textarea,
+select {
+  font-size: 16px !important;
+}
+
+
 .font-display {
   font-family: 'Cinzel', serif;
   letter-spacing: 0.04em;
