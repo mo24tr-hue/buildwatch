@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState, useRef } from 'react'
-import { HardHat, Plus, Image as ImageIcon, MapPin, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Camera, Trash2, Check, FileText, X, Video, Menu, Share2, Bell, Search, Copy, Archive, Printer } from 'lucide-react'
+import { HardHat, Plus, Image as ImageIcon, MapPin, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Camera, Trash2, Check, FileText, X, Video, Menu, Share2, Bell, Search, Copy, Archive, Printer, CalendarDays, Users, FolderOpen, DollarSign, Activity, CircleDot } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { STYLES, PROJECT_STATUS, PHASE_STATUS, nextPhaseStatus, fmtDate, fmtDateTime, isFinishingPhase, FINISHING_PHASES, finishingLabel, roleLabel } from '../lib/styles'
 import AdminPanel from '../components/AdminPanel'
@@ -169,6 +169,7 @@ export default function Dashboard({ session, profile, company, onCompanyUpdate, 
   const [showPlatform, setShowPlatform] = useState(false)
   const [showFeedback, setShowFeedback] = useState(false)
   const [showWeek, setShowWeek] = useState(false)
+  const [homeTab, setHomeTab] = useState('projects')
   const [menuOpen, setMenuOpen] = useState(false)
   const [showHelp, setShowHelp] = useState(false)
   const [headerCompany, setHeaderCompany] = useState(company)
@@ -182,6 +183,21 @@ export default function Dashboard({ session, profile, company, onCompanyUpdate, 
   const isCustomer = profile?.role === 'customer'
   const platformAdmin = isPlatformAdmin(profile)
   const canUpload = profile?.role === 'admin' || profile?.role === 'team'
+
+  const goTab = (tab) => {
+    setHomeTab(tab)
+    setShowCalendar(tab === 'calendar')
+    setShowWeek(tab === 'week')
+    setShowAdmin(tab === 'users')
+    setShowPassword(false)
+    setShowPlatform(false)
+    setShowFeedback(false)
+    setShowHelp(false)
+    setShowNotifs(false)
+    setShowNew(false)
+    setActiveId(null)
+    setMenuOpen(false)
+  }
 
   const refreshCompany = useCallback(async () => {
     if (!profile?.company_id) return
@@ -852,55 +868,6 @@ export default function Dashboard({ session, profile, company, onCompanyUpdate, 
                   <div className="px-3 py-2 text-[10px] font-mono uppercase text-[#6B6E72] border-b border-[#E5E5E5] sm:hidden">
                     {profile?.role}
                   </div>
-                  {isAdmin && (
-                    <button
-                      type="button"
-                      className="w-full text-left px-3 py-2.5 text-sm hover:bg-[#F5F5F5]"
-                      onClick={() => {
-                        setMenuOpen(false)
-                        setShowAdmin(true)
-                        setShowPassword(false)
-                        setShowCalendar(false)
-                        setShowWeek(false)
-                        setActiveId(null)
-                        setShowNew(false)
-                      }}
-                    >
-                      Users / Contractor
-                    </button>
-                  )}
-                  <button
-                    type="button"
-                    className="w-full text-left px-3 py-2.5 text-sm hover:bg-[#F5F5F5]"
-                    onClick={() => {
-                      setMenuOpen(false)
-                      setShowCalendar(true)
-                      setShowWeek(false)
-                      setShowAdmin(false)
-                      setShowPassword(false)
-                      setActiveId(null)
-                      setShowNew(false)
-                    }}
-                  >
-                    Calendar
-                  </button>
-                  {isAdmin && (
-                    <button
-                      type="button"
-                      className="w-full text-left px-3 py-2.5 text-sm hover:bg-[#F5F5F5]"
-                      onClick={() => {
-                        setMenuOpen(false)
-                        setShowWeek(true)
-                        setShowCalendar(false)
-                        setShowAdmin(false)
-                        setShowPassword(false)
-                        setActiveId(null)
-                        setShowNew(false)
-                      }}
-                    >
-                      This week
-                    </button>
-                  )}
                   {platformAdmin && (
                     <button
                       type="button"
@@ -1012,7 +979,7 @@ export default function Dashboard({ session, profile, company, onCompanyUpdate, 
           </button>
         </div>
       )}
-      <main className="max-w-2xl mx-auto px-4 py-5">
+      <main className="max-w-2xl mx-auto px-4 py-5 pb-28">
         {showNotifs && (isAdmin || profile?.role === 'team') ? (
           <SwipeBack onBack={() => setShowNotifs(false)}>
             <button type="button" onClick={() => setShowNotifs(false)} className="flex items-center gap-1 text-sm text-[#6B6E72] mb-4">
@@ -1126,9 +1093,13 @@ export default function Dashboard({ session, profile, company, onCompanyUpdate, 
           <AdminCalendarView
             projects={projects}
             role={profile?.role}
-            onBack={() => setShowCalendar(false)}
+            onBack={() => goTab('projects')}
+            hideBack
             onOpenProject={(id) => {
               setShowCalendar(false)
+              setShowWeek(false)
+              setShowAdmin(false)
+              setHomeTab('projects')
               setActiveId(id)
             }}
           />
@@ -1136,9 +1107,13 @@ export default function Dashboard({ session, profile, company, onCompanyUpdate, 
           <ThisWeekView
             digest={digest}
             projects={projects}
-            onBack={() => setShowWeek(false)}
+            onBack={() => goTab('projects')}
+            hideBack
             onOpenProject={(id) => {
               setShowWeek(false)
+              setShowCalendar(false)
+              setShowAdmin(false)
+              setHomeTab('projects')
               setActiveId(id)
             }}
           />
@@ -1149,7 +1124,7 @@ export default function Dashboard({ session, profile, company, onCompanyUpdate, 
             digest={digest}
             allProjects={projects}
             onBack={() => {
-              setShowAdmin(false)
+              goTab('projects')
               refreshCompany()
               onCompanyUpdate?.()
             }}
@@ -1294,6 +1269,52 @@ export default function Dashboard({ session, profile, company, onCompanyUpdate, 
           </div>
         )}
       </main>
+
+      {!showNotifs && !showPlatform && !showFeedback && !showPassword && !showHelp && (
+        <nav
+          className="fixed bottom-0 left-0 right-0 z-40 bg-white border-t border-black"
+          style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
+        >
+          <div className="max-w-2xl mx-auto flex">
+            <button
+              type="button"
+              onClick={() => goTab('projects')}
+              className={`flex-1 py-2.5 flex flex-col items-center gap-0.5 text-[10px] font-mono uppercase ${homeTab === 'projects' && !showCalendar && !showWeek && !showAdmin ? 'text-black' : 'text-[#8A8D91]'}`}
+            >
+              <HardHat size={18} />
+              Projects
+            </button>
+            <button
+              type="button"
+              onClick={() => goTab('calendar')}
+              className={`flex-1 py-2.5 flex flex-col items-center gap-0.5 text-[10px] font-mono uppercase ${homeTab === 'calendar' ? 'text-black' : 'text-[#8A8D91]'}`}
+            >
+              <CalendarDays size={18} />
+              Calendar
+            </button>
+            {isAdmin && (
+              <button
+                type="button"
+                onClick={() => goTab('week')}
+                className={`flex-1 py-2.5 flex flex-col items-center gap-0.5 text-[10px] font-mono uppercase ${homeTab === 'week' ? 'text-black' : 'text-[#8A8D91]'}`}
+              >
+                <Activity size={18} />
+                This week
+              </button>
+            )}
+            {isAdmin && (
+              <button
+                type="button"
+                onClick={() => goTab('users')}
+                className={`flex-1 py-2.5 flex flex-col items-center gap-0.5 text-[10px] font-mono uppercase ${homeTab === 'users' ? 'text-black' : 'text-[#8A8D91]'}`}
+              >
+                <Users size={18} />
+                Users
+              </button>
+            )}
+          </div>
+        </nav>
+      )}
     </div>
   )
 }
@@ -1410,7 +1431,7 @@ function ChangePasswordPanel({ email, onBack }) {
 }
 
 
-function AdminCalendarView({ projects, role, onBack, onOpenProject }) {
+function AdminCalendarView({ projects, role, onBack, onOpenProject, hideBack }) {
   const today = new Date()
   const [year, setYear] = useState(today.getFullYear())
   const [month, setMonth] = useState(today.getMonth()) // 0-11
@@ -1514,10 +1535,12 @@ function AdminCalendarView({ projects, role, onBack, onOpenProject }) {
   }
 
   return (
-    <SwipeBack onBack={onBack}>
-      <button type="button" onClick={onBack} className="flex items-center gap-1 text-sm text-[#6B6E72] mb-4">
-        <ChevronLeft size={16} /> Back
-      </button>
+    <SwipeBack onBack={hideBack ? undefined : onBack} disabled={hideBack}>
+      {!hideBack && (
+        <button type="button" onClick={onBack} className="flex items-center gap-1 text-sm text-[#6B6E72] mb-4">
+          <ChevronLeft size={16} /> Back
+        </button>
+      )}
       <h2 className="font-display text-2xl mb-1">Calendar</h2>
       <p className="text-xs text-[#6B6E72] mb-4">
         {isTrade ? 'Your phase start and end dates' : isCustomer ? 'Schedule for your projects' : 'All project and phase dates'}
@@ -1588,12 +1611,14 @@ function AdminCalendarView({ projects, role, onBack, onOpenProject }) {
   )
 }
 
-function ThisWeekView({ digest, projects, onBack, onOpenProject }) {
+function ThisWeekView({ digest, projects, onBack, onOpenProject, hideBack }) {
   return (
-    <SwipeBack onBack={onBack}>
-      <button type="button" onClick={onBack} className="flex items-center gap-1 text-sm text-[#6B6E72] mb-4">
-        <ChevronLeft size={16} /> Back
-      </button>
+    <SwipeBack onBack={hideBack ? undefined : onBack} disabled={hideBack}>
+      {!hideBack && (
+        <button type="button" onClick={onBack} className="flex items-center gap-1 text-sm text-[#6B6E72] mb-4">
+          <ChevronLeft size={16} /> Back
+        </button>
+      )}
       <h2 className="font-display text-2xl mb-4">This week</h2>
       {(digest || []).length === 0 ? (
         <p className="text-sm text-[#6B6E72]">No activity in the last 7 days.</p>
@@ -2407,6 +2432,177 @@ function ProjectCostSection({ project, isAdmin, profile, onReload, logActivity }
   )
 }
 
+function ProjectNavRow({ icon, label, count, extra, onClick }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="w-full py-3 px-4 rounded border border-black bg-white text-left flex items-center gap-3 hover:bg-[#F5F5F5]"
+    >
+      <span className="text-black">{icon}</span>
+      <span className="flex-1 text-sm font-medium">{label}</span>
+      {extra ? <span className="text-[11px] font-mono text-[#6B6E72]">{extra}</span> : null}
+      {count ? <span className="text-[10px] font-mono uppercase bg-[#E6B800] text-black px-1.5 py-0.5 rounded">{count}</span> : null}
+      <ChevronRight size={16} className="text-[#8A8D91]" />
+    </button>
+  )
+}
+
+function ProjectChangeOrdersBlock({ project, isAdmin, isCustomer, profile, onReload, logActivity }) {
+  return (
+    <div className="bg-white border border-black rounded-md p-4 mb-4">
+      <div className="flex items-center justify-between gap-2 mb-2">
+        <h3 className="text-[11px] font-mono uppercase text-[#6B6E72]">Change orders</h3>
+        {isAdmin && (project.change_orders || []).some((c) => ['pending', 'quoted'].includes(c.status || '')) && (
+          <span className="text-[10px] font-mono uppercase bg-[#E6B800] text-black px-2 py-0.5 rounded">
+            {(project.change_orders || []).filter((c) => ['pending', 'quoted'].includes(c.status || '')).length} open
+          </span>
+        )}
+      </div>
+      {(isAdmin || isCustomer) && (project.change_orders || []).length > 0 && (() => {
+        const cos = project.change_orders || []
+        const accepted = cos.filter((c) => c.status === 'approved')
+        const declined = cos.filter((c) => c.status === 'rejected')
+        const open = cos.filter((c) => ['pending', 'quoted'].includes(c.status || ''))
+        const sum = (arr) => arr.reduce((s, c) => s + (Number(c.amount) || 0), 0)
+        return (
+          <div className="grid grid-cols-3 gap-2 mb-3 text-center">
+            <div className="border border-[#E5E5E5] rounded p-2">
+              <div className="text-[10px] font-mono uppercase text-[#6B6E72]">Open</div>
+              <div className="text-sm font-medium">{open.length}</div>
+              <div className="text-[10px] text-[#6B6E72]">${sum(open).toLocaleString(undefined, { maximumFractionDigits: 0 })}</div>
+            </div>
+            <div className="border border-[#E5E5E5] rounded p-2">
+              <div className="text-[10px] font-mono uppercase text-[#6B6E72]">Accepted</div>
+              <div className="text-sm font-medium text-[#3F7D58]">${sum(accepted).toLocaleString(undefined, { maximumFractionDigits: 0 })}</div>
+              <div className="text-[10px] text-[#6B6E72]">{accepted.length} item{accepted.length !== 1 ? 's' : ''}</div>
+            </div>
+            <div className="border border-[#E5E5E5] rounded p-2">
+              <div className="text-[10px] font-mono uppercase text-[#6B6E72]">Declined</div>
+              <div className="text-sm font-medium text-[#B5533C]">${sum(declined).toLocaleString(undefined, { maximumFractionDigits: 0 })}</div>
+              <div className="text-[10px] text-[#6B6E72]">{declined.length} item{declined.length !== 1 ? 's' : ''}</div>
+            </div>
+          </div>
+        )
+      })()}
+      {(project.change_orders || []).length > 0 && (
+        <div className="space-y-3 mb-3">
+          {(project.change_orders || [])
+            .slice()
+            .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
+            .map((co) => {
+              const phaseName = (project.phases || []).find((ph) => ph.id === co.phase_id)?.name
+              const st = co.status || 'approved'
+              return (
+                <div key={co.id} className="border border-[#E5E5E5] rounded p-3">
+                  <div className="flex justify-between gap-2 items-start">
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <div className="text-sm font-medium">{co.title}</div>
+                        <span
+                          className="text-[10px] font-mono uppercase px-1.5 py-0.5 rounded"
+                          style={{
+                            background: st === 'pending' || st === 'quoted' ? '#FFF8DB' : st === 'rejected' ? '#FCE7DB' : '#E1EDE4',
+                            color: st === 'pending' || st === 'quoted' ? '#8A6D00' : st === 'rejected' ? '#B5533C' : '#3F7D58',
+                          }}
+                        >
+                          {st === 'quoted' ? ((isAdmin || isCustomer) ? 'Offer sent' : 'With customer') : st === 'rejected' ? 'Declined' : st === 'approved' ? 'Approved' : st === 'pending' ? (co.origin === 'team_request' ? 'Awaiting contractor price' : (isAdmin || isCustomer ? 'Customer request' : 'Submitted')) : st}
+                        </span>
+                      </div>
+                      <div className="text-[10px] font-mono text-[#8A8D91] mt-0.5">
+                        {fmtDateTime(co.created_at)}
+                        {phaseName ? ` · ${phaseName}` : ''}
+                        {co.origin === 'admin_offer' ? ' · Contractor offer' : co.origin === 'team_request' ? ' · Trade request' : ' · Customer request'}
+                      </div>
+                    </div>
+                    {isAdmin && (
+                      <button
+                        type="button"
+                        className="text-[#B5533C] p-1 flex-shrink-0"
+                        onClick={async () => {
+                          if (!confirm('Delete this change order?')) return
+                          if (co.storage_path) await supabase.storage.from('project-photos').remove([co.storage_path])
+                          await supabase.from('change_orders').delete().eq('id', co.id)
+                          onReload()
+                        }}
+                      >
+                        <Trash2 size={12} />
+                      </button>
+                    )}
+                  </div>
+                  {co.description && <p className="text-xs mt-2 whitespace-pre-wrap">{co.description}</p>}
+                  {co.public_url && (
+                    <a href={co.public_url} target="_blank" rel="noreferrer" className="text-xs underline mt-2 inline-block">View attachment</a>
+                  )}
+                  {isAdmin && co.team_amount != null && co.team_amount !== '' && (
+                    <div className="text-xs mt-2 text-[#6B6E72]">Trade request: ${Number(co.team_amount).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                  )}
+                  {(isAdmin || isCustomer) && (co.amount != null && co.amount !== '') && (
+                    <div className="text-sm mt-1 font-medium">
+                      {isCustomer ? 'Amount' : (co.origin === 'admin_offer' ? 'Customer offer' : 'Customer total')}: ${Number(co.amount).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </div>
+                  )}
+                  {!isAdmin && !isCustomer && co.team_amount != null && co.team_amount !== '' && (
+                    <div className="text-sm mt-2 font-medium">Cost: ${Number(co.team_amount).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                  )}
+                  {isAdmin && st === 'pending' && (
+                    <QuoteReplyForm changeOrder={co} profile={profile} logActivity={logActivity} onDone={onReload} />
+                  )}
+                  {isCustomer && st === 'quoted' && (
+                    <div className="flex gap-2 mt-3">
+                      <button
+                        type="button"
+                        className="flex-1 py-2 text-sm rounded text-white bg-[#3F7D58]"
+                        onClick={async () => {
+                          const { error } = await supabase.from('change_orders').update({
+                            status: 'approved',
+                            decided_at: new Date().toISOString(),
+                            decided_by: profile.id,
+                          }).eq('id', co.id)
+                          if (error) { alert(error.message); return }
+                          await logActivity?.('accepted change order quote', co.title)
+                          onReload()
+                        }}
+                      >
+                        Accept amount
+                      </button>
+                      <button
+                        type="button"
+                        className="flex-1 py-2 text-sm rounded border border-black"
+                        onClick={async () => {
+                          const amt = co.amount != null ? '$' + Number(co.amount).toLocaleString(undefined, { minimumFractionDigits: 2 }) : 'this offer'
+                          if (!confirm('Decline ' + amt + ' for "' + co.title + '"?')) return
+                          const { error } = await supabase.from('change_orders').update({
+                            status: 'rejected',
+                            decided_at: new Date().toISOString(),
+                            decided_by: profile.id,
+                          }).eq('id', co.id)
+                          if (error) { alert(error.message); return }
+                          await logActivity?.('declined change order quote', co.title)
+                          onReload()
+                        }}
+                      >
+                        Decline
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+        </div>
+      )}
+      <ChangeOrderForm
+        project={project}
+        profile={profile}
+        isAdmin={isAdmin}
+        isTeam={!isAdmin && !isCustomer}
+        onDone={onReload}
+        logActivity={logActivity}
+      />
+    </div>
+  )
+}
+
 function ProjectDetail({ project, isAdmin, canUpload, isCustomer, profile, onBack, onReload, onDelete, logActivity }) {
   const [showExport, setShowExport] = useState(false)
   const [selectedPhaseId, setSelectedPhaseId] = useState(null)
@@ -2425,6 +2621,7 @@ function ProjectDetail({ project, isAdmin, canUpload, isCustomer, profile, onBac
   const [editingPhaseId, setEditingPhaseId] = useState(null)
   const [editingPhaseName, setEditingPhaseName] = useState('')
   const [showPeople, setShowPeople] = useState(false)
+  const [projectPage, setProjectPage] = useState(null)
   const touchX = useRef(null)
   const pointerDrag = useRef(null) // { fromIdx, startY }
   const phases = localPhases.length ? localPhases : (project.phases || [])
@@ -2468,13 +2665,13 @@ function ProjectDetail({ project, isAdmin, canUpload, isCustomer, profile, onBac
     )
   }
 
-  if (showPeople) {
+  if (showPeople || projectPage === 'people') {
     return (
       <ProjectPeoplePage
         project={project}
         isAdmin={isAdmin}
         companyUsers={companyUsers}
-        onBack={() => setShowPeople(false)}
+        onBack={() => { setShowPeople(false); setProjectPage(null) }}
         onReload={onReload}
       />
     )
@@ -2636,6 +2833,159 @@ function ProjectDetail({ project, isAdmin, canUpload, isCustomer, profile, onBac
     }
     const { data: pub } = supabase.storage.from('project-photos').getPublicUrl(path)
     setEditCover(pub.publicUrl)
+  }
+
+  const pageBack = (
+    <button type="button" onClick={() => { setProjectPage(null); setShowExport(false) }} className="flex items-center gap-1 text-sm text-[#6B6E72] mb-4">
+      <ChevronLeft size={16} /> {project.address}
+    </button>
+  )
+
+  if (projectPage === 'files') {
+    return (
+      <SwipeBack onBack={() => setProjectPage(null)}>
+        {pageBack}
+        <h2 className="font-display text-2xl mb-4">Plans & files</h2>
+        <div className="bg-white border border-black rounded-md p-4 mb-4">
+          {files.length === 0 && <p className="text-xs text-[#8A8D91] mb-2">No files attached yet.</p>}
+          <div className="space-y-2 mb-3">
+            {files.map((f) => (
+              <div key={f.id} className="flex items-center justify-between gap-2 text-sm border-b border-[#E5E5E5] py-1.5">
+                <a href={f.public_url} target="_blank" rel="noreferrer" className="flex items-center gap-1.5 min-w-0 truncate text-black underline">
+                  <FileText size={14} /> <span className="truncate">{f.file_name || 'File'}</span>
+                </a>
+                {isAdmin && (
+                  <button
+                    type="button"
+                    className="text-[#B5533C] text-xs flex-shrink-0"
+                    onClick={async () => {
+                      if (!confirm('Delete this file?')) return
+                      if (f.storage_path) await supabase.storage.from('project-photos').remove([f.storage_path])
+                      await supabase.from('project_files').delete().eq('id', f.id)
+                      onReload()
+                    }}
+                  >
+                    <Trash2 size={12} />
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+          {isAdmin && (
+            <label className="w-full flex items-center justify-center gap-1.5 text-sm border border-black rounded px-3 py-2 cursor-pointer">
+              {uploadingFile ? 'Uploading…' : 'Upload plan / file'}
+              <input
+                type="file"
+                className="hidden"
+                disabled={uploadingFile}
+                onChange={async (e) => {
+                  const file = e.target.files?.[0]
+                  e.target.value = ''
+                  if (!file) return
+                  setUploadingFile(true)
+                  try {
+                    const safeName = (file.name || 'plan.pdf').replace(/[^a-zA-Z0-9._-]/g, '_')
+                    const path = profile.company_id + '/' + project.id + '/files/' + Date.now() + '-' + safeName
+                    const bytes = await file.arrayBuffer()
+                    const { error: upErr } = await supabase.storage.from('project-photos').upload(path, bytes, {
+                      contentType: file.type || 'application/octet-stream',
+                    })
+                    if (upErr) throw upErr
+                    const { data: pub } = supabase.storage.from('project-photos').getPublicUrl(path)
+                    const { error: insErr } = await supabase.from('project_files').insert({
+                      project_id: project.id,
+                      storage_path: path,
+                      public_url: pub.publicUrl,
+                      file_name: file.name,
+                      file_type: file.type,
+                      uploaded_by: profile.id,
+                    })
+                    if (insErr) throw insErr
+                    await logActivity('uploaded file', file.name)
+                    onReload()
+                  } catch (err) {
+                    alert(err.message || 'Upload failed')
+                  }
+                  setUploadingFile(false)
+                }}
+              />
+            </label>
+          )}
+        </div>
+      </SwipeBack>
+    )
+  }
+
+  if (projectPage === 'changeOrders') {
+    return (
+      <SwipeBack onBack={() => setProjectPage(null)}>
+        {pageBack}
+        <h2 className="font-display text-2xl mb-4">Change orders</h2>
+        <ProjectChangeOrdersBlock
+          project={project}
+          isAdmin={isAdmin}
+          isCustomer={isCustomer}
+          profile={profile}
+          onReload={onReload}
+          logActivity={logActivity}
+        />
+      </SwipeBack>
+    )
+  }
+
+  if (projectPage === 'cost') {
+    return (
+      <SwipeBack onBack={() => setProjectPage(null)}>
+        {pageBack}
+        <h2 className="font-display text-2xl mb-4">Cost of construction</h2>
+        <ProjectCostSection
+          project={project}
+          isAdmin={isAdmin}
+          profile={profile}
+          onReload={onReload}
+          logActivity={logActivity}
+        />
+      </SwipeBack>
+    )
+  }
+
+  if (projectPage === 'activity') {
+    return (
+      <SwipeBack onBack={() => setProjectPage(null)}>
+        {pageBack}
+        <h2 className="font-display text-2xl mb-4">Activity</h2>
+        <div className="bg-white border border-black rounded-md p-4 mb-4">
+          <ProjectActivity projectId={project.id} />
+        </div>
+      </SwipeBack>
+    )
+  }
+
+  if (projectPage === 'status') {
+    return (
+      <SwipeBack onBack={() => setProjectPage(null)}>
+        {pageBack}
+        <h2 className="font-display text-2xl mb-4">Project status</h2>
+        <div className="bg-white border border-black rounded-md p-4 mb-4">
+          <div className="flex gap-2 flex-wrap">
+            {Object.entries(PROJECT_STATUS).map(([key, s]) => (
+              <button
+                key={key}
+                onClick={() => setStatus(key)}
+                className="text-[11px] font-mono uppercase tracking-wide px-2 py-1 rounded-sm border-2"
+                style={{
+                  color: project.status === key ? '#fff' : s.color,
+                  background: project.status === key ? s.color : s.bg,
+                  borderColor: s.color,
+                }}
+              >
+                {s.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      </SwipeBack>
+    )
   }
 
   return (
@@ -2941,373 +3291,72 @@ className={`bg-white border border-black rounded-md flex items-stretch overflow-
         </div>
       )}
 
-      {isAdmin && (
-        <div className="mb-4">
-          <label className="block text-[11px] font-mono uppercase text-[#6B6E72] mb-1">Project status</label>
-          <div className="flex gap-2 flex-wrap">
-            {Object.entries(PROJECT_STATUS).map(([key, s]) => (
-              <button
-                key={key}
-                onClick={() => setStatus(key)}
-                className="text-[11px] font-mono uppercase tracking-wide px-2 py-1 rounded-sm border-2"
-                style={{
-                  color: project.status === key ? '#fff' : s.color,
-                  background: project.status === key ? s.color : s.bg,
-                  borderColor: s.color,
-                }}
-              >
-                {s.label}
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
-
-
-      {/* Change orders: team → admin price → customer */}
-      <div className="bg-white border border-black rounded-md p-4 mb-4">
-        <div className="flex items-center justify-between gap-2 mb-2">
-          <h3 className="text-[11px] font-mono uppercase text-[#6B6E72]">Change orders</h3>
-          {isAdmin && (project.change_orders || []).some((c) => ['pending', 'quoted'].includes(c.status || '')) && (
-            <span className="text-[10px] font-mono uppercase bg-[#E6B800] text-black px-2 py-0.5 rounded">
-              {(project.change_orders || []).filter((c) => ['pending', 'quoted'].includes(c.status || '')).length} open
-            </span>
-          )}
-        </div>
-        {(isAdmin || isCustomer) && (project.change_orders || []).length > 0 && (() => {
-          const cos = project.change_orders || []
-          const accepted = cos.filter((c) => c.status === 'approved')
-          const declined = cos.filter((c) => c.status === 'rejected')
-          const open = cos.filter((c) => ['pending', 'quoted'].includes(c.status || ''))
-          const sum = (arr) => arr.reduce((s, c) => s + (Number(c.amount) || 0), 0)
-          return (
-            <div className="grid grid-cols-3 gap-2 mb-3 text-center">
-              <div className="border border-[#E5E5E5] rounded p-2">
-                <div className="text-[10px] font-mono uppercase text-[#6B6E72]">Open</div>
-                <div className="text-sm font-medium">{open.length}</div>
-                <div className="text-[10px] text-[#6B6E72]">${sum(open).toLocaleString(undefined, { maximumFractionDigits: 0 })}</div>
-              </div>
-              <div className="border border-[#E5E5E5] rounded p-2">
-                <div className="text-[10px] font-mono uppercase text-[#6B6E72]">Accepted</div>
-                <div className="text-sm font-medium text-[#3F7D58]">${sum(accepted).toLocaleString(undefined, { maximumFractionDigits: 0 })}</div>
-                <div className="text-[10px] text-[#6B6E72]">{accepted.length} item{accepted.length !== 1 ? 's' : ''}</div>
-              </div>
-              <div className="border border-[#E5E5E5] rounded p-2">
-                <div className="text-[10px] font-mono uppercase text-[#6B6E72]">Declined</div>
-                <div className="text-sm font-medium text-[#B5533C]">${sum(declined).toLocaleString(undefined, { maximumFractionDigits: 0 })}</div>
-                <div className="text-[10px] text-[#6B6E72]">{declined.length} item{declined.length !== 1 ? 's' : ''}</div>
-              </div>
-            </div>
-          )
-        })()}
-        {(project.change_orders || []).length > 0 && (
-          <div className="space-y-3 mb-3">
-            {(project.change_orders || [])
-              .slice()
-              .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
-              .map((co) => {
-                const phaseName = (project.phases || []).find((ph) => ph.id === co.phase_id)?.name
-                const st = co.status || 'approved'
-                return (
-                  <div key={co.id} className="border border-[#E5E5E5] rounded p-3">
-                    <div className="flex justify-between gap-2 items-start">
-                      <div className="min-w-0">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <div className="text-sm font-medium">{co.title}</div>
-                          <span
-                            className="text-[10px] font-mono uppercase px-1.5 py-0.5 rounded"
-                            style={{
-                              background: st === 'pending' || st === 'quoted' ? '#FFF8DB' : st === 'rejected' ? '#FCE7DB' : '#E1EDE4',
-                              color: st === 'pending' || st === 'quoted' ? '#8A6D00' : st === 'rejected' ? '#B5533C' : '#3F7D58',
-                            }}
-                          >
-                            {st === 'quoted' ? ((isAdmin || isCustomer) ? 'Offer sent' : 'With customer') : st === 'rejected' ? 'Declined' : st === 'approved' ? 'Approved' : st === 'pending' ? (co.origin === 'team_request' ? 'Awaiting contractor price' : (isAdmin || isCustomer ? 'Customer request' : 'Submitted')) : st}
-                          </span>
-                        </div>
-                        <div className="text-[10px] font-mono text-[#8A8D91] mt-0.5">
-                          {fmtDateTime(co.created_at)}
-                          {phaseName ? ` · ${phaseName}` : ''}
-                          {co.origin === 'admin_offer' ? ' · Contractor offer' : co.origin === 'team_request' ? ' · Trade request' : ' · Customer request'}
-                        </div>
-                        {(isAdmin || isCustomer) && (
-                          <div className="text-[10px] text-[#8A8D91] mt-0.5">
-                            {co.decided_at ? `Decided ${fmtDateTime(co.decided_at)}` : st === 'quoted' ? 'Awaiting customer decision' : st === 'pending' ? 'Awaiting admin quote' : ''}
-                          </div>
-                        )}
-                      </div>
-                      {isAdmin && (
-                        <button
-                          type="button"
-                          className="text-[#B5533C] p-1 flex-shrink-0"
-                          onClick={async () => {
-                            if (!confirm('Delete this change order?')) return
-                            if (co.storage_path) await supabase.storage.from('project-photos').remove([co.storage_path])
-                            await supabase.from('change_orders').delete().eq('id', co.id)
-                            onReload()
-                          }}
-                        >
-                          <Trash2 size={12} />
-                        </button>
-                      )}
-                    </div>
-                    {co.description && <p className="text-xs mt-2 whitespace-pre-wrap">{co.description}</p>}
-                    {co.public_url && (
-                      <a href={co.public_url} target="_blank" rel="noreferrer" className="text-xs underline mt-2 inline-block">
-                        View attachment
-                      </a>
-                    )}
-                    {isAdmin && co.team_amount != null && co.team_amount !== '' && (
-                      <div className="text-xs mt-2 text-[#6B6E72]">
-                        Trade request: ${Number(co.team_amount).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                      </div>
-                    )}
-                    {isAdmin && co.admin_fee != null && Number(co.admin_fee) > 0 && (
-                      <div className="text-xs text-[#6B6E72]">
-                        Contractor fee: ${Number(co.admin_fee).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                      </div>
-                    )}
-                    {(isAdmin || isCustomer) && (co.amount != null && co.amount !== '') && (
-                      <div className="text-sm mt-1 font-medium">
-                        {isCustomer ? 'Amount' : (co.origin === 'admin_offer' ? 'Customer offer' : 'Customer total')}: ${Number(co.amount).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                      </div>
-                    )}
-                    {!isAdmin && !isCustomer && co.team_amount != null && co.team_amount !== '' && (
-                      <div className="text-sm mt-2 font-medium">
-                        Cost: ${Number(co.team_amount).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                      </div>
-                    )}
-                    {!isAdmin && !isCustomer && st === 'approved' && (
-                      <div className="text-xs mt-1 text-[#3F7D58]">
-                        Customer approved{co.team_amount != null ? ` — $${Number(co.team_amount).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : ''}
-                      </div>
-                    )}
-                    {!isAdmin && !isCustomer && st === 'rejected' && (
-                      <div className="text-xs mt-2 text-[#B5533C]">Customer declined</div>
-                    )}
-                    {isAdmin && st === 'approved' && (co.amount != null) && (
-                      <div className="text-xs mt-1 text-[#3F7D58]">
-                        Approved at customer total ${Number(co.amount).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                      </div>
-                    )}
-                    {(isAdmin || isCustomer) && co.admin_reply && (
-                      <p className="text-xs mt-1 text-[#6B6E72] whitespace-pre-wrap">{co.admin_reply}</p>
-                    )}
-                    {isAdmin && st === 'rejected' && (
-                      <p className="text-xs mt-2 text-[#B5533C]">
-                        Customer declined{co.decided_at ? ` on ${fmtDate(co.decided_at)}` : ''}. Kept for your records.
-                      </p>
-                    )}
-                    {isAdmin && st === 'approved' && co.origin === 'admin_offer' && (
-                      <p className="text-xs mt-2 text-[#3F7D58]">
-                        Customer accepted this offer{co.decided_at ? ` on ${fmtDate(co.decided_at)}` : ''}.
-                      </p>
-                    )}
-                    {isAdmin && st === 'pending' && (
-                      <QuoteReplyForm
-                        changeOrder={co}
-                        profile={profile}
-                        logActivity={logActivity}
-                        onDone={onReload}
-                      />
-                    )}
-                    {isCustomer && st === 'quoted' && (
-                      <div className="flex gap-2 mt-3">
-                        <button
-                          type="button"
-                          className="flex-1 py-2 text-sm rounded text-white bg-[#3F7D58]"
-                          onClick={async () => {
-                            const { error } = await supabase.from('change_orders').update({
-                              status: 'approved',
-                              decided_at: new Date().toISOString(),
-                              decided_by: profile.id,
-                            }).eq('id', co.id)
-                            if (error) { alert(error.message); return }
-                            await logActivity?.('accepted change order quote', co.title)
-                            onReload()
-                          }}
-                        >
-                          Accept amount
-                        </button>
-                        <button
-                          type="button"
-                          className="flex-1 py-2 text-sm rounded border border-black"
-                          onClick={async () => {
-                            const amt = co.amount != null ? '$' + Number(co.amount).toLocaleString(undefined, { minimumFractionDigits: 2 }) : 'this offer'
-                            if (!confirm('Decline ' + amt + ' for "' + co.title + '"?')) return
-                            const { error } = await supabase.from('change_orders').update({
-                              status: 'rejected',
-                              decided_at: new Date().toISOString(),
-                              decided_by: profile.id,
-                            }).eq('id', co.id)
-                            if (error) { alert(error.message); return }
-                            await logActivity?.('declined change order quote', co.title)
-                            onReload()
-                          }}
-                        >
-                          Decline
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                )
-              })}
-          </div>
-        )}
-        <ChangeOrderForm
-            project={project}
-            profile={profile}
-            isAdmin={isAdmin}
-            isTeam={!isAdmin && !isCustomer}
-            onDone={onReload}
-            logActivity={logActivity}
-          />
-      </div>
-
-
-
-      {(isAdmin || isCustomer) && (
-        <div className="bg-white border border-black rounded-md p-4 mb-4">
-          <h3 className="text-[11px] font-mono uppercase text-[#6B6E72] mb-2">Activity</h3>
-          <ProjectActivity projectId={project.id} />
-        </div>
-      )}
-      {/* Plans / files */}
-      <div className="bg-white border border-black rounded-md p-4 mb-4">
-        <h3 className="text-[11px] font-mono uppercase text-[#6B6E72] mb-2">Plans & files</h3>
-        {files.length === 0 && <p className="text-xs text-[#8A8D91] mb-2">No files attached yet.</p>}
-        <div className="space-y-2 mb-3">
-          {files.map((f) => (
-            <div key={f.id} className="flex items-center justify-between gap-2 text-sm border-b border-[#E5E5E5] py-1.5">
-              <a href={f.public_url} target="_blank" rel="noreferrer" className="flex items-center gap-1.5 min-w-0 truncate text-black underline">
-                <FileText size={14} /> <span className="truncate">{f.file_name || 'File'}</span>
-              </a>
-              {isAdmin && (
-                <button
-                  type="button"
-                  className="text-[#B5533C] text-xs flex-shrink-0"
-                  onClick={async () => {
-                    if (!confirm('Delete this file?')) return
-                    if (f.storage_path) await supabase.storage.from('project-photos').remove([f.storage_path])
-                    await supabase.from('project_files').delete().eq('id', f.id)
-                    onReload()
-                  }}
-                >
-                  <Trash2 size={12} />
-                </button>
-              )}
-            </div>
-          ))}
-        </div>
-        {isAdmin && (
-          <label className="w-full flex items-center justify-center gap-1.5 text-sm border border-black rounded px-3 py-2 cursor-pointer">
-            {uploadingFile ? 'Uploading…' : 'Upload plan / file'}
-            <input
-              type="file"
-              className="hidden"
-              disabled={uploadingFile}
-              onChange={async (e) => {
-                const file = e.target.files?.[0]
-                e.target.value = ''
-                if (!file) return
-                setUploadingFile(true)
-                try {
-                  const safeName = (file.name || 'plan.pdf').replace(/[^a-zA-Z0-9._-]/g, '_')
-                  const path = profile.company_id + '/' + project.id + '/files/' + Date.now() + '-' + safeName
-                  const bytes = await file.arrayBuffer()
-                  const { error: upErr } = await supabase.storage.from('project-photos').upload(path, bytes, {
-                    contentType: file.type || 'application/octet-stream',
-                  })
-                  if (upErr) throw upErr
-                  const { data: pub } = supabase.storage.from('project-photos').getPublicUrl(path)
-                  const { error: insErr } = await supabase.from('project_files').insert({
-                    project_id: project.id,
-                    storage_path: path,
-                    public_url: pub.publicUrl,
-                    file_name: file.name,
-                    file_type: file.type,
-                    uploaded_by: profile.id,
-                  })
-                  if (insErr) throw insErr
-                  await logActivity('uploaded file', file.name)
-                  onReload()
-                } catch (err) {
-                  alert(err.message || 'Upload failed')
-                }
-                setUploadingFile(false)
-              }}
-            />
-          </label>
-        )}
-      </div>
-
-      {!isCustomer && (
-        <button
-          type="button"
-          onClick={() => setShowPeople(true)}
-          className="w-full mb-4 py-2.5 rounded border border-black text-sm text-left px-4 hover:bg-[#F5F5F5]"
-        >
-          Who’s on this project →
-        </button>
-      )}
-
-      {(isAdmin || isCustomer) && (
-        <ProjectCostSection
-          project={project}
-          isAdmin={isAdmin}
-          profile={profile}
-          onReload={onReload}
-          logActivity={logActivity}
+      <div className="space-y-2 mb-6">
+        <ProjectNavRow icon={<FolderOpen size={16} />} label="Plans & files" count={files.length || null} onClick={() => setProjectPage('files')} />
+        <ProjectNavRow
+          icon={<FileText size={16} />}
+          label="Change orders"
+          count={(project.change_orders || []).filter((c) => ['pending', 'quoted'].includes(c.status || '')).length || null}
+          onClick={() => setProjectPage('changeOrders')}
         />
-      )}
-
-      {(isAdmin || isCustomer) && (
-        <div className="flex flex-wrap gap-3 mb-4">
+        {(isAdmin || isCustomer) && (
+          <ProjectNavRow icon={<DollarSign size={16} />} label="Cost of construction" onClick={() => setProjectPage('cost')} />
+        )}
+        {(isAdmin || isCustomer) && (
+          <ProjectNavRow icon={<Activity size={16} />} label="Activity" onClick={() => setProjectPage('activity')} />
+        )}
+        {isAdmin && (
+          <ProjectNavRow icon={<CircleDot size={16} />} label="Project status" extra={PROJECT_STATUS[project.status]?.label} onClick={() => setProjectPage('status')} />
+        )}
+        {!isCustomer && (
+          <ProjectNavRow icon={<Users size={16} />} label="Who’s on this project" onClick={() => { setShowPeople(true); setProjectPage('people') }} />
+        )}
+        {(isAdmin || isCustomer) && (
+          <ProjectNavRow icon={<Printer size={16} />} label="Project summary" onClick={() => setShowExport(true)} />
+        )}
+        {isAdmin && (
           <button
             type="button"
-            className="text-xs border border-black rounded px-3 py-1.5 flex items-center gap-1"
-            onClick={() => setShowExport(true)}
+            className="w-full py-3 px-4 rounded border border-black bg-white text-left flex items-center gap-3 hover:bg-[#F5F5F5]"
+            onClick={async () => {
+              if (!project.archived && !confirm('Archive this project? You can restore it from Archived.')) return
+              await supabase.from('projects').update({ archived: !project.archived }).eq('id', project.id)
+              onReload()
+              onBack()
+            }}
           >
-            <Printer size={13} /> Project summary
+            <Archive size={16} />
+            <span className="flex-1 text-sm font-medium">{project.archived ? 'Unarchive project' : 'Archive project'}</span>
+            <ChevronRight size={16} className="text-[#8A8D91]" />
           </button>
-          {isAdmin && (
-            <button
-              type="button"
-              className="text-xs border border-black rounded px-3 py-1.5 flex items-center gap-1"
-              onClick={async () => {
-                await supabase.from('projects').update({ archived: !project.archived }).eq('id', project.id)
+        )}
+        {isAdmin && project.status === 'done' && !(project.phases || []).some((ph) => /punch/i.test(ph.name || '')) && (
+          <button
+            type="button"
+            className="w-full py-3 px-4 rounded border border-black bg-white text-left flex items-center gap-3 hover:bg-[#F5F5F5]"
+            onClick={async () => {
+              if (!confirm('Add a Punch List / Warranty phase to this completed project?')) return
+              const maxOrder = Math.max(0, ...(project.phases || []).map((ph) => ph.sort_order || 0))
+              const { error } = await supabase.from('phases').insert({
+                project_id: project.id,
+                name: 'Punch List / Warranty',
+                sort_order: maxOrder + 1,
+                status: 'active',
+                trade: '',
+              })
+              if (error) alert(error.message)
+              else {
+                await logActivity?.('added phase', 'Punch List / Warranty', project.id)
                 onReload()
-                onBack()
-              }}
-            >
-              <Archive size={13} /> {project.archived ? 'Unarchive' : 'Archive'}
-            </button>
-          )}
-          {isAdmin && project.status === 'done' && !(project.phases || []).some((ph) => /punch/i.test(ph.name || '')) && (
-            <button
-              type="button"
-              className="text-xs border border-black rounded px-3 py-1.5 flex items-center gap-1"
-              onClick={async () => {
-                if (!confirm('Add a Punch List / Warranty phase to this completed project?')) return
-                const maxOrder = Math.max(0, ...(project.phases || []).map((ph) => ph.sort_order || 0))
-                const { error } = await supabase.from('phases').insert({
-                  project_id: project.id,
-                  name: 'Punch List / Warranty',
-                  sort_order: maxOrder + 1,
-                  status: 'active',
-                  trade: '',
-                })
-                if (error) alert(error.message)
-                else {
-                  await logActivity?.('added phase', 'Punch List / Warranty', project.id)
-                  onReload()
-                }
-              }}
-            >
-              Punch list
-            </button>
-          )}
-        </div>
-      )}
+              }
+            }}
+          >
+            <Check size={16} />
+            <span className="flex-1 text-sm font-medium">Add punch list</span>
+          </button>
+        )}
+      </div>
+
 
       {showExport && (
         <SwipeBack onBack={() => setShowExport(false)}>
