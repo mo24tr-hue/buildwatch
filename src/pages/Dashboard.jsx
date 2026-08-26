@@ -53,19 +53,20 @@ function photoDisplayUrl(url, width = 900) {
   return url
 }
 
-function SwipeBack({ onBack, children, className = '', disabled = false }) {
+function SwipeBack({ onBack, children, className = '', disabled = false, fromAnywhere = true }) {
   const start = useRef(null)
-  // Wider edge + clearer horizontal swipe so back works without fighting scroll
-  const EDGE = 48
-  const MIN_DX = 72
+  // Left edge is always active; fromAnywhere also allows a clear horizontal swipe from mid-screen
+  const EDGE = 56
+  const MIN_DX = 64
   const onTouchStart = (e) => {
-    if (disabled) return
+    if (disabled || !onBack) return
     const t = e.touches[0]
-    if (t.clientX > EDGE) {
+    const fromEdge = t.clientX <= EDGE
+    if (!fromEdge && !fromAnywhere) {
       start.current = null
       return
     }
-    start.current = { x: t.clientX, y: t.clientY, t: Date.now() }
+    start.current = { x: t.clientX, y: t.clientY, t: Date.now(), fromEdge }
   }
   const onTouchMove = (e) => {
     if (!start.current) return
@@ -73,21 +74,22 @@ function SwipeBack({ onBack, children, className = '', disabled = false }) {
     const dx = t.clientX - start.current.x
     const dy = t.clientY - start.current.y
     // Cancel if clearly scrolling vertically
-    if (Math.abs(dy) > 18 && Math.abs(dy) > Math.abs(dx) * 1.1) {
+    if (Math.abs(dy) > 16 && Math.abs(dy) > Math.abs(dx) * 1.05) {
       start.current = null
     }
   }
   const onTouchEnd = (e) => {
-    if (disabled || !start.current) return
+    if (disabled || !start.current || !onBack) return
     const t = e.changedTouches[0]
     const dx = t.clientX - start.current.x
     const dy = t.clientY - start.current.y
     const dt = Date.now() - (start.current.t || Date.now())
+    const fromEdge = start.current.fromEdge
     start.current = null
-    // Rightward swipe from left edge; allow quicker flicks with slightly less distance
-    const quick = dt < 280 && dx > 48
-    const long = dx >= MIN_DX
-    if ((quick || long) && dx > Math.abs(dy) * 1.4) onBack?.()
+    // Rightward swipe; edge is more forgiving, mid-screen needs a clearer gesture
+    const quick = dt < 320 && dx > (fromEdge ? 40 : 72)
+    const long = dx >= (fromEdge ? MIN_DX : 96)
+    if ((quick || long) && dx > Math.abs(dy) * (fromEdge ? 1.2 : 1.6)) onBack()
   }
   return (
     <div
@@ -1392,7 +1394,7 @@ function ChangePasswordPanel({ email, onBack }) {
   }
 
   return (
-    <div>
+    <SwipeBack onBack={onBack}>
       <button type="button" onClick={onBack} className="flex items-center gap-1 text-sm text-[#6B6E72] mb-4">
         <ChevronLeft size={16} /> Back
       </button>
@@ -1446,7 +1448,7 @@ function ChangePasswordPanel({ email, onBack }) {
           {loading ? 'Saving…' : 'Save new password'}
         </button>
       </form>
-    </div>
+    </SwipeBack>
   )
 }
 
@@ -3266,8 +3268,23 @@ function ProjectDetail({ project, isAdmin, canUpload, isCustomer, profile, onBac
   const cyclePhase = async (phase) => {
     if (!isAdmin) return
     const next = nextPhaseStatus(phase.status)
-    await supabase.from('phases').update({ status: next }).eq('id', phase.id)
-    await logActivity('updated phase status', phase.name, project.id, phase.name)
+    const today = new Date().toISOString().slice(0, 10)
+    const patch = { status: next }
+    // Entering in progress → set start date (keep existing if already set)
+    if (next === 'active' && !phase.start_date) {
+      patch.start_date = today
+    }
+    // Marking done → set completion (end) date
+    if (next === 'done') {
+      patch.end_date = today
+      if (!phase.start_date) patch.start_date = today
+    }
+    // Cycling back to pending clears completion date only
+    if (next === 'pending') {
+      // leave dates as historical record
+    }
+    await supabase.from('phases').update(patch).eq('id', phase.id)
+    await logActivity('updated phase status', phase.name + ' → ' + next, project.id, phase.name)
     onReload()
   }
 
