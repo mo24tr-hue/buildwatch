@@ -2621,16 +2621,6 @@ function ProjectDetail({ project, isAdmin, canUpload, isCustomer, profile, onBac
         </div>
       </div>
 
-      {(isAdmin || isCustomer) && (
-        <ProjectCostSection
-          project={project}
-          isAdmin={isAdmin}
-          profile={profile}
-          onReload={onReload}
-          logActivity={logActivity}
-        />
-      )}
-
       <div className="space-y-2 mb-4">
         {phases.map((phase, i) => {
           if (isFinishingPhase(phase.name)) return null
@@ -3153,6 +3143,16 @@ className={`bg-white border border-black rounded-md flex items-stretch overflow-
         >
           Who’s on this project →
         </button>
+      )}
+
+      {(isAdmin || isCustomer) && (
+        <ProjectCostSection
+          project={project}
+          isAdmin={isAdmin}
+          profile={profile}
+          onReload={onReload}
+          logActivity={logActivity}
+        />
       )}
 
       {isAdmin && (
