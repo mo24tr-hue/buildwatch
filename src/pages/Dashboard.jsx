@@ -114,7 +114,7 @@ function formatStyleLabel(style) {
     .trim() || style
 }
 
-export default function Dashboard({ session, profile, company, onCompanyUpdate, onLogout }) {
+export default function Dashboard({ session, profile, company, onCompanyUpdate, onLogout, platformOwner = false, onLeavePlatformWorkspace }) {
   const [projects, setProjects] = useState([])
   const [loading, setLoading] = useState(true)
   const [updateAvailable, setUpdateAvailable] = useState(false)
@@ -926,6 +926,18 @@ export default function Dashboard({ session, profile, company, onCompanyUpdate, 
                       }}
                     >
                       How to invite
+                    </button>
+                  )}
+                  {platformOwner && onLeavePlatformWorkspace && (
+                    <button
+                      type="button"
+                      className="w-full text-left px-3 py-2.5 text-sm hover:bg-[#F5F5F5] border-t border-[#E5E5E5]"
+                      onClick={() => {
+                        setMenuOpen(false)
+                        onLeavePlatformWorkspace()
+                      }}
+                    >
+                      Platform panel
                     </button>
                   )}
                   <button

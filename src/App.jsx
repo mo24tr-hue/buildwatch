@@ -35,12 +35,21 @@ function clearCachedProfile() {
   } catch (_) {}
 }
 
+const WORKSPACE_KEY = 'bw_platform_workspace'
+
 export default function App() {
   const [session, setSession] = useState(null)
   const [profile, setProfile] = useState(null)
   const [company, setCompany] = useState(null)
   const [loading, setLoading] = useState(true)
   const [profileReady, setProfileReady] = useState(false)
+  const [platformWorkspace, setPlatformWorkspace] = useState(() => {
+    try {
+      return localStorage.getItem(WORKSPACE_KEY) === '1'
+    } catch {
+      return false
+    }
+  })
   const loadGen = useRef(0)
 
   const loadProfile = async (userId, { soft = false } = {}) => {
@@ -191,25 +200,55 @@ export default function App() {
 
   const handleLogout = async () => {
     clearCachedProfile()
+    try {
+      localStorage.removeItem(WORKSPACE_KEY)
+    } catch (_) {}
+    setPlatformWorkspace(false)
     await supabase.auth.signOut()
     try {
       if (navigator.clearAppBadge) await navigator.clearAppBadge()
     } catch (_) {}
   }
 
-  // Platform owner: ALWAYS this screen only — never company projects
-  // Check session email immediately (don't wait for profileReady)
+  const enterPlatformWorkspace = async () => {
+    const { data, error } = await supabase.rpc('ensure_showcase_workspace')
+    if (error) {
+      alert(error.message + '\n\nRun showcase-workspace.sql in Supabase first.')
+      return
+    }
+    try {
+      localStorage.setItem(WORKSPACE_KEY, '1')
+    } catch (_) {}
+    setPlatformWorkspace(true)
+    await loadProfile(session.user.id)
+  }
+
+  const leavePlatformWorkspace = async () => {
+    try {
+      await supabase.rpc('leave_showcase_workspace')
+    } catch (_) {}
+    try {
+      localStorage.removeItem(WORKSPACE_KEY)
+    } catch (_) {}
+    setPlatformWorkspace(false)
+    clearCachedProfile()
+    setCompany(null)
+    if (session?.user?.id) await loadProfile(session.user.id)
+  }
+
+  // Platform owner: platform panel by default; optional full workspace (Acme Builders)
   const platformOwner =
     isPlatformAdmin(session.user?.email) ||
     isPlatformAdmin(profile) ||
     !!profile?.is_platform_admin
 
-  if (platformOwner) {
+  if (platformOwner && !platformWorkspace) {
     return (
       <PlatformAdmin
         profile={profile}
         session={session}
         onLogout={handleLogout}
+        onOpenWorkspace={enterPlatformWorkspace}
       />
     )
   }
@@ -249,6 +288,8 @@ export default function App() {
       company={company}
       onCompanyUpdate={refreshProfile}
       onLogout={handleLogout}
+      platformOwner={platformOwner}
+      onLeavePlatformWorkspace={platformOwner ? leavePlatformWorkspace : undefined}
     />
   )
 }
