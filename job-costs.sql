@@ -1,11 +1,11 @@
--- Contractor job costs. Run the full block even if you already created the table.
+-- Phase invoices + quoted/actual. Safe to re-run.
 
 create table if not exists public.project_job_costs (
   id uuid primary key default gen_random_uuid(),
   company_id uuid not null references public.companies(id) on delete cascade,
   project_id uuid not null references public.projects(id) on delete cascade,
   phase_id uuid references public.phases(id) on delete cascade,
-  kind text not null default 'extra' check (kind in ('phase', 'extra', 'receipt')),
+  kind text not null default 'extra',
   amount numeric not null default 0,
   quoted_amount numeric,
   actual_amount numeric,
@@ -18,6 +18,11 @@ create table if not exists public.project_job_costs (
 
 alter table public.project_job_costs add column if not exists quoted_amount numeric;
 alter table public.project_job_costs add column if not exists actual_amount numeric;
+
+alter table public.project_job_costs drop constraint if exists project_job_costs_kind_check;
+alter table public.project_job_costs
+  add constraint project_job_costs_kind_check
+  check (kind in ('phase', 'extra', 'receipt', 'invoice'));
 
 update public.project_job_costs
 set quoted_amount = amount

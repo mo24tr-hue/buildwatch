@@ -2186,7 +2186,15 @@ function ProjectJobCostsPanel({ project, profile, onReload, logActivity, mode })
   const [phaseActual, setPhaseActual] = useState({})
   const [extraAmt, setExtraAmt] = useState('')
   const [extraNote, setExtraNote] = useState('')
+  const [viewDoc, setViewDoc] = useState(null)
   const phases = (project.phases || []).slice().sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0))
+
+  const openDoc = (row) => {
+    if (!row?.public_url) return
+    const isImage = /\.(jpe?g|png|gif|webp|heic)$/i.test(row.storage_path || row.public_url) || (row.kind === 'receipt')
+    if (isImage) setViewDoc(row)
+    else window.open(row.public_url, '_blank', 'noopener')
+  }
 
   const loadRows = async () => {
     const { data } = await supabase
@@ -2223,7 +2231,47 @@ function ProjectJobCostsPanel({ project, profile, onReload, logActivity, mode })
     .filter((c) => (c.status || '') === 'approved' && c.amount != null)
     .reduce((s, c) => s + (Number(c.amount) || 0), 0)
 
-  const extraSpent = rows.filter((r) => r.kind !== 'phase').reduce((s, r) => s + (Number(r.amount) || 0), 0)
+  const extraSpent = rows.filter((r) => r.kind === 'extra' || r.kind === 'receipt').reduce((s, r) => s + (Number(r.amount) || 0), 0)
+  const invoicesFor = (phaseId) => rows.filter((r) => r.kind === 'invoice' && r.phase_id === phaseId)
+
+  const uploadCostFile = async (file) => {
+    const isImage = (file.type || '').startsWith('image/')
+    const uploadFile = isImage ? await compressImageFile(file) : file
+    const ext = (uploadFile.name || file.name || 'bin').split('.').pop()
+    const storagePath = `${profile.company_id}/${project.id}/costs/${Date.now()}-${Math.random().toString(36).slice(2, 7)}.${ext}`
+    const { error: upErr } = await supabase.storage.from('project-photos').upload(storagePath, uploadFile, {
+      contentType: uploadFile.type || file.type || 'application/octet-stream',
+      upsert: false,
+    })
+    if (upErr) throw upErr
+    const publicUrl = supabase.storage.from('project-photos').getPublicUrl(storagePath).data?.publicUrl || null
+    return { storagePath, publicUrl }
+  }
+
+  const addPhaseInvoice = async (phaseId, file) => {
+    if (!file) return
+    setSaving(true)
+    try {
+      const { storagePath, publicUrl } = await uploadCostFile(file)
+      const { error } = await supabase.from('project_job_costs').insert({
+        project_id: project.id,
+        company_id: profile.company_id,
+        phase_id: phaseId,
+        kind: 'invoice',
+        amount: 0,
+        note: file.name || 'Invoice',
+        public_url: publicUrl,
+        storage_path: storagePath,
+        created_by: profile.id,
+      })
+      if (error) throw error
+      await logActivity?.('added phase invoice', project.address)
+      await loadRows()
+    } catch (err) {
+      alert((err?.message || 'Upload failed') + '\n\nRun job-costs.sql if invoices are not enabled.')
+    }
+    setSaving(false)
+  }
   const phaseQuotedTotal = phases.reduce((s, ph) => s + (Number(phaseQuoted[ph.id]) || 0), 0)
   const phaseActualTotal = phases.reduce((s, ph) => {
     const entered = Number(phaseActual[ph.id]) || 0
@@ -2282,19 +2330,15 @@ function ProjectJobCostsPanel({ project, profile, onReload, logActivity, mode })
     let publicUrl = null
     let storagePath = null
     if (file) {
-      const uploadFile = await compressImageFile(file)
-      const ext = (uploadFile.name || 'jpg').split('.').pop()
-      storagePath = `${profile.company_id}/${project.id}/costs/${Date.now()}.${ext}`
-      const { error: upErr } = await supabase.storage.from('project-photos').upload(storagePath, uploadFile, {
-        contentType: uploadFile.type || 'image/jpeg',
-        upsert: false,
-      })
-      if (upErr) {
+      try {
+        const up = await uploadCostFile(file)
+        storagePath = up.storagePath
+        publicUrl = up.publicUrl
+      } catch (err) {
         setSaving(false)
-        alert(upErr.message)
+        alert(err.message)
         return
       }
-      publicUrl = supabase.storage.from('project-photos').getPublicUrl(storagePath).data?.publicUrl || null
     }
     const { error } = await supabase.from('project_job_costs').insert({
       project_id: project.id,
@@ -2403,6 +2447,34 @@ function ProjectJobCostsPanel({ project, profile, onReload, logActivity, mode })
                     </div>
                   </div>
                 )}
+                <div className="space-y-2 pt-1">
+                  {invoicesFor(ph.id).map((inv) => (
+                    <div key={inv.id} className="flex items-center gap-2">
+                      {inv.public_url ? (
+                        <button type="button" onClick={() => openDoc(inv)} className="flex-shrink-0">
+                          <img src={photoDisplayUrl(inv.public_url)} alt="" className="w-12 h-12 object-cover rounded border border-black" />
+                        </button>
+                      ) : null}
+                      <button type="button" onClick={() => openDoc(inv)} className="flex-1 text-left text-xs truncate">
+                        {inv.note || 'Invoice'}
+                      </button>
+                      <button type="button" onClick={() => removeRow(inv)} className="text-[#B5533C]"><Trash2 size={14} /></button>
+                    </div>
+                  ))}
+                  <label className="block w-full py-2 rounded border border-dashed border-black text-center text-xs cursor-pointer">
+                    {saving ? 'Uploading…' : 'Upload invoice'}
+                    <input
+                      type="file"
+                      accept="image/*,application/pdf"
+                      className="hidden"
+                      onChange={(e) => {
+                        const f = e.target.files?.[0]
+                        e.target.value = ''
+                        if (f) addPhaseInvoice(ph.id, f)
+                      }}
+                    />
+                  </label>
+                </div>
               </div>
             )
           })}
@@ -2428,9 +2500,13 @@ function ProjectJobCostsPanel({ project, profile, onReload, logActivity, mode })
               </label>
             </div>
           </div>
-          {rows.filter((r) => r.kind !== 'phase').map((r) => (
+          {rows.filter((r) => r.kind === 'extra' || r.kind === 'receipt').map((r) => (
             <div key={r.id} className="bg-white border border-black rounded-md p-3 flex gap-3">
-              {r.public_url ? <img src={photoDisplayUrl(r.public_url, 240)} alt="" className="w-16 h-16 object-cover rounded" /> : null}
+              {r.public_url ? (
+                <button type="button" onClick={() => openDoc(r)} className="flex-shrink-0">
+                  <img src={photoDisplayUrl(r.public_url)} alt="" className="w-16 h-16 object-cover rounded" />
+                </button>
+              ) : null}
               <div className="flex-1 min-w-0">
                 <div className="text-sm font-medium">{money(r.amount)}</div>
                 {r.note ? <div className="text-xs text-[#6B6E72] truncate">{r.note}</div> : null}
@@ -2439,6 +2515,18 @@ function ProjectJobCostsPanel({ project, profile, onReload, logActivity, mode })
               <button type="button" onClick={() => removeRow(r)} className="text-[#B5533C]"><Trash2 size={16} /></button>
             </div>
           ))}
+        </div>
+      )}
+
+      {viewDoc && (
+        <div className="fixed inset-0 z-[80] bg-black/92 flex flex-col" onClick={() => setViewDoc(null)}>
+          <div className="flex items-center justify-between text-white px-4 py-3" style={{ paddingTop: 'calc(env(safe-area-inset-top) + 8px)' }}>
+            <span className="text-sm truncate pr-3">{viewDoc.note || 'Receipt'}</span>
+            <button type="button" onClick={() => setViewDoc(null)} className="p-2"><X size={20} /></button>
+          </div>
+          <div className="flex-1 flex items-center justify-center px-3 pb-8" onClick={(e) => e.stopPropagation()}>
+            <img src={photoDisplayUrl(viewDoc.public_url)} alt="" className="max-h-full max-w-full object-contain" />
+          </div>
         </div>
       )}
     </div>
