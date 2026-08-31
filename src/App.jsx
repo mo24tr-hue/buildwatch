@@ -35,6 +35,33 @@ function clearCachedProfile() {
   } catch (_) {}
 }
 
+function peekCachedCompany() {
+  try {
+    const raw = localStorage.getItem(PROFILE_CACHE_KEY)
+    if (!raw) return null
+    return JSON.parse(raw)?.company || null
+  } catch {
+    return null
+  }
+}
+
+function CompanySplash({ company }) {
+  const bg = company?.header_color || '#000000'
+  const logo = company?.logo_url
+  return (
+    <div
+      className="min-h-screen flex items-center justify-center"
+      style={{ background: bg, paddingTop: 'env(safe-area-inset-top)', paddingBottom: 'env(safe-area-inset-bottom)' }}
+    >
+      {logo ? (
+        <img src={logo} alt="" className="h-28 w-auto max-w-[70%] object-contain" />
+      ) : (
+        <div className="font-display text-white text-3xl tracking-wide">BuildWatch</div>
+      )}
+    </div>
+  )
+}
+
 const WORKSPACE_KEY = 'bw_platform_workspace'
 const RECOVERY_KEY = 'bw_password_recovery'
 
@@ -179,6 +206,12 @@ export default function App() {
     }
   })
   const loadGen = useRef(0)
+  const [splashDone, setSplashDone] = useState(false)
+
+  useEffect(() => {
+    const t = setTimeout(() => setSplashDone(true), 2000)
+    return () => clearTimeout(t)
+  }, [])
 
   const loadProfile = async (userId, { soft = false } = {}) => {
     if (!userId) return
@@ -353,12 +386,8 @@ export default function App() {
     return <AuthScreen />
   }
 
-  if (loading || !session) {
-    return (
-      <div className="min-h-screen flex items-center justify-center text-sm text-[#6B6E72]">
-        Loading…
-      </div>
-    )
+  if (!splashDone || loading || !session) {
+    return <CompanySplash company={company || peekCachedCompany()} />
   }
 
   // Password reset link — always show set-password before dashboard
@@ -429,11 +458,7 @@ export default function App() {
   }
 
   if (!profileReady && !profile?.company_id) {
-    return (
-      <div className="min-h-screen flex items-center justify-center text-sm text-[#6B6E72]">
-        Loading…
-      </div>
-    )
+    return <CompanySplash company={company || peekCachedCompany()} />
   }
 
   // Only show setup when we are sure profile has no company (not on a failed fetch)
@@ -449,11 +474,7 @@ export default function App() {
 
   // Profile still resolving but we have cached company — stay on dashboard
   if (!profile?.company_id) {
-    return (
-      <div className="min-h-screen flex items-center justify-center text-sm text-[#6B6E72]">
-        Loading…
-      </div>
-    )
+    return <CompanySplash company={company || peekCachedCompany()} />
   }
 
   return (

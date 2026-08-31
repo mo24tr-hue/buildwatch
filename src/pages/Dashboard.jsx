@@ -2179,6 +2179,208 @@ function money(n) {
   return '$' + Number(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 }
 
+/** Contractor job costs: phase costs + extras/receipts. Profit = quoted total − job costs. */
+function ProjectJobCostsPanel({ project, profile, onReload, logActivity, mode }) {
+  const [rows, setRows] = useState([])
+  const [saving, setSaving] = useState(false)
+  const [phaseAmounts, setPhaseAmounts] = useState({})
+  const [extraAmt, setExtraAmt] = useState('')
+  const [extraNote, setExtraNote] = useState('')
+  const phases = (project.phases || []).slice().sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0))
+
+  const loadRows = async () => {
+    const { data } = await supabase
+      .from('project_job_costs')
+      .select('*')
+      .eq('project_id', project.id)
+      .order('created_at', { ascending: false })
+    setRows(data || [])
+    const next = {}
+    ;(data || []).forEach((r) => {
+      if (r.kind === 'phase' && r.phase_id) next[r.phase_id] = String(r.amount ?? '')
+    })
+    setPhaseAmounts(next)
+  }
+
+  useEffect(() => {
+    loadRows()
+  }, [project.id])
+
+  const approvedCos = (project.change_orders || []).filter(
+    (c) => (c.status || '') === 'approved' && c.amount != null
+  )
+  const quoted = (Number(project.base_cost) || 0) + approvedCos.reduce((s, c) => s + (Number(c.amount) || 0), 0)
+  const spent = rows.reduce((s, r) => s + (Number(r.amount) || 0), 0)
+  const profit = quoted - spent
+  const phaseSpent = rows.filter((r) => r.kind === 'phase').reduce((s, r) => s + (Number(r.amount) || 0), 0)
+  const extraSpent = rows.filter((r) => r.kind !== 'phase').reduce((s, r) => s + (Number(r.amount) || 0), 0)
+
+  const upsertPhaseCost = async (phaseId, raw) => {
+    const amt = raw === '' ? null : Number(raw)
+    if (amt != null && (Number.isNaN(amt) || amt < 0)) {
+      alert('Enter a valid amount.')
+      return
+    }
+    setSaving(true)
+    const existing = rows.find((r) => r.kind === 'phase' && r.phase_id === phaseId)
+    let error
+    if (amt == null || amt === 0) {
+      if (existing) ({ error } = await supabase.from('project_job_costs').delete().eq('id', existing.id))
+    } else if (existing) {
+      ({ error } = await supabase.from('project_job_costs').update({ amount: amt }).eq('id', existing.id))
+    } else {
+      ({ error } = await supabase.from('project_job_costs').insert({
+        project_id: project.id,
+        company_id: profile.company_id,
+        phase_id: phaseId,
+        kind: 'phase',
+        amount: amt,
+        created_by: profile.id,
+      }))
+    }
+    setSaving(false)
+    if (error) {
+      alert(error.message + '\n\nRun job-costs.sql in Supabase if this table is missing.')
+      return
+    }
+    await logActivity?.('updated phase cost', project.address)
+    await loadRows()
+    onReload?.()
+  }
+
+  const addExtra = async ({ file } = {}) => {
+    const amt = Number(extraAmt)
+    if (!amt || Number.isNaN(amt) || amt <= 0) {
+      alert('Enter an amount greater than zero.')
+      return
+    }
+    setSaving(true)
+    let publicUrl = null
+    let storagePath = null
+    if (file) {
+      const uploadFile = await compressImageFile(file)
+      const ext = (uploadFile.name || 'jpg').split('.').pop()
+      storagePath = `${profile.company_id}/${project.id}/costs/${Date.now()}.${ext}`
+      const { error: upErr } = await supabase.storage.from('project-photos').upload(storagePath, uploadFile, {
+        contentType: uploadFile.type || 'image/jpeg',
+        upsert: false,
+      })
+      if (upErr) {
+        setSaving(false)
+        alert(upErr.message)
+        return
+      }
+      publicUrl = supabase.storage.from('project-photos').getPublicUrl(storagePath).data?.publicUrl || null
+    }
+    const { error } = await supabase.from('project_job_costs').insert({
+      project_id: project.id,
+      company_id: profile.company_id,
+      kind: file ? 'receipt' : 'extra',
+      amount: amt,
+      note: extraNote.trim() || null,
+      public_url: publicUrl,
+      storage_path: storagePath,
+      created_by: profile.id,
+    })
+    setSaving(false)
+    if (error) {
+      alert(error.message + '\n\nRun job-costs.sql in Supabase if this table is missing.')
+      return
+    }
+    await logActivity?.(file ? 'added receipt cost' : 'added extra cost', project.address)
+    setExtraAmt('')
+    setExtraNote('')
+    await loadRows()
+    onReload?.()
+  }
+
+  const removeRow = async (row) => {
+    if (!confirm('Remove this cost?')) return
+    if (row.storage_path) {
+      try { await supabase.storage.from('project-photos').remove([row.storage_path]) } catch (_) {}
+    }
+    const { error } = await supabase.from('project_job_costs').delete().eq('id', row.id)
+    if (error) { alert(error.message); return }
+    await loadRows()
+    onReload?.()
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="bg-white border border-black rounded-md p-4 text-sm space-y-1.5">
+        <div className="flex justify-between"><span className="text-[#6B6E72]">Original quote</span><span>{money(project.base_cost)}</span></div>
+        <div className="flex justify-between"><span className="text-[#6B6E72]">Approved change orders</span><span>{money(approvedCos.reduce((s, c) => s + (Number(c.amount) || 0), 0))}</span></div>
+        <div className="flex justify-between font-medium border-t border-black/20 pt-1.5"><span>Quoted total</span><span>{money(quoted)}</span></div>
+        <div className="flex justify-between"><span className="text-[#6B6E72]">Phase costs</span><span>{money(phaseSpent)}</span></div>
+        <div className="flex justify-between"><span className="text-[#6B6E72]">Additional costs</span><span>{money(extraSpent)}</span></div>
+        <div className="flex justify-between font-medium border-t border-black/20 pt-1.5">
+          <span>Profit</span>
+          <span className={profit >= 0 ? 'text-[#3F7D58]' : 'text-[#B5533C]'}>{money(profit)}</span>
+        </div>
+      </div>
+
+      {mode === 'phases' && (
+        <div className="space-y-2">
+          {phases.map((ph) => (
+            <div key={ph.id} className="bg-white border border-black rounded-md p-3 flex items-center gap-3">
+              <div className="flex-1 min-w-0">
+                <div className="text-sm font-medium truncate">{ph.name}</div>
+              </div>
+              <div className="flex items-center gap-1">
+                <span className="text-sm">$</span>
+                <input
+                  type="number"
+                  inputMode="decimal"
+                  min="0"
+                  step="0.01"
+                  value={phaseAmounts[ph.id] ?? ''}
+                  onChange={(e) => setPhaseAmounts((m) => ({ ...m, [ph.id]: e.target.value }))}
+                  onBlur={() => upsertPhaseCost(ph.id, phaseAmounts[ph.id] ?? '')}
+                  className="w-28 border border-black rounded px-2 py-1.5 text-sm"
+                  placeholder="0.00"
+                />
+              </div>
+            </div>
+          ))}
+          {!phases.length && <p className="text-sm text-[#6B6E72]">Add phases first.</p>}
+          <button type="button" disabled={saving} onClick={() => phases.forEach((ph) => upsertPhaseCost(ph.id, phaseAmounts[ph.id] ?? ''))} className="w-full py-2.5 rounded bg-black text-white text-sm disabled:opacity-50">
+            {saving ? 'Saving…' : 'Save phase costs'}
+          </button>
+        </div>
+      )}
+
+      {mode === 'extra' && (
+        <div className="space-y-3">
+          <div className="bg-white border border-black rounded-md p-4 space-y-2">
+            <label className="block text-[11px] font-mono uppercase text-[#6B6E72]">Amount</label>
+            <input type="number" inputMode="decimal" min="0" step="0.01" value={extraAmt} onChange={(e) => setExtraAmt(e.target.value)} className="w-full border border-black rounded px-3 py-2 text-sm" placeholder="0.00" />
+            <label className="block text-[11px] font-mono uppercase text-[#6B6E72]">Note</label>
+            <input value={extraNote} onChange={(e) => setExtraNote(e.target.value)} className="w-full border border-black rounded px-3 py-2 text-sm" placeholder="Dumpster, permit, lumber…" />
+            <div className="flex gap-2">
+              <button type="button" disabled={saving} onClick={() => addExtra()} className="flex-1 py-2.5 rounded bg-black text-white text-sm disabled:opacity-50">Add cost</button>
+              <label className="flex-1 py-2.5 rounded border border-black text-sm text-center cursor-pointer">
+                {saving ? 'Uploading…' : 'Add receipt photo'}
+                <input type="file" accept="image/*" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; if (f) addExtra({ file: f }) }} />
+              </label>
+            </div>
+          </div>
+          {rows.filter((r) => r.kind !== 'phase').map((r) => (
+            <div key={r.id} className="bg-white border border-black rounded-md p-3 flex gap-3">
+              {r.public_url ? <img src={photoDisplayUrl(r.public_url, 240)} alt="" className="w-16 h-16 object-cover rounded" /> : null}
+              <div className="flex-1 min-w-0">
+                <div className="text-sm font-medium">{money(r.amount)}</div>
+                {r.note ? <div className="text-xs text-[#6B6E72] truncate">{r.note}</div> : null}
+                <div className="text-[10px] font-mono text-[#6B6E72]">{fmtDate(r.created_at)}</div>
+              </div>
+              <button type="button" onClick={() => removeRow(r)} className="text-[#B5533C]"><Trash2 size={16} /></button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 /** Contractor + customer only. Total = base_cost + approved change orders. Receipts from payment history. */
 function ProjectCostSection({ project, isAdmin, profile, onReload, logActivity }) {
   const [editing, setEditing] = useState(false)
@@ -3596,6 +3798,38 @@ function ProjectDetail({ project, isAdmin, canUpload, isCustomer, profile, onBac
     )
   }
 
+  if (projectPage === 'phaseCosts' && isAdmin) {
+    return (
+      <SwipeBack onBack={() => setProjectPage(null)}>
+        {pageBack}
+        <h2 className="font-display text-2xl mb-4">Phase costs</h2>
+        <ProjectJobCostsPanel
+          project={project}
+          profile={profile}
+          onReload={onReload}
+          logActivity={logActivity}
+          mode="phases"
+        />
+      </SwipeBack>
+    )
+  }
+
+  if (projectPage === 'extraCosts' && isAdmin) {
+    return (
+      <SwipeBack onBack={() => setProjectPage(null)}>
+        {pageBack}
+        <h2 className="font-display text-2xl mb-4">Additional costs</h2>
+        <ProjectJobCostsPanel
+          project={project}
+          profile={profile}
+          onReload={onReload}
+          logActivity={logActivity}
+          mode="extra"
+        />
+      </SwipeBack>
+    )
+  }
+
   if (projectPage === 'activity' && isAdmin) {
     return (
       <SwipeBack onBack={() => setProjectPage(null)}>
@@ -3875,6 +4109,12 @@ className={`bg-white border border-black rounded-md flex items-stretch overflow-
         />
         {(isAdmin || isCustomer) && (
           <ProjectNavRow icon={<DollarSign size={16} />} label="Cost of construction" onClick={() => setProjectPage('cost')} />
+        )}
+        {isAdmin && (
+          <ProjectNavRow icon={<ListChecks size={16} />} label="Phase costs" onClick={() => setProjectPage('phaseCosts')} />
+        )}
+        {isAdmin && (
+          <ProjectNavRow icon={<FileText size={16} />} label="Additional costs" onClick={() => setProjectPage('extraCosts')} />
         )}
         {isAdmin && (
           <ProjectNavRow icon={<Activity size={16} />} label="Activity" onClick={() => setProjectPage('activity')} />
