@@ -2179,11 +2179,19 @@ function money(n) {
   return '$' + Number(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 }
 
-/** Contractor job costs: phase costs + extras/receipts. Profit = quoted total − job costs. */
+function coCostAmount(co) {
+  const team = co.team_amount != null && co.team_amount !== '' ? Number(co.team_amount) : null
+  if (team != null && !Number.isNaN(team)) return team
+  const amt = co.amount != null && co.amount !== '' ? Number(co.amount) : null
+  return amt != null && !Number.isNaN(amt) ? amt : 0
+}
+
+/** Contractor job costs: phase quoted vs actual. Approved phase COs add to actual only. */
 function ProjectJobCostsPanel({ project, profile, onReload, logActivity, mode }) {
   const [rows, setRows] = useState([])
   const [saving, setSaving] = useState(false)
-  const [phaseAmounts, setPhaseAmounts] = useState({})
+  const [phaseQuoted, setPhaseQuoted] = useState({})
+  const [phaseActual, setPhaseActual] = useState({})
   const [extraAmt, setExtraAmt] = useState('')
   const [extraNote, setExtraNote] = useState('')
   const phases = (project.phases || []).slice().sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0))
@@ -2195,52 +2203,76 @@ function ProjectJobCostsPanel({ project, profile, onReload, logActivity, mode })
       .eq('project_id', project.id)
       .order('created_at', { ascending: false })
     setRows(data || [])
-    const next = {}
+    const q = {}
+    const a = {}
     ;(data || []).forEach((r) => {
-      if (r.kind === 'phase' && r.phase_id) next[r.phase_id] = String(r.amount ?? '')
+      if (r.kind === 'phase' && r.phase_id) {
+        const quotedVal = r.quoted_amount != null ? r.quoted_amount : r.amount
+        q[r.phase_id] = quotedVal != null ? String(quotedVal) : ''
+        a[r.phase_id] = r.actual_amount != null ? String(r.actual_amount) : ''
+      }
     })
-    setPhaseAmounts(next)
+    setPhaseQuoted(q)
+    setPhaseActual(a)
   }
 
   useEffect(() => {
     loadRows()
   }, [project.id])
 
-  const approvedCos = (project.change_orders || []).filter(
-    (c) => (c.status || '') === 'approved' && c.amount != null
-  )
-  const quoted = (Number(project.base_cost) || 0) + approvedCos.reduce((s, c) => s + (Number(c.amount) || 0), 0)
-  const spent = rows.reduce((s, r) => s + (Number(r.amount) || 0), 0)
-  const profit = quoted - spent
-  const phaseSpent = rows.filter((r) => r.kind === 'phase').reduce((s, r) => s + (Number(r.amount) || 0), 0)
-  const extraSpent = rows.filter((r) => r.kind !== 'phase').reduce((s, r) => s + (Number(r.amount) || 0), 0)
+  const approvedOnPhase = (phaseId) =>
+    (project.change_orders || []).filter(
+      (c) => (c.status || '') === 'approved' && c.phase_id === phaseId
+    )
+  const coOnPhase = (phaseId) =>
+    approvedOnPhase(phaseId).reduce((s, c) => s + coCostAmount(c), 0)
 
-  const upsertPhaseCost = async (phaseId, raw) => {
-    const amt = raw === '' ? null : Number(raw)
-    if (amt != null && (Number.isNaN(amt) || amt < 0)) {
+  const customerQuoted = (Number(project.base_cost) || 0) + (project.change_orders || [])
+    .filter((c) => (c.status || '') === 'approved' && c.amount != null)
+    .reduce((s, c) => s + (Number(c.amount) || 0), 0)
+
+  const extraSpent = rows.filter((r) => r.kind !== 'phase').reduce((s, r) => s + (Number(r.amount) || 0), 0)
+  const phaseQuotedTotal = phases.reduce((s, ph) => s + (Number(phaseQuoted[ph.id]) || 0), 0)
+  const phaseActualTotal = phases.reduce((s, ph) => {
+    const entered = Number(phaseActual[ph.id]) || 0
+    return s + entered + coOnPhase(ph.id)
+  }, 0)
+  const profit = customerQuoted - phaseActualTotal - extraSpent
+
+  const upsertPhaseCost = async (phaseId) => {
+    const qRaw = phaseQuoted[phaseId] ?? ''
+    const aRaw = phaseActual[phaseId] ?? ''
+    const qAmt = qRaw === '' ? null : Number(qRaw)
+    const aAmt = aRaw === '' ? null : Number(aRaw)
+    if ((qAmt != null && (Number.isNaN(qAmt) || qAmt < 0)) || (aAmt != null && (Number.isNaN(aAmt) || aAmt < 0))) {
       alert('Enter a valid amount.')
       return
     }
     setSaving(true)
     const existing = rows.find((r) => r.kind === 'phase' && r.phase_id === phaseId)
+    const payload = {
+      quoted_amount: qAmt,
+      actual_amount: aAmt,
+      amount: aAmt != null ? aAmt : (qAmt || 0),
+    }
     let error
-    if (amt == null || amt === 0) {
+    if (qAmt == null && aAmt == null) {
       if (existing) ({ error } = await supabase.from('project_job_costs').delete().eq('id', existing.id))
     } else if (existing) {
-      ({ error } = await supabase.from('project_job_costs').update({ amount: amt }).eq('id', existing.id))
+      ({ error } = await supabase.from('project_job_costs').update(payload).eq('id', existing.id))
     } else {
       ({ error } = await supabase.from('project_job_costs').insert({
         project_id: project.id,
         company_id: profile.company_id,
         phase_id: phaseId,
         kind: 'phase',
-        amount: amt,
         created_by: profile.id,
+        ...payload,
       }))
     }
     setSaving(false)
     if (error) {
-      alert(error.message + '\n\nRun job-costs.sql in Supabase if this table is missing.')
+      alert(error.message + '\n\nRun job-costs.sql in Supabase if columns are missing.')
       return
     }
     await logActivity?.('updated phase cost', project.address)
@@ -2309,9 +2341,9 @@ function ProjectJobCostsPanel({ project, profile, onReload, logActivity, mode })
     <div className="space-y-4">
       <div className="bg-white border border-black rounded-md p-4 text-sm space-y-1.5">
         <div className="flex justify-between"><span className="text-[#6B6E72]">Original quote</span><span>{money(project.base_cost)}</span></div>
-        <div className="flex justify-between"><span className="text-[#6B6E72]">Approved change orders</span><span>{money(approvedCos.reduce((s, c) => s + (Number(c.amount) || 0), 0))}</span></div>
-        <div className="flex justify-between font-medium border-t border-black/20 pt-1.5"><span>Quoted total</span><span>{money(quoted)}</span></div>
-        <div className="flex justify-between"><span className="text-[#6B6E72]">Phase costs</span><span>{money(phaseSpent)}</span></div>
+        <div className="flex justify-between font-medium"><span>Customer quoted total</span><span>{money(customerQuoted)}</span></div>
+        <div className="flex justify-between"><span className="text-[#6B6E72]">Phase quoted</span><span>{money(phaseQuotedTotal)}</span></div>
+        <div className="flex justify-between"><span className="text-[#6B6E72]">Phase actual</span><span>{money(phaseActualTotal)}</span></div>
         <div className="flex justify-between"><span className="text-[#6B6E72]">Additional costs</span><span>{money(extraSpent)}</span></div>
         <div className="flex justify-between font-medium border-t border-black/20 pt-1.5">
           <span>Profit</span>
@@ -2321,29 +2353,69 @@ function ProjectJobCostsPanel({ project, profile, onReload, logActivity, mode })
 
       {mode === 'phases' && (
         <div className="space-y-2">
-          {phases.map((ph) => (
-            <div key={ph.id} className="bg-white border border-black rounded-md p-3 flex items-center gap-3">
-              <div className="flex-1 min-w-0">
+          {phases.map((ph) => {
+            const cos = approvedOnPhase(ph.id)
+            const coTotal = coOnPhase(ph.id)
+            const enteredActual = Number(phaseActual[ph.id]) || 0
+            const actualShown = enteredActual + coTotal
+            return (
+              <div key={ph.id} className="bg-white border border-black rounded-md p-3 space-y-2">
                 <div className="text-sm font-medium truncate">{ph.name}</div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="block text-[10px] font-mono uppercase text-[#6B6E72] mb-1">Quoted</label>
+                    <div className="flex items-center gap-1">
+                      <span className="text-sm">$</span>
+                      <input
+                        type="number"
+                        inputMode="decimal"
+                        min="0"
+                        step="0.01"
+                        value={phaseQuoted[ph.id] ?? ''}
+                        onChange={(e) => setPhaseQuoted((m) => ({ ...m, [ph.id]: e.target.value }))}
+                        onBlur={() => upsertPhaseCost(ph.id)}
+                        className="w-full border border-black rounded px-2 py-1.5 text-sm"
+                        placeholder="0.00"
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-mono uppercase text-[#6B6E72] mb-1">Actual</label>
+                    <div className="flex items-center gap-1">
+                      <span className="text-sm">$</span>
+                      <input
+                        type="number"
+                        inputMode="decimal"
+                        min="0"
+                        step="0.01"
+                        value={phaseActual[ph.id] ?? ''}
+                        onChange={(e) => setPhaseActual((m) => ({ ...m, [ph.id]: e.target.value }))}
+                        onBlur={() => upsertPhaseCost(ph.id)}
+                        className="w-full border border-black rounded px-2 py-1.5 text-sm"
+                        placeholder="0.00"
+                      />
+                    </div>
+                  </div>
+                </div>
+                {cos.length > 0 && (
+                  <div className="text-xs text-[#6B6E72] space-y-0.5">
+                    {cos.map((c) => (
+                      <div key={c.id} className="flex justify-between gap-2">
+                        <span className="truncate">{c.title || c.note || 'Change order'}</span>
+                        <span>+{money(coCostAmount(c))}</span>
+                      </div>
+                    ))}
+                    <div className="flex justify-between font-medium text-black pt-1">
+                      <span>Actual with change orders</span>
+                      <span>{money(actualShown)}</span>
+                    </div>
+                  </div>
+                )}
               </div>
-              <div className="flex items-center gap-1">
-                <span className="text-sm">$</span>
-                <input
-                  type="number"
-                  inputMode="decimal"
-                  min="0"
-                  step="0.01"
-                  value={phaseAmounts[ph.id] ?? ''}
-                  onChange={(e) => setPhaseAmounts((m) => ({ ...m, [ph.id]: e.target.value }))}
-                  onBlur={() => upsertPhaseCost(ph.id, phaseAmounts[ph.id] ?? '')}
-                  className="w-28 border border-black rounded px-2 py-1.5 text-sm"
-                  placeholder="0.00"
-                />
-              </div>
-            </div>
-          ))}
+            )
+          })}
           {!phases.length && <p className="text-sm text-[#6B6E72]">Add phases first.</p>}
-          <button type="button" disabled={saving} onClick={() => phases.forEach((ph) => upsertPhaseCost(ph.id, phaseAmounts[ph.id] ?? ''))} className="w-full py-2.5 rounded bg-black text-white text-sm disabled:opacity-50">
+          <button type="button" disabled={saving} onClick={() => phases.forEach((ph) => upsertPhaseCost(ph.id))} className="w-full py-2.5 rounded bg-black text-white text-sm disabled:opacity-50">
             {saving ? 'Saving…' : 'Save phase costs'}
           </button>
         </div>

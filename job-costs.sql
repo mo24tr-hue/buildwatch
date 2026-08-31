@@ -1,5 +1,4 @@
--- Contractor job costs: per-phase amounts, extras, and receipt photos.
--- Profit = quoted total (base_cost + approved change orders) minus these costs.
+-- Contractor job costs. Run the full block even if you already created the table.
 
 create table if not exists public.project_job_costs (
   id uuid primary key default gen_random_uuid(),
@@ -8,12 +7,21 @@ create table if not exists public.project_job_costs (
   phase_id uuid references public.phases(id) on delete cascade,
   kind text not null default 'extra' check (kind in ('phase', 'extra', 'receipt')),
   amount numeric not null default 0,
+  quoted_amount numeric,
+  actual_amount numeric,
   note text,
   public_url text,
   storage_path text,
   created_by uuid references public.profiles(id) on delete set null,
   created_at timestamptz not null default now()
 );
+
+alter table public.project_job_costs add column if not exists quoted_amount numeric;
+alter table public.project_job_costs add column if not exists actual_amount numeric;
+
+update public.project_job_costs
+set quoted_amount = amount
+where kind = 'phase' and quoted_amount is null and amount is not null;
 
 create index if not exists project_job_costs_project_idx on public.project_job_costs (project_id);
 create index if not exists project_job_costs_phase_idx on public.project_job_costs (phase_id);
