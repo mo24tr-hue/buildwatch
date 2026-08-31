@@ -2519,12 +2519,17 @@ function ProjectJobCostsPanel({ project, profile, onReload, logActivity, mode })
       )}
 
       {viewDoc && (
-        <div className="fixed inset-0 z-[80] bg-black/92 flex flex-col" onClick={() => setViewDoc(null)}>
-          <div className="flex items-center justify-between text-white px-4 py-3" style={{ paddingTop: 'calc(env(safe-area-inset-top) + 8px)' }}>
-            <span className="text-sm truncate pr-3">{viewDoc.note || 'Receipt'}</span>
-            <button type="button" onClick={() => setViewDoc(null)} className="p-2"><X size={20} /></button>
-          </div>
-          <div className="flex-1 flex items-center justify-center px-3 pb-8" onClick={(e) => e.stopPropagation()}>
+        <div className="fixed inset-0 z-[200] bg-black flex flex-col">
+          <button
+            type="button"
+            onClick={() => setViewDoc(null)}
+            aria-label="Close"
+            className="absolute right-4 z-[201] w-11 h-11 rounded-full bg-white text-black flex items-center justify-center shadow"
+            style={{ top: 'calc(env(safe-area-inset-top, 0px) + 12px)' }}
+          >
+            <X size={22} strokeWidth={2.5} />
+          </button>
+          <div className="flex-1 flex items-center justify-center px-3" style={{ paddingTop: 'calc(env(safe-area-inset-top, 0px) + 64px)', paddingBottom: '24px' }}>
             <img src={photoDisplayUrl(viewDoc.public_url)} alt="" className="max-h-full max-w-full object-contain" />
           </div>
         </div>
