@@ -9,8 +9,8 @@ import { isPlatformAdmin } from '../lib/platform'
 
 const QUEUE_KEY = 'ay_upload_queue'
 
-/** Compress images before upload so galleries stay fast (max edge 1600px, JPEG ~0.72). */
-async function compressImageFile(file, maxEdge = 1600, quality = 0.72) {
+/** Compress images in the browser before upload (max edge 1280px, JPEG ~0.68). No Supabase transforms. */
+async function compressImageFile(file, maxEdge = 1280, quality = 0.68) {
   if (!file || !(file.type || '').startsWith('image/')) return file
   if ((file.type || '').includes('svg')) return file
   try {
@@ -40,16 +40,8 @@ async function compressImageFile(file, maxEdge = 1600, quality = 0.72) {
   }
 }
 
-/** Prefer smaller display URL when Supabase image transforms are available; otherwise original. */
-function photoDisplayUrl(url, width = 900) {
-  if (!url || typeof url !== 'string') return url
-  if (url.startsWith('/acme/') || url.startsWith('data:')) return url
-  // Supabase Storage image transformation (works when enabled on the project)
-  if (url.includes('/storage/v1/object/public/')) {
-    const base = url.replace('/object/public/', '/render/image/public/')
-    const sep = base.includes('?') ? '&' : '?'
-    return `${base}${sep}width=${width}&quality=70&resize=contain`
-  }
+/** Always use the stored file. Resize happens in the app before upload — no Supabase Image Transforms. */
+function photoDisplayUrl(url) {
   return url
 }
 
@@ -2019,7 +2011,7 @@ function NewProjectForm({ onCreate, onCancel, companyId, existingProjects = [] }
     if (!file || !companyId) return
     setUploadingCover(true)
     try {
-      const compressed = await compressImageFile(file, 1600, 0.75)
+      const compressed = await compressImageFile(file)
       const safeName = (compressed.name || file.name || 'cover.jpg').replace(/[^a-zA-Z0-9._-]/g, '_')
       const path = companyId + '/covers/' + Date.now() + '-' + safeName
       const bytes = await compressed.arrayBuffer()
@@ -3728,7 +3720,7 @@ function ProjectDetail({ project, isAdmin, canUpload, isCustomer, profile, onBac
     const file = e.target.files?.[0]
     e.target.value = ''
     if (!file || !profile?.company_id) return
-    const compressed = await compressImageFile(file, 1600, 0.75)
+    const compressed = await compressImageFile(file)
     const safeName = (compressed.name || file.name || 'cover.jpg').replace(/[^a-zA-Z0-9._-]/g, '_')
     const path = profile.company_id + '/' + project.id + '/covers/' + Date.now() + '-' + safeName
     const bytes = await compressed.arrayBuffer()
