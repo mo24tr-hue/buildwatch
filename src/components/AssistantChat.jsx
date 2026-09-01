@@ -203,12 +203,9 @@ function saveHistory(profile, list) {
 
 export default function AssistantChat({ projects, profile, isAdmin, onReload, onOpenProject }) {
   const [threads, setThreads] = useState(() => loadHistory(profile))
-  const [activeId, setActiveId] = useState(() => loadHistory(profile)[0]?.id || null)
+  const [activeId, setActiveId] = useState(() => 'c' + Date.now())
   const [showHistory, setShowHistory] = useState(false)
-  const [messages, setMessages] = useState(() => {
-    const list = loadHistory(profile)
-    return list[0]?.messages?.length ? list[0].messages : [welcome(isAdmin)]
-  })
+  const [messages, setMessages] = useState(() => [welcome(isAdmin)])
   const [input, setInput] = useState('')
   const [busy, setBusy] = useState(false)
   const [listening, setListening] = useState(false)
@@ -216,22 +213,30 @@ export default function AssistantChat({ projects, profile, isAdmin, onReload, on
   const endRef = useRef(null)
   const activeIdRef = useRef(activeId)
   const lastProjectRef = useRef(null)
+  const messagesRef = useRef(messages)
   activeIdRef.current = activeId
+  messagesRef.current = messages
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages, busy])
 
-  useEffect(() => {
-    const id = activeIdRef.current
-    if (!id) return
+  const archiveCurrent = (id, msgs) => {
+    if (!msgs?.some((m) => m.role === 'user')) return
+    const title = (msgs.find((m) => m.role === 'user')?.text || 'Chat').slice(0, 48)
     setThreads((prev) => {
-      const title = (messages.find((m) => m.role === 'user')?.text || 'New chat').slice(0, 48)
-      const next = [{ id, title, at: Date.now(), messages }, ...prev.filter((t) => t.id !== id)]
+      const next = [{ id, title, at: Date.now(), messages: msgs }, ...prev.filter((t) => t.id !== id)]
       saveHistory(profile, next)
       return next
     })
-  }, [messages, profile])
+  }
+
+  useEffect(() => {
+    return () => {
+      archiveCurrent(activeIdRef.current, messagesRef.current)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const push = (role, text) => setMessages((m) => [...m, { role, text }])
 
@@ -615,9 +620,11 @@ export default function AssistantChat({ projects, profile, isAdmin, onReload, on
   }
 
   const newChat = () => {
+    archiveCurrent(activeIdRef.current, messagesRef.current)
     const id = 'c' + Date.now()
     setActiveId(id)
     setMessages([welcome(isAdmin)])
+    lastProjectRef.current = null
     setShowHistory(false)
     setInput('')
   }
