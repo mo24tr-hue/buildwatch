@@ -168,6 +168,7 @@ export default function AssistantChat({ projects, profile, isAdmin, onReload, on
   const recRef = useRef(null)
   const endRef = useRef(null)
   const activeIdRef = useRef(activeId)
+  const lastProjectRef = useRef(null)
   activeIdRef.current = activeId
 
   useEffect(() => {
@@ -252,10 +253,34 @@ export default function AssistantChat({ projects, profile, isAdmin, onReload, on
     try {
       const lower = text.toLowerCase()
       const dateStr = parseDateToken(text)
-      const project = matchProject(text, projects)
+      let project = matchProject(text, projects)
+      if (!project) {
+        const hist = [...messages].reverse().map((m) => m.text).join(' ')
+        project = matchProject(text + ' ' + hist, projects) || lastProjectRef.current
+      }
+      if (project) lastProjectRef.current = project
 
       if (/\b(help|what can you|commands)\b/.test(lower)) {
         push('bot', 'I can:\n• Tell you what’s scheduled today, tomorrow, or a date\n• Schedule a phase: “Schedule framing on Maple Friday”\n• Add a meeting: “Meeting at Oak Avenue tomorrow at 9”\n• Project update: “What’s going on at Birch”\n• Costs: “How much did I spend on dumpsters”')
+        return
+      }
+
+      if (/\b(quoted|quote|original contract|construction cost|cost of construction|how much is the job|contract amount)\b/.test(lower) && !/\bschedule\b/.test(lower)) {
+        if (!project) {
+          push('bot', 'Which address?')
+          return
+        }
+        const approved = (project.change_orders || []).filter((c) => (c.status || '') === 'approved' && c.amount != null)
+        const coTotal = approved.reduce((s, c) => s + (Number(c.amount) || 0), 0)
+        const base = project.base_cost != null ? Number(project.base_cost) : null
+        if (base == null && !coTotal) {
+          push('bot', `No quoted amount is set for ${project.address}.`)
+          return
+        }
+        const total = (base || 0) + coTotal
+        push('bot', coTotal
+          ? `${project.address}: quoted ${money(base)} plus ${money(coTotal)} in approved change orders. Total ${money(total)}.`
+          : `${project.address}: quoted ${money(base)}.`)
         return
       }
 
@@ -276,18 +301,18 @@ export default function AssistantChat({ projects, profile, isAdmin, onReload, on
         return
       }
 
-      if (/\b(how much|spent|spend|cost|costs|dumpster|paid|profit|invoice)\b/.test(lower) && !/\bschedule\b/.test(lower)) {
+      if (/\b(how much|spent|spend|cost|costs|dumpster|paid|profit|invoice|receipt)\b/.test(lower) && !/\bschedule\b/.test(lower)) {
         if (!isAdmin) {
           push('bot', 'Cost details are only available to the contractor.')
           return
         }
         const costs = await loadCosts()
-        const keywordMatch = lower.match(/(?:on|for)\s+([a-z0-9][a-z0-9 \-]{1,40})$/) 
-        const words = lower.replace(/[^a-z0-9\s]/g, ' ').split(/\s+/).filter((w) => w.length > 3 && !['much','spend','spent','cost','costs','total','project','dumpsters'].includes(w))
         let keyword = null
         if (/\bdumpsters?\b/.test(lower)) keyword = 'dumpster'
-        else if (keywordMatch) keyword = keywordMatch[1].trim()
-        else if (words.length) keyword = words[words.length - 1]
+        else {
+          const m = lower.match(/(?:on|for)\s+([a-z0-9][a-z0-9 \-]{1,30}?)(?:\s+on\s+|\s*$)/)
+          if (m && !/address|project|job|construction|phase/.test(m[1])) keyword = m[1].trim()
+        }
 
         const scoped = project ? costs.filter((c) => c.project_id === project.id) : costs
         const filtered = keyword
@@ -295,12 +320,14 @@ export default function AssistantChat({ projects, profile, isAdmin, onReload, on
           : scoped
         const sum = filtered.reduce((s, c) => s + (Number(c.amount) || Number(c.actual_amount) || 0), 0)
         if (keyword) {
-          push('bot', `${money(sum)} recorded for “${keyword}”${project ? ' on ' + project.address : ''}${filtered.length ? ` (${filtered.length} item${filtered.length === 1 ? '' : 's'})` : ''}.`)
+          push('bot', `${money(sum)} recorded for “${keyword}”${project ? ' on ' + project.address : ''}.`)
         } else if (project) {
-          const quoted = Number(project.base_cost) || 0
-          push('bot', `${project.address}\nOriginal quote ${money(quoted)}\nJob costs on file ${money(sum)}.`)
+          const quoted = project.base_cost != null ? Number(project.base_cost) : null
+          push('bot', quoted != null
+            ? `${project.address}: quoted ${money(quoted)}. Job costs on file ${money(sum)}.`
+            : `${project.address}: no quote set. Job costs on file ${money(sum)}.`)
         } else {
-          push('bot', `Job costs on file across projects: ${money(sum)}. Name a project or item for a breakdown.`)
+          push('bot', `Job costs on file: ${money(sum)}.`)
         }
         return
       }
@@ -412,11 +439,12 @@ export default function AssistantChat({ projects, profile, isAdmin, onReload, on
       if (project) {
         const phases = project.phases || []
         const done = phases.filter((ph) => ph.status === 'done').length
-        push('bot', `${project.address}: ${done} of ${phases.length} phases complete. Ask “what’s going on at ${project.address}” or “schedule framing on ${project.address} Friday”.`)
+        const active = phases.filter((ph) => ph.status === 'active').map((ph) => ph.name)
+        push('bot', `${project.address}: ${done} of ${phases.length} phases complete${active.length ? `. In progress: ${active.join(', ')}` : ''}.`)
         return
       }
 
-      push('bot', 'Try “What’s scheduled today”, “How much did I spend on dumpsters”, or “Schedule framing on Maple Street Friday”.')
+      push('bot', 'Which project or date?')
     } catch (err) {
       push('bot', err.message || 'Something went wrong.')
     } finally {
