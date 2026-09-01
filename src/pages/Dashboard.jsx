@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useState, useRef } from 'react'
-import { HardHat, Plus, Image as ImageIcon, MapPin, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Camera, Trash2, Check, FileText, X, Video, Menu, Share2, Bell, Search, Copy, Archive, Printer, CalendarDays, Users, FolderOpen, DollarSign, Activity, CircleDot, Clock, ListChecks } from 'lucide-react'
+import { HardHat, Plus, Image as ImageIcon, MapPin, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Camera, Trash2, Check, FileText, X, Video, Menu, Share2, Bell, Search, Copy, Archive, Printer, CalendarDays, Users, FolderOpen, DollarSign, Activity, CircleDot, Clock, ListChecks, MessageSquare } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { STYLES, PROJECT_STATUS, PHASE_STATUS, nextPhaseStatus, fmtDate, fmtDateTime, isFinishingPhase, FINISHING_PHASES, finishingLabel, roleLabel } from '../lib/styles'
 import AdminPanel from '../components/AdminPanel'
 import PlatformAdmin from '../components/PlatformAdmin'
 import FeedbackPanel from '../components/FeedbackPanel'
+import AssistantChat from '../components/AssistantChat'
 import { isPlatformAdmin } from '../lib/platform'
 
 const QUEUE_KEY = 'ay_upload_queue'
@@ -919,6 +920,27 @@ export default function Dashboard({ session, profile, company, onCompanyUpdate, 
                       Platform
                     </button>
                   )}
+                  {isAdmin && (
+                    <button
+                      type="button"
+                      className="w-full text-left px-3 py-2.5 text-sm hover:bg-[#F5F5F5]"
+                      onClick={() => {
+                        setMenuOpen(false)
+                        setShowWeek(true)
+                        setHomeTab('week')
+                        setShowCalendar(false)
+                        setShowAdmin(false)
+                        setShowPassword(false)
+                        setShowPlatform(false)
+                        setShowFeedback(false)
+                        setShowHelp(false)
+                        setActiveId(null)
+                        setShowNew(false)
+                      }}
+                    >
+                      This week
+                    </button>
+                  )}
                   <button
                     type="button"
                     className="w-full text-left px-3 py-2.5 text-sm hover:bg-[#F5F5F5]"
@@ -1120,6 +1142,20 @@ export default function Dashboard({ session, profile, company, onCompanyUpdate, 
           <InviteHelpGuide
             company={headerCompany || company}
             onBack={() => setShowHelp(false)}
+          />
+        ) : homeTab === 'assistant' ? (
+          <AssistantChat
+            projects={projects}
+            profile={profile}
+            isAdmin={isAdmin}
+            onReload={softReload}
+            onOpenProject={(id) => {
+              setHomeTab('projects')
+              setShowCalendar(false)
+              setShowWeek(false)
+              setShowAdmin(false)
+              setActiveId(id)
+            }}
           />
         ) : showCalendar ? (
           <AdminCalendarView
@@ -1325,16 +1361,14 @@ export default function Dashboard({ session, profile, company, onCompanyUpdate, 
               <CalendarDays size={18} />
               Calendar
             </button>
-            {isAdmin && (
-              <button
-                type="button"
-                onClick={() => goTab('week')}
-                className={`flex-1 py-2.5 flex flex-col items-center gap-0.5 text-[10px] font-mono uppercase ${homeTab === 'week' ? 'text-black' : 'text-[#8A8D91]'}`}
-              >
-                <Activity size={18} />
-                This week
-              </button>
-            )}
+            <button
+              type="button"
+              onClick={() => goTab('assistant')}
+              className={`flex-1 py-2.5 flex flex-col items-center gap-0.5 text-[10px] font-mono uppercase ${homeTab === 'assistant' ? 'text-black' : 'text-[#8A8D91]'}`}
+            >
+              <MessageSquare size={18} />
+              Assistant
+            </button>
             {isAdmin && (
               <button
                 type="button"
