@@ -10,30 +10,34 @@ import { isPlatformAdmin } from '../lib/platform'
 
 const QUEUE_KEY = 'ay_upload_queue'
 
-/** Compress images in the browser before upload (max edge 1280px, JPEG ~0.68). No Supabase transforms. */
-async function compressImageFile(file, maxEdge = 1280, quality = 0.68) {
+/** Fast local resize. Skip small files so the phone is not waiting on canvas work. */
+async function compressImageFile(file, maxEdge = 1400, quality = 0.72) {
   if (!file || !(file.type || '').startsWith('image/')) return file
   if ((file.type || '').includes('svg')) return file
+  if (file.size < 380000) return file
   try {
     const bitmap = await createImageBitmap(file)
     const w = bitmap.width
     const h = bitmap.height
     const scale = Math.min(1, maxEdge / Math.max(w, h))
-    const tw = Math.max(1, Math.round(w * scale))
-    const th = Math.max(1, Math.round(h * scale))
-    // Skip if already small
-    if (scale >= 0.98 && file.size < 450000) {
+    if (scale >= 0.95) {
       bitmap.close?.()
       return file
     }
+    const tw = Math.max(1, Math.round(w * scale))
+    const th = Math.max(1, Math.round(h * scale))
     const canvas = document.createElement('canvas')
     canvas.width = tw
     canvas.height = th
-    const ctx = canvas.getContext('2d')
+    const ctx = canvas.getContext('2d', { alpha: false })
+    ctx.imageSmoothingEnabled = true
+    ctx.imageSmoothingQuality = 'medium'
     ctx.drawImage(bitmap, 0, 0, tw, th)
     bitmap.close?.()
     const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/jpeg', quality))
-    if (!blob || blob.size >= file.size * 0.95) return file
+    canvas.width = 0
+    canvas.height = 0
+    if (!blob || blob.size >= file.size * 0.92) return file
     const name = (file.name || 'photo.jpg').replace(/\.[^.]+$/, '') + '.jpg'
     return new File([blob], name, { type: 'image/jpeg', lastModified: Date.now() })
   } catch {

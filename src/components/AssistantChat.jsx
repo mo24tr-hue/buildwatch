@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { MessageSquare, Mic, Send, Square } from 'lucide-react'
+import { MessageSquare, Mic, Send, Square, Plus, Clock } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { fmtDate } from '../lib/styles'
 
@@ -127,24 +127,63 @@ function splitCommands(text) {
     .filter(Boolean)
 }
 
+const welcome = (isAdmin) => ({
+  role: 'bot',
+  text: isAdmin
+    ? 'Ask me what’s scheduled today, how much you spent on something, or tell me to schedule a phase. Example: “Schedule framing on Maple Street this Friday.”'
+    : 'Ask me what’s scheduled today or what’s going on with a project.',
+})
+
+function historyKey(profile) {
+  return 'bw_assistant_chats_' + (profile?.id || 'anon')
+}
+
+function loadHistory(profile) {
+  try {
+    const raw = localStorage.getItem(historyKey(profile))
+    const list = raw ? JSON.parse(raw) : []
+    return Array.isArray(list) ? list : []
+  } catch {
+    return []
+  }
+}
+
+function saveHistory(profile, list) {
+  try {
+    localStorage.setItem(historyKey(profile), JSON.stringify(list.slice(0, 40)))
+  } catch (_) {}
+}
+
 export default function AssistantChat({ projects, profile, isAdmin, onReload, onOpenProject }) {
-  const [messages, setMessages] = useState([
-    {
-      role: 'bot',
-      text: isAdmin
-        ? 'Ask me what’s scheduled today, how much you spent on something, or tell me to schedule a phase. Example: “Schedule framing on Maple Street this Friday.”'
-        : 'Ask me what’s scheduled today or what’s going on with a project.',
-    },
-  ])
+  const [threads, setThreads] = useState(() => loadHistory(profile))
+  const [activeId, setActiveId] = useState(() => loadHistory(profile)[0]?.id || null)
+  const [showHistory, setShowHistory] = useState(false)
+  const [messages, setMessages] = useState(() => {
+    const list = loadHistory(profile)
+    return list[0]?.messages?.length ? list[0].messages : [welcome(isAdmin)]
+  })
   const [input, setInput] = useState('')
   const [busy, setBusy] = useState(false)
   const [listening, setListening] = useState(false)
   const recRef = useRef(null)
   const endRef = useRef(null)
+  const activeIdRef = useRef(activeId)
+  activeIdRef.current = activeId
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages, busy])
+
+  useEffect(() => {
+    const id = activeIdRef.current
+    if (!id) return
+    setThreads((prev) => {
+      const title = (messages.find((m) => m.role === 'user')?.text || 'New chat').slice(0, 48)
+      const next = [{ id, title, at: Date.now(), messages }, ...prev.filter((t) => t.id !== id)]
+      saveHistory(profile, next)
+      return next
+    })
+  }, [messages, profile])
 
   const push = (role, text) => setMessages((m) => [...m, { role, text }])
 
@@ -398,9 +437,9 @@ export default function AssistantChat({ projects, profile, isAdmin, onReload, on
     rec.lang = 'en-US'
     rec.interimResults = false
     rec.onresult = (e) => {
-      const said = e.results?.[0]?.[0]?.transcript
+      const said = (e.results?.[0]?.[0]?.transcript || '').trim()
       setListening(false)
-      if (said) handle(said)
+      if (said) setInput((cur) => (cur ? cur + ' ' + said : said))
     }
     rec.onerror = () => setListening(false)
     rec.onend = () => setListening(false)
@@ -414,12 +453,58 @@ export default function AssistantChat({ projects, profile, isAdmin, onReload, on
     setListening(false)
   }
 
+  const newChat = () => {
+    const id = 'c' + Date.now()
+    setActiveId(id)
+    setMessages([welcome(isAdmin)])
+    setShowHistory(false)
+    setInput('')
+  }
+
+  const openThread = (t) => {
+    setActiveId(t.id)
+    setMessages(t.messages?.length ? t.messages : [welcome(isAdmin)])
+    setShowHistory(false)
+  }
+
+  useEffect(() => {
+    if (!activeId) {
+      const id = 'c' + Date.now()
+      setActiveId(id)
+    }
+  }, [activeId])
+
   return (
     <div className="flex flex-col" style={{ minHeight: 'calc(100dvh - 190px)' }}>
       <div className="flex items-center gap-2 mb-3">
         <MessageSquare size={18} />
-        <h2 className="font-display text-2xl">Assistant</h2>
+        <h2 className="font-display text-2xl flex-1">Assistant</h2>
+        <button type="button" onClick={() => setShowHistory((v) => !v)} className="p-2 border border-black rounded" aria-label="Chat history">
+          <Clock size={16} />
+        </button>
+        <button type="button" onClick={newChat} className="p-2 border border-black rounded" aria-label="New chat">
+          <Plus size={16} />
+        </button>
       </div>
+      {showHistory && (
+        <div className="border border-black rounded-md mb-3 max-h-56 overflow-y-auto bg-white">
+          {(threads || []).length === 0 ? (
+            <p className="text-xs text-[#6B6E72] p-3">No past chats yet.</p>
+          ) : (
+            threads.map((t) => (
+              <button
+                key={t.id}
+                type="button"
+                onClick={() => openThread(t)}
+                className={`w-full text-left px-3 py-2.5 text-sm border-b border-[#E5E5E5] last:border-0 ${t.id === activeId ? 'bg-[#F5F5F5]' : ''}`}
+              >
+                <div className="truncate">{t.title || 'Chat'}</div>
+                <div className="text-[10px] font-mono text-[#8A8D91]">{t.at ? new Date(t.at).toLocaleString() : ''}</div>
+              </button>
+            ))
+          )}
+        </div>
+      )}
       <div className="flex flex-wrap gap-2 mb-3">
         {['What’s scheduled today?', 'This week', 'What’s going on?'].map((q) => (
           <button
