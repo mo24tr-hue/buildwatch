@@ -270,6 +270,7 @@ export default function AssistantChat({ projects, profile, isAdmin, onReload, on
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               context: contextBlob(pack),
+              focus: project?.address || lastProjectRef.current?.address || '',
               messages: [...messages, { role: 'user', text }].slice(-16).map((m) => ({
                 role: m.role === 'bot' ? 'assistant' : 'user',
                 content: m.text,
@@ -278,8 +279,9 @@ export default function AssistantChat({ projects, profile, isAdmin, onReload, on
           })
           if (r.ok) {
             const data = await r.json()
-            if (data?.text) {
-              push('bot', data.text)
+            const txt = (data?.text || '').trim()
+            if (txt && !/do not have that on file|don't have that on file|not on file/i.test(txt)) {
+              push('bot', txt)
               return
             }
           }

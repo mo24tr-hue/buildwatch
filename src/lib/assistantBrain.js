@@ -72,6 +72,8 @@ export function resolveProject(text, pack, lastId) {
     let score = 0
     const addr = row.address.toLowerCase()
     if (addr && String(text || '').toLowerCase().includes(addr)) score += 20
+    const num = String(text || '').match(/\b(\d+)\b/)
+    if (num && addr.startsWith(num[1].toLowerCase())) score += 8
     row.search.forEach((w) => {
       if (t.includes(w)) score += w.length > 3 ? 4 : 2
     })
@@ -115,11 +117,18 @@ function pickFacts(row, question) {
   return all.filter((f) => /quoted|phases complete|in progress/i.test(f)).slice(0, 6)
 }
 
+function allSummary(row) {
+  const keep = (row.facts || []).filter((f) => /quoted|phases complete|in progress|paid|balance|No quoted/i.test(f))
+  return `${row.address}\n` + (keep.length ? keep : row.facts).slice(0, 8).join('\n')
+}
+
 export function answerFromContext(question, historyText, pack, lastId) {
   const row = resolveProject(`${question} ${historyText || ''}`, pack, lastId)
   if (!row) return { text: 'Which address?', projectId: lastId || null }
   const facts = pickFacts(row, question)
-  if (!facts.length) return { text: `${row.address}: nothing on file for that.`, projectId: row.id }
+  if (!facts.length) {
+    return { text: allSummary(row), projectId: row.id }
+  }
   return { text: `${row.address}\n` + facts.join('\n'), projectId: row.id }
 }
 
