@@ -226,7 +226,9 @@ export default function AssistantChat({ projects, profile, isAdmin, onReload, on
   }
 
   const schedulePhase = async (project, phase, dateStr) => {
-    const patch = { start_date: dateStr, status: phase.status === 'done' ? phase.status : 'active' }
+    const today = ymd(new Date())
+    const patch = { start_date: dateStr }
+    if (phase.status !== 'done' && dateStr <= today) patch.status = 'active'
     const { error } = await supabase.from('phases').update(patch).eq('id', phase.id)
     if (error) return `Could not schedule ${phase.name}: ${error.message}`
     const meet = {

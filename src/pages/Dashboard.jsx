@@ -349,6 +349,25 @@ export default function Dashboard({ session, profile, company, onCompanyUpdate, 
           (p.project_customers || []).some((c) => c.user_id === profile.id)
         )
       }
+      // Future-dated phases stay pending until that start date arrives
+      if (profile?.role === 'admin') {
+        const now = new Date()
+        const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
+        const dueIds = []
+        list = list.map((p) => ({
+          ...p,
+          phases: (p.phases || []).map((ph) => {
+            if (ph.status !== 'done' && ph.status !== 'active' && ph.start_date && ph.start_date <= today) {
+              dueIds.push(ph.id)
+              return { ...ph, status: 'active' }
+            }
+            return ph
+          }),
+        }))
+        if (dueIds.length) {
+          Promise.all(dueIds.map((id) => supabase.from('phases').update({ status: 'active' }).eq('id', id))).catch(() => {})
+        }
+      }
       setProjects(list)
       try {
         if (profile?.company_id) {
