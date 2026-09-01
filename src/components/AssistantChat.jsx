@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { MessageSquare, Mic, Send, Square, Plus, Clock } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { fmtDate } from '../lib/styles'
+import { buildProjectPack, answerFromContext, contextBlob } from '../lib/assistantBrain'
 
 function money(n) {
   if (n == null || Number.isNaN(Number(n))) return '$0.00'
@@ -253,12 +254,44 @@ export default function AssistantChat({ projects, profile, isAdmin, onReload, on
     try {
       const lower = text.toLowerCase()
       const dateStr = parseDateToken(text)
-      let project = matchProject(text, projects)
-      if (!project) {
-        const hist = [...messages].reverse().map((m) => m.text).join(' ')
-        project = matchProject(text + ' ' + hist, projects) || lastProjectRef.current
-      }
+      const historyText = messages.map((m) => m.text).join(' ')
+      let project = matchProject(text, projects) || matchProject(text + ' ' + historyText, projects) || lastProjectRef.current
       if (project) lastProjectRef.current = project
+
+      const isAction = /\b(schedule|book|set|start|meeting|meet with)\b/.test(lower)
+      if (!isAction) {
+        try {
+          const [costs, meetings] = await Promise.all([loadCosts(), loadMeetings()])
+          const pack = buildProjectPack(projects, { costs, meetings })
+          const r = await fetch('/api/assistant', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              context: contextBlob(pack),
+              messages: [...messages, { role: 'user', text }].slice(-16).map((m) => ({
+                role: m.role === 'bot' ? 'assistant' : 'user',
+                content: m.text,
+              })),
+            }),
+          })
+          if (r.ok) {
+            const data = await r.json()
+            if (data?.text) {
+              push('bot', data.text)
+              return
+            }
+          }
+          const local = answerFromContext(text, historyText, pack, project?.id || lastProjectRef.current?.id)
+          if (local.projectId) {
+            const hit = (projects || []).find((p) => p.id === local.projectId)
+            if (hit) lastProjectRef.current = hit
+          }
+          push('bot', local.text)
+          return
+        } catch (_) {
+          /* fall through to built-in actions */
+        }
+      }
 
       if (/\b(help|what can you|commands)\b/.test(lower)) {
         push('bot', 'I can:\n• Tell you what’s scheduled today, tomorrow, or a date\n• Schedule a phase: “Schedule framing on Maple Friday”\n• Add a meeting: “Meeting at Oak Avenue tomorrow at 9”\n• Project update: “What’s going on at Birch”\n• Costs: “How much did I spend on dumpsters”')
