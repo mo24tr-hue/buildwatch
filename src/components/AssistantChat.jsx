@@ -306,31 +306,78 @@ export default function AssistantChat({ projects, profile, isAdmin, onReload, on
       let project = matchProject(text, projects) || matchProject(text + ' ' + historyText, projects) || lastProjectRef.current
       if (project) lastProjectRef.current = project
 
-      const isAction = /\b(schedule|book|set|start|meeting|meet with)\b/.test(lower)
-      if (!isAction) {
-        try {
-          const [costs, meetings] = await Promise.all([loadCosts(), loadMeetings()])
-          const pack = buildProjectPack(projects, { costs, meetings })
-          const r = await fetch('/api/assistant', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              context: contextBlob(pack),
-              focus: project?.address || lastProjectRef.current?.address || '',
-              messages: [...messages, { role: 'user', text }].slice(-16).map((m) => ({
-                role: m.role === 'bot' ? 'assistant' : 'user',
-                content: m.text,
-              })),
-            }),
-          })
-          if (r.ok) {
-            const data = await r.json()
-            const txt = (data?.text || '').trim()
-            if (txt && !/do not have that on file|don't have that on file|not on file/i.test(txt)) {
-              push('bot', txt)
+      try {
+        const [costs, meetings] = await Promise.all([loadCosts(), loadMeetings()])
+        const pack = buildProjectPack(projects, { costs, meetings })
+        const r = await fetch('/api/assistant', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            today: ymd(new Date()),
+            context: contextBlob(pack),
+            focus: project?.address || lastProjectRef.current?.address || '',
+            messages: [...messages, { role: 'user', text }].slice(-16).map((m) => ({
+              role: m.role === 'bot' ? 'assistant' : 'user',
+              content: m.text,
+            })),
+          }),
+        })
+        if (r.ok) {
+          const data = await r.json()
+          const calls = data?.tool_calls || []
+          if (calls.length && isAdmin) {
+            const lines = []
+            for (const call of calls) {
+              const name = call?.function?.name || call?.name
+              let args = call?.function?.arguments || call?.arguments || {}
+              if (typeof args === 'string') {
+                try { args = JSON.parse(args) } catch { args = {} }
+              }
+              if (name === 'schedule_phases') {
+                const p = matchProject(args.address || '', projects) || project
+                if (!p) {
+                  lines.push('Which project?')
+                  continue
+                }
+                lastProjectRef.current = p
+                for (const item of args.items || []) {
+                  const phases = matchPhases(item.phase || '', p.phases || [])
+                  const d = item.date || parseDateToken(item.phase || '')
+                  if (!phases.length || !d) {
+                    lines.push(`Need a phase and date for ${item.phase || 'that item'}.`)
+                    continue
+                  }
+                  for (const ph of phases) lines.push(await schedulePhase(p, ph, d))
+                }
+              } else if (name === 'add_meeting') {
+                const p = matchProject(args.address || '', projects) || project
+                const when = args.date
+                const { error } = await supabase.from('meetings').insert({
+                  company_id: profile.company_id,
+                  project_id: p?.id || null,
+                  title: args.title || 'Meeting',
+                  meet_date: when,
+                  meet_time: args.time ? (String(args.time).length === 5 ? args.time + ':00' : args.time) : null,
+                  location: p?.address || null,
+                  created_by: profile.id,
+                  notes: 'Scheduled by assistant',
+                })
+                lines.push(error ? error.message : `Meeting added for ${fmtDate(when) || when}${p ? ' · ' + p.address : ''}.`)
+              }
+            }
+            if (lines.length) {
+              await onReload?.()
+              push('bot', lines.join('\n'))
               return
             }
           }
+          const txt = (data?.text || '').trim()
+          if (txt && !/do not have that on file|don't have that on file|not on file/i.test(txt)) {
+            push('bot', txt)
+            return
+          }
+        }
+        if (!/\b(schedule|book|set|start|meeting|meet with)\b/.test(lower)) {
           const local = answerFromContext(text, historyText, pack, project?.id || lastProjectRef.current?.id)
           if (local.projectId) {
             const hit = (projects || []).find((p) => p.id === local.projectId)
@@ -338,9 +385,9 @@ export default function AssistantChat({ projects, profile, isAdmin, onReload, on
           }
           push('bot', local.text)
           return
-        } catch (_) {
-          /* fall through to built-in actions */
         }
+      } catch (_) {
+        /* local schedule fallback below */
       }
 
       if (/\b(help|what can you|commands)\b/.test(lower)) {
