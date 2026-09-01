@@ -17,30 +17,64 @@ function ymd(d) {
   return `${y}-${m}-${day}`
 }
 
-function parseDateToken(text) {
+const WEEKDAYS = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday']
+
+function atNoon(d) {
+  const x = new Date(d)
+  x.setHours(12, 0, 0, 0)
+  return x
+}
+
+function weekdayFrom(from, dayIndex, { after = false } = {}) {
+  const d = atNoon(from)
+  let add = (dayIndex - d.getDay() + 7) % 7
+  if (add === 0 || after) {
+    if (after && add === 0) add = 7
+    else if (after) add = add === 0 ? 7 : add
+    if (!after && add === 0) add = 7
+  }
+  if (after && add === 0) add = 7
+  if (after && d.getDay() !== dayIndex && add > 0) {
+    /* keep add */
+  }
+  if (after) {
+    const probe = atNoon(from)
+    probe.setDate(probe.getDate() + 1)
+    add = (dayIndex - probe.getDay() + 7) % 7
+    probe.setDate(probe.getDate() + add)
+    return probe
+  }
+  d.setDate(d.getDate() + add)
+  return d
+}
+
+function parseDateToken(text, afterYmd) {
   const t = (text || '').toLowerCase()
-  const now = new Date()
-  now.setHours(12, 0, 0, 0)
+  const now = atNoon(new Date())
+  const anchor = afterYmd ? atNoon(afterYmd + 'T12:00:00') : now
+  const after = !!(afterYmd && (/\bafter that\b|\bnext\b|\bfollowing\b/.test(t) || afterYmd))
   if (/\btoday\b/.test(t)) return ymd(now)
   if (/\btomorrow\b/.test(t)) {
-    const d = new Date(now)
+    const d = atNoon(now)
     d.setDate(d.getDate() + 1)
     return ymd(d)
   }
   if (/\byesterday\b/.test(t)) {
-    const d = new Date(now)
+    const d = atNoon(now)
     d.setDate(d.getDate() - 1)
     return ymd(d)
   }
-  const days = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday']
-  for (let i = 0; i < days.length; i++) {
-    if (new RegExp('\\b' + days[i] + '\\b').test(t)) {
-      const d = new Date(now)
-      let add = (i - d.getDay() + 7) % 7
-      if (add === 0) add = 7
-      d.setDate(d.getDate() + add)
-      return ymd(d)
+  for (let i = 0; i < WEEKDAYS.length; i++) {
+    const name = WEEKDAYS[i]
+    if (!new RegExp('\\b' + name + '\\b').test(t)) continue
+    const relative = /\b(after that|the next|next|following|the monday after|after)\b/.test(t) || /\bafter that\b/.test(t)
+    if (afterYmd && (relative || /\bnext\b/.test(t) || /\bafter\b/.test(t))) {
+      return ymd(weekdayFrom(anchor, i, { after: true }))
     }
+    if (/\bnext\b/.test(t) && !afterYmd) {
+      return ymd(weekdayFrom(now, i, { after: now.getDay() === i }))
+    }
+    return ymd(weekdayFrom(now, i, { after: false }))
   }
   const iso = t.match(/\b(20\d{2})-(\d{1,2})-(\d{1,2})\b/)
   if (iso) return `${iso[1]}-${iso[2].padStart(2, '0')}-${iso[3].padStart(2, '0')}`
@@ -123,9 +157,21 @@ function matchPhases(text, phases) {
 
 function splitCommands(text) {
   return text
-    .split(/\s+(?:and then|then|also|;|\.|\nand\s+(?=schedule|set|book|start))\s+/i)
+    .split(/\s*(?:,| and then | then | also |;|\band\b)\s*/i)
     .map((s) => s.trim())
-    .filter(Boolean)
+    .filter((s) => s.length > 2)
+}
+
+function parseScheduleItems(text, phases) {
+  const chunks = splitCommands(text)
+  const items = []
+  for (const chunk of chunks) {
+    const matched = matchPhases(chunk, phases)
+    if (!matched.length) continue
+    const dateBit = chunk.replace(/^(let'?s\s+)?(schedule|book|set|start)\s+/i, '')
+    items.push({ phases: matched, dateText: dateBit, chunk })
+  }
+  return items
 }
 
 const welcome = (isAdmin) => ({
@@ -426,35 +472,38 @@ export default function AssistantChat({ projects, profile, isAdmin, onReload, on
           push('bot', 'Only the contractor can change the schedule.')
           return
         }
-        const parts = splitCommands(text)
+        const p = project || matchProject(text, projects)
+        if (!p) {
+          push('bot', 'Which project? Include part of the address.')
+          return
+        }
+        const items = parseScheduleItems(text, p.phases || [])
         const results = []
-        for (const part of parts) {
-          const d = parseDateToken(part) || dateStr
-          const p = matchProject(part, projects) || project
-          if (!p) {
-            results.push('Which project? Include part of the address.')
-            continue
+        let lastDate = null
+        if (items.length) {
+          for (const item of items) {
+            const d = parseDateToken(item.dateText, lastDate) || parseDateToken(item.chunk, lastDate) || lastDate
+            if (!d) {
+              results.push(`What date for ${item.phases.map((ph) => ph.name).join(', ')}?`)
+              continue
+            }
+            lastDate = d
+            for (const ph of item.phases) {
+              results.push(await schedulePhase(p, ph, d))
+            }
           }
-          if (!d) {
-            results.push(`What date for ${p.address}?`)
-            continue
-          }
-          const phases = matchPhases(part, p.phases || [])
-          if (!phases.length) {
-            const { error } = await supabase.from('meetings').insert({
-              company_id: profile.company_id,
-              project_id: p.id,
-              title: part.slice(0, 80),
-              meet_date: d,
-              location: p.address || null,
-              created_by: profile.id,
-              notes: 'Scheduled by assistant',
-            })
-            results.push(error ? error.message : `Added on ${p.address} for ${fmtDate(d) || d}.`)
-            continue
-          }
-          for (const ph of phases) {
-            results.push(await schedulePhase(p, ph, d))
+        } else {
+          const parts = splitCommands(text)
+          for (const part of parts) {
+            const d = parseDateToken(part, lastDate) || lastDate || dateStr
+            lastDate = d || lastDate
+            const phases = matchPhases(part, p.phases || [])
+            if (!d) {
+              results.push('What date?')
+              continue
+            }
+            if (!phases.length) continue
+            for (const ph of phases) results.push(await schedulePhase(p, ph, d))
           }
         }
         await onReload?.()
