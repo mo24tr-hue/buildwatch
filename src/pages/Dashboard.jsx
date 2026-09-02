@@ -1832,6 +1832,15 @@ function ProjectMeetingsPage({ project, profile, isAdmin, isCustomer, companyUse
           onSaved={load}
         />
       )}
+      <div className="mt-8">
+        <ScheduleAsksPage
+          project={project}
+          profile={profile}
+          isAdmin={isAdmin}
+          companyUsers={companyUsers}
+          onBack={null}
+        />
+      </div>
     </SwipeBack>
   )
 }
@@ -2124,15 +2133,6 @@ function AdminCalendarView({ projects, role, profile, onBack, onOpenProject, hid
           <ChevronRight size={16} className="text-[#8A8D91]" />
         </button>
       )}
-      <div className="mt-8">
-        <ScheduleAsksPage
-          project={project}
-          profile={profile}
-          isAdmin={isAdmin}
-          companyUsers={companyUsers}
-          onBack={null}
-        />
-      </div>
     </SwipeBack>
   )
 }
