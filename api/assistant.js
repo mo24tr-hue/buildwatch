@@ -58,8 +58,16 @@ export default async function handler(req, res) {
   const context = String(body.context || '').slice(0, 14000)
   const focus = String(body.focus || '')
   const today = String(body.today || '')
+  const role = String(body.role || 'admin')
+  const roleRules =
+    role === 'team'
+      ? 'The user is a TRADE. Only discuss phases listed for them. Do not mention other phases, quotes, job costs, payments, or other projects. If they ask about work they are not assigned to, say you can only see their assigned phases.'
+      : role === 'customer'
+        ? 'The user is a CUSTOMER. Only discuss their listed projects. No trade names and no contractor receipts or internal job costs. Quote, payments, progress, and change orders on their jobs are allowed. If they ask about another job, say you can only see their projects.'
+        : 'The user is the CONTRACTOR and may see every listed job.'
   const system = `You are the BuildWatch contractor assistant.
 Today is ${today || 'unknown'}.
+${roleRules}
 ${focus ? `Current job in this chat: ${focus}.` : ''}
 Use chat history plus the project list. A street number plus one word from the address is enough.
 When they schedule several trades in one message, call schedule_phases ONCE with a separate date for each trade.
@@ -94,8 +102,7 @@ ${context}`
       body: JSON.stringify({
         model,
         temperature: 0.1,
-        tools: TOOLS,
-        tool_choice: 'auto',
+        ...(role === 'admin' ? { tools: TOOLS, tool_choice: 'auto' } : {}),
         messages: [{ role: 'system', content: system }, ...messages.slice(-16)],
       }),
     })

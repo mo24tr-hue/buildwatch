@@ -313,12 +313,16 @@ export default function AssistantChat({ projects, profile, isAdmin, onReload, on
 
       try {
         const [costs, meetings] = await Promise.all([loadCosts(), loadMeetings()])
-        const pack = buildProjectPack(projects, { costs, meetings })
+        const allowedIds = new Set((projects || []).map((p) => p.id))
+        const scopedCosts = (profile?.role === 'admin' ? costs : []).filter((c) => allowedIds.has(c.project_id))
+        const scopedMeetings = (meetings || []).filter((m) => !m.project_id || allowedIds.has(m.project_id))
+        const pack = buildProjectPack(projects, { costs: scopedCosts, meetings: scopedMeetings, role: profile?.role || 'admin' })
         const r = await fetch('/api/assistant', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             today: ymd(new Date()),
+            role: profile?.role || 'admin',
             context: contextBlob(pack),
             focus: project?.address || lastProjectRef.current?.address || '',
             messages: [...messages, { role: 'user', text }].slice(-16).map((m) => ({

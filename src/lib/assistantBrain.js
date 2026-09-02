@@ -14,6 +14,10 @@ function money(n) {
 export function buildProjectPack(projects, extras = {}) {
   const costs = extras.costs || []
   const meetings = extras.meetings || []
+  const role = extras.role || 'admin'
+  const isAdmin = role === 'admin'
+  const isCustomer = role === 'customer'
+  const isTeam = role === 'team'
   return (projects || []).map((p) => {
     const phases = p.phases || []
     const done = phases.filter((ph) => ph.status === 'done')
@@ -35,23 +39,25 @@ export function buildProjectPack(projects, extras = {}) {
       `Address ${p.address}`,
       p.style ? `Type ${p.style}` : null,
       p.status ? `Project status ${p.status}` : null,
-      base != null ? `Quoted amount ${money(base)}` : 'No quoted amount set',
-      coSum ? `Approved change orders ${money(coSum)}` : null,
-      base != null ? `Quoted total ${money((base || 0) + coSum)}` : null,
-      paid ? `Paid ${money(paid)}` : null,
-      base != null ? `Balance ${money((base || 0) + coSum - paid)}` : null,
+      isTeam ? `You are assigned to: ${phases.map((ph) => ph.name).join(', ') || 'no phases'}` : null,
+      isTeam ? null : (base != null ? `Quoted amount ${money(base)}` : (isCustomer ? 'No quoted amount set' : 'No quoted amount set')),
+      !isTeam && coSum ? `Approved change orders ${money(coSum)}` : null,
+      !isTeam && base != null ? `Quoted total ${money((base || 0) + coSum)}` : null,
+      isCustomer && paid ? `Paid ${money(paid)}` : null,
+      isAdmin && paid ? `Paid ${money(paid)}` : null,
+      isAdmin && base != null ? `Balance ${money((base || 0) + coSum - paid)}` : null,
       `${done.length} of ${phases.length} phases complete`,
       active.length ? `In progress ${active.map((ph) => ph.name).join(', ')}` : 'No phase in progress',
       ...phases.map((ph) => {
         const bits = [ph.name, ph.status || 'pending']
         if (ph.start_date) bits.push('start ' + ph.start_date)
         if (ph.end_date) bits.push('end ' + ph.end_date)
-        if (ph.trade) bits.push('trade ' + ph.trade)
+        if (isAdmin && ph.trade) bits.push('trade ' + ph.trade)
         return bits.join(', ')
       }),
-      ...approved.map((c) => `Change order approved ${c.title || c.note || ''} ${money(c.amount)}`),
+      ...(!isTeam ? approved.map((c) => `Change order approved ${c.title || c.note || ''} ${c.amount != null ? money(c.amount) : ''}`) : approved.map((c) => `Change order on your phase ${c.title || c.note || ''} ${c.status}`)),
       ...cos.filter((c) => ['pending', 'quoted'].includes(c.status || '')).map((c) => `Open change order ${c.title || c.note || ''} ${c.status}`),
-      ...costLines,
+      ...(isAdmin ? costLines : []),
       ...meetLines.map((l) => 'Meeting ' + l),
     ].filter(Boolean)
     return {
