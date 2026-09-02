@@ -21,6 +21,9 @@ function Page({ children }) {
 }
 
 function Back({ onBack, title }) {
+  if (!onBack) {
+    return <h2 className="font-display text-xl mb-3 min-w-0">{title}</h2>
+  }
   return (
     <div className="flex items-center gap-2 mb-4 min-w-0">
       <button type="button" onClick={onBack} className="flex items-center gap-1 text-sm text-[#6B6E72] flex-shrink-0">

@@ -1760,7 +1760,7 @@ function MeetingForm({ companyId, profile, projects, defaultDate, defaultProject
   )
 }
 
-function ProjectMeetingsPage({ project, profile, isAdmin, isCustomer, onBack }) {
+function ProjectMeetingsPage({ project, profile, isAdmin, isCustomer, companyUsers = [], onBack }) {
   const [meetings, setMeetings] = useState([])
   const canSchedule = isAdmin || (!isCustomer && profile?.role === 'team')
 
@@ -2124,6 +2124,15 @@ function AdminCalendarView({ projects, role, profile, onBack, onOpenProject, hid
           <ChevronRight size={16} className="text-[#8A8D91]" />
         </button>
       )}
+      <div className="mt-8">
+        <ScheduleAsksPage
+          project={project}
+          profile={profile}
+          isAdmin={isAdmin}
+          companyUsers={companyUsers}
+          onBack={null}
+        />
+      </div>
     </SwipeBack>
   )
 }
@@ -3316,7 +3325,7 @@ function ProjectCostSection({ project, isAdmin, profile, onReload, logActivity }
   )
 }
 
-function ProjectSummaryShare({ project, phases, doneCount, isAdmin, isCustomer, onClose }) {
+function ProjectSummaryShare({ project, phases, doneCount, isAdmin, isCustomer, profile, onClose }) {
   const [sharing, setSharing] = useState(false)
   const approvedCos = (project.change_orders || []).filter((c) => (c.status || '') === 'approved')
   const coSum = approvedCos.reduce((s, c) => s + (Number(c.amount) || 0), 0)
@@ -3588,6 +3597,12 @@ function ProjectSummaryShare({ project, phases, doneCount, isAdmin, isCustomer, 
           </ul>
 
           <p className="text-[10px] text-[#6B6E72] mt-4 text-center">BuildWatch · {new Date().toLocaleDateString()}</p>
+
+          {(isAdmin || isCustomer) && profile && (
+            <div className="mt-8 print-hide">
+              <CloseoutPage project={project} profile={profile} isAdmin={isAdmin} isCustomer={isCustomer} onBack={null} />
+            </div>
+          )}
         </div>
       </div>
     </SwipeBack>
@@ -4026,6 +4041,7 @@ function ProjectDetail({ project, isAdmin, canUpload, isCustomer, profile, onBac
         profile={profile}
         isAdmin={isAdmin}
         isCustomer={isCustomer}
+        companyUsers={companyUsers}
         onBack={() => setProjectPage(null)}
       />
     )
@@ -4038,18 +4054,6 @@ function ProjectDetail({ project, isAdmin, canUpload, isCustomer, profile, onBac
   }
   if (projectPage === 'selections') {
     return <SelectionsPage project={project} profile={profile} isAdmin={isAdmin} isCustomer={isCustomer} onBack={() => setProjectPage(null)} />
-  }
-  if (projectPage === 'invoices' && (isAdmin || isCustomer)) {
-    return <InvoicesPage project={project} profile={profile} isAdmin={isAdmin} isCustomer={isCustomer} onBack={() => setProjectPage(null)} />
-  }
-  if (projectPage === 'planMarkup') {
-    return <PlanMarkupPage project={project} profile={profile} isAdmin={isAdmin} onBack={() => setProjectPage(null)} />
-  }
-  if (projectPage === 'closeout' && (isAdmin || isCustomer)) {
-    return <CloseoutPage project={project} profile={profile} isAdmin={isAdmin} isCustomer={isCustomer} onBack={() => setProjectPage(null)} />
-  }
-  if (projectPage === 'asks') {
-    return <ScheduleAsksPage project={project} profile={profile} isAdmin={isAdmin} companyUsers={companyUsers} onBack={() => setProjectPage(null)} />
   }
 
   if (projectPage === 'files') {
@@ -4123,6 +4127,9 @@ function ProjectDetail({ project, isAdmin, canUpload, isCustomer, profile, onBac
             </label>
           )}
         </div>
+        <div className="mt-6">
+          <PlanMarkupPage project={project} profile={profile} isAdmin={isAdmin} onBack={null} />
+        </div>
       </SwipeBack>
     )
   }
@@ -4156,38 +4163,35 @@ function ProjectDetail({ project, isAdmin, canUpload, isCustomer, profile, onBac
           onReload={onReload}
           logActivity={logActivity}
         />
-      </SwipeBack>
-    )
-  }
-
-  if (projectPage === 'phaseCosts' && isAdmin) {
-    return (
-      <SwipeBack onBack={() => setProjectPage(null)}>
-        {pageBack}
-        <h2 className="font-display text-2xl mb-4">Phase costs</h2>
-        <ProjectJobCostsPanel
-          project={project}
-          profile={profile}
-          onReload={onReload}
-          logActivity={logActivity}
-          mode="phases"
-        />
-      </SwipeBack>
-    )
-  }
-
-  if (projectPage === 'extraCosts' && isAdmin) {
-    return (
-      <SwipeBack onBack={() => setProjectPage(null)}>
-        {pageBack}
-        <h2 className="font-display text-2xl mb-4">Additional costs</h2>
-        <ProjectJobCostsPanel
-          project={project}
-          profile={profile}
-          onReload={onReload}
-          logActivity={logActivity}
-          mode="extra"
-        />
+        {isAdmin && (
+          <div className="mt-8">
+            <h3 className="font-display text-xl mb-3">Phase costs</h3>
+            <ProjectJobCostsPanel
+              project={project}
+              profile={profile}
+              onReload={onReload}
+              logActivity={logActivity}
+              mode="phases"
+            />
+          </div>
+        )}
+        {isAdmin && (
+          <div className="mt-8">
+            <h3 className="font-display text-xl mb-3">Additional costs</h3>
+            <ProjectJobCostsPanel
+              project={project}
+              profile={profile}
+              onReload={onReload}
+              logActivity={logActivity}
+              mode="extra"
+            />
+          </div>
+        )}
+        {(isAdmin || isCustomer) && (
+          <div className="mt-8">
+            <InvoicesPage project={project} profile={profile} isAdmin={isAdmin} isCustomer={isCustomer} onBack={null} />
+          </div>
+        )}
       </SwipeBack>
     )
   }
@@ -4462,20 +4466,10 @@ className={`bg-white border border-black rounded-md flex items-stretch overflow-
 
       <div className="space-y-2 mb-6">
         <ProjectNavRow icon={<FolderOpen size={16} />} label="Plans & files" count={files.length || null} onClick={() => setProjectPage('files')} />
-        <ProjectNavRow icon={<FolderOpen size={16} />} label="Plan markup" onClick={() => setProjectPage('planMarkup')} />
         <ProjectNavRow icon={<Clock size={16} />} label="Meetings" onClick={() => setProjectPage('meetings')} />
         <ProjectNavRow icon={<FileText size={16} />} label="Daily log" onClick={() => setProjectPage('dailyLog')} />
         <ProjectNavRow icon={<FileText size={16} />} label="Permits" onClick={() => setProjectPage('permits')} />
         <ProjectNavRow icon={<Check size={16} />} label="Selections" onClick={() => setProjectPage('selections')} />
-        {(isAdmin || isCustomer) && (
-          <ProjectNavRow icon={<DollarSign size={16} />} label="Invoices" onClick={() => setProjectPage('invoices')} />
-        )}
-        {isAdmin && (
-          <ProjectNavRow icon={<Clock size={16} />} label="Schedule confirm" onClick={() => setProjectPage('asks')} />
-        )}
-        {(isAdmin || isCustomer) && (
-          <ProjectNavRow icon={<Archive size={16} />} label="Closeout" onClick={() => setProjectPage('closeout')} />
-        )}
         <ProjectNavRow
           icon={<FileText size={16} />}
           label="Change orders"
@@ -4484,12 +4478,6 @@ className={`bg-white border border-black rounded-md flex items-stretch overflow-
         />
         {(isAdmin || isCustomer) && (
           <ProjectNavRow icon={<DollarSign size={16} />} label="Cost of construction" onClick={() => setProjectPage('cost')} />
-        )}
-        {isAdmin && (
-          <ProjectNavRow icon={<ListChecks size={16} />} label="Phase costs" onClick={() => setProjectPage('phaseCosts')} />
-        )}
-        {isAdmin && (
-          <ProjectNavRow icon={<FileText size={16} />} label="Additional costs" onClick={() => setProjectPage('extraCosts')} />
         )}
         {isAdmin && (
           <ProjectNavRow icon={<Activity size={16} />} label="Activity" onClick={() => setProjectPage('activity')} />
@@ -4554,6 +4542,7 @@ className={`bg-white border border-black rounded-md flex items-stretch overflow-
           doneCount={doneCount}
           isAdmin={isAdmin}
           isCustomer={isCustomer}
+          profile={profile}
           onClose={() => setShowExport(false)}
         />
       )}
