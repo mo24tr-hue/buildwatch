@@ -13,13 +13,20 @@ function todayYmd() {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
+const field =
+  'w-full max-w-full min-w-0 box-border border border-black rounded px-3 py-2 text-sm appearance-none bg-white'
+
+function Page({ children }) {
+  return <div className="w-full max-w-full min-w-0 overflow-x-hidden box-border">{children}</div>
+}
+
 function Back({ onBack, title }) {
   return (
-    <div className="flex items-center gap-2 mb-4">
-      <button type="button" onClick={onBack} className="flex items-center gap-1 text-sm text-[#6B6E72]">
+    <div className="flex items-center gap-2 mb-4 min-w-0">
+      <button type="button" onClick={onBack} className="flex items-center gap-1 text-sm text-[#6B6E72] flex-shrink-0">
         <ChevronLeft size={16} /> Back
       </button>
-      <h2 className="font-display text-2xl flex-1">{title}</h2>
+      <h2 className="font-display text-2xl flex-1 min-w-0 truncate">{title}</h2>
     </div>
   )
 }
@@ -55,21 +62,21 @@ export function DirectoryPage({ profile, onBack }) {
     load()
   }
   return (
-    <div>
+    <Page>
       <Back onBack={onBack} title="Directory" />
-      <form onSubmit={add} className="border border-black rounded-md p-3 space-y-2 mb-4">
-        <input className="w-full border border-black rounded px-3 py-2 text-sm" placeholder="Name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
-        <div className="grid grid-cols-2 gap-2">
-          <select className="border border-black rounded px-3 py-2 text-sm" value={form.kind} onChange={(e) => setForm({ ...form, kind: e.target.value })}>
+      <form onSubmit={add} className="w-full max-w-full min-w-0 box-border border border-black rounded-md p-3 space-y-2 mb-4">
+        <input className={field} placeholder="Name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
+        <div className="grid grid-cols-2 gap-2 min-w-0">
+          <select className={field} value={form.kind} onChange={(e) => setForm({ ...form, kind: e.target.value })}>
             <option value="trade">Trade</option>
             <option value="supplier">Supplier</option>
           </select>
-          <input className="border border-black rounded px-3 py-2 text-sm" placeholder="Trade / type" value={form.trade} onChange={(e) => setForm({ ...form, trade: e.target.value })} />
+          <input className={field} placeholder="Trade / type" value={form.trade} onChange={(e) => setForm({ ...form, trade: e.target.value })} />
         </div>
-        <input className="w-full border border-black rounded px-3 py-2 text-sm" placeholder="Phone" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} />
-        <input className="w-full border border-black rounded px-3 py-2 text-sm" placeholder="Email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
+        <input className={field} placeholder="Phone" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} />
+        <input className={field} placeholder="Email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
         <label className="block text-[11px] font-mono uppercase text-[#6B6E72]">Insurance expires
-          <input type="date" className="w-full border border-black rounded px-3 py-2 text-sm mt-1" value={form.insurance_expires} onChange={(e) => setForm({ ...form, insurance_expires: e.target.value })} />
+          <input type="date" className={field + " mt-1"} value={form.insurance_expires} onChange={(e) => setForm({ ...form, insurance_expires: e.target.value })} />
         </label>
         <button type="submit" className="w-full py-2.5 bg-black text-white rounded text-sm">Add to directory</button>
       </form>
@@ -77,7 +84,7 @@ export function DirectoryPage({ profile, onBack }) {
         {rows.map((r) => {
           const flag = coiFlag(r.insurance_expires)
           return (
-            <div key={r.id} className="border border-black rounded-md p-3">
+            <div key={r.id} className="w-full max-w-full min-w-0 box-border border border-black rounded-md p-3">
               <div className="flex justify-between gap-2">
                 <div>
                   <div className="font-medium text-sm">{r.name}</div>
@@ -97,7 +104,7 @@ export function DirectoryPage({ profile, onBack }) {
         })}
         {!rows.length && <p className="text-sm text-[#6B6E72]">No contacts yet.</p>}
       </div>
-    </div>
+    </Page>
   )
 }
 
@@ -117,22 +124,22 @@ export function DailyLogPage({ project, profile, isAdmin, onBack }) {
     load()
   }
   return (
-    <div>
+    <Page>
       <Back onBack={onBack} title="Daily log" />
       {isAdmin && (
-        <form onSubmit={add} className="border border-black rounded-md p-3 space-y-2 mb-4">
-          <input type="date" className="w-full border border-black rounded px-3 py-2 text-sm" value={form.log_date} onChange={(e) => setForm({ ...form, log_date: e.target.value })} />
-          <input className="w-full border border-black rounded px-3 py-2 text-sm" placeholder="Who was on site" value={form.crew} onChange={(e) => setForm({ ...form, crew: e.target.value })} />
-          <input className="w-full border border-black rounded px-3 py-2 text-sm" placeholder="Weather" value={form.weather} onChange={(e) => setForm({ ...form, weather: e.target.value })} />
-          <input className="w-full border border-black rounded px-3 py-2 text-sm" placeholder="Delays" value={form.delays} onChange={(e) => setForm({ ...form, delays: e.target.value })} />
-          <input className="w-full border border-black rounded px-3 py-2 text-sm" placeholder="Deliveries" value={form.deliveries} onChange={(e) => setForm({ ...form, deliveries: e.target.value })} />
-          <textarea className="w-full border border-black rounded px-3 py-2 text-sm" rows={3} placeholder="Notes" value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} />
+        <form onSubmit={add} className="w-full max-w-full min-w-0 box-border border border-black rounded-md p-3 space-y-2 mb-4">
+          <input type="date" className={field} value={form.log_date} onChange={(e) => setForm({ ...form, log_date: e.target.value })} />
+          <input className={field} placeholder="Who was on site" value={form.crew} onChange={(e) => setForm({ ...form, crew: e.target.value })} />
+          <input className={field} placeholder="Weather" value={form.weather} onChange={(e) => setForm({ ...form, weather: e.target.value })} />
+          <input className={field} placeholder="Delays" value={form.delays} onChange={(e) => setForm({ ...form, delays: e.target.value })} />
+          <input className={field} placeholder="Deliveries" value={form.deliveries} onChange={(e) => setForm({ ...form, deliveries: e.target.value })} />
+          <textarea className={field} rows={3} placeholder="Notes" value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} />
           <button type="submit" className="w-full py-2.5 bg-black text-white rounded text-sm">Save log</button>
         </form>
       )}
       <div className="space-y-2">
         {rows.map((r) => (
-          <div key={r.id} className="border border-black rounded-md p-3 text-sm">
+          <div key={r.id} className="w-full max-w-full min-w-0 box-border border border-black rounded-md p-3 text-sm">
             <div className="font-medium">{fmtDate(r.log_date)}</div>
             {r.crew && <div>Crew: {r.crew}</div>}
             {r.weather && <div>Weather: {r.weather}</div>}
@@ -143,7 +150,7 @@ export function DailyLogPage({ project, profile, isAdmin, onBack }) {
         ))}
         {!rows.length && <p className="text-sm text-[#6B6E72]">No logs yet.</p>}
       </div>
-    </div>
+    </Page>
   )
 }
 
@@ -167,25 +174,25 @@ export function PermitsPage({ project, profile, isAdmin, onBack }) {
     load()
   }
   return (
-    <div>
+    <Page>
       <Back onBack={onBack} title="Permits" />
       {isAdmin && (
-        <form onSubmit={add} className="border border-black rounded-md p-3 space-y-2 mb-4">
-          <input className="w-full border border-black rounded px-3 py-2 text-sm" placeholder="Permit name" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} />
-          <input className="w-full border border-black rounded px-3 py-2 text-sm" placeholder="Number" value={form.number} onChange={(e) => setForm({ ...form, number: e.target.value })} />
-          <input className="w-full border border-black rounded px-3 py-2 text-sm" placeholder="Office" value={form.office} onChange={(e) => setForm({ ...form, office: e.target.value })} />
+        <form onSubmit={add} className="w-full max-w-full min-w-0 box-border border border-black rounded-md p-3 space-y-2 mb-4">
+          <input className={field} placeholder="Permit name" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} />
+          <input className={field} placeholder="Number" value={form.number} onChange={(e) => setForm({ ...form, number: e.target.value })} />
+          <input className={field} placeholder="Office" value={form.office} onChange={(e) => setForm({ ...form, office: e.target.value })} />
           <label className="block text-[11px] font-mono uppercase text-[#6B6E72]">Filed
-            <input type="date" className="w-full border border-black rounded px-3 py-2 text-sm mt-1" value={form.filed_on} onChange={(e) => setForm({ ...form, filed_on: e.target.value })} />
+            <input type="date" className={field + " mt-1"} value={form.filed_on} onChange={(e) => setForm({ ...form, filed_on: e.target.value })} />
           </label>
           <label className="block text-[11px] font-mono uppercase text-[#6B6E72]">Inspection
-            <input type="date" className="w-full border border-black rounded px-3 py-2 text-sm mt-1" value={form.inspection_on} onChange={(e) => setForm({ ...form, inspection_on: e.target.value })} />
+            <input type="date" className={field + " mt-1"} value={form.inspection_on} onChange={(e) => setForm({ ...form, inspection_on: e.target.value })} />
           </label>
           <button type="submit" className="w-full py-2.5 bg-black text-white rounded text-sm">Add permit</button>
         </form>
       )}
       <div className="space-y-2">
         {rows.map((r) => (
-          <div key={r.id} className="border border-black rounded-md p-3 text-sm">
+          <div key={r.id} className="w-full max-w-full min-w-0 box-border border border-black rounded-md p-3 text-sm">
             <div className="font-medium">{r.title}</div>
             <div className="text-xs text-[#6B6E72]">{[r.number, r.office].filter(Boolean).join(' · ')}</div>
             <div className="text-xs mt-1">Filed {fmtDate(r.filed_on)} · Inspection {fmtDate(r.inspection_on)}</div>
@@ -200,7 +207,7 @@ export function PermitsPage({ project, profile, isAdmin, onBack }) {
         ))}
         {!rows.length && <p className="text-sm text-[#6B6E72]">No permits yet.</p>}
       </div>
-    </div>
+    </Page>
   )
 }
 
@@ -224,19 +231,19 @@ export function SelectionsPage({ project, profile, isAdmin, isCustomer, onBack }
     load()
   }
   return (
-    <div>
+    <Page>
       <Back onBack={onBack} title="Selections" />
       {isAdmin && (
-        <form onSubmit={add} className="border border-black rounded-md p-3 space-y-2 mb-4">
-          <input className="w-full border border-black rounded px-3 py-2 text-sm" placeholder="Category (tile, paint, fixture)" value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })} />
-          <input className="w-full border border-black rounded px-3 py-2 text-sm" placeholder="Item" value={form.item_name} onChange={(e) => setForm({ ...form, item_name: e.target.value })} />
-          <input className="w-full border border-black rounded px-3 py-2 text-sm" placeholder="Option" value={form.option_label} onChange={(e) => setForm({ ...form, option_label: e.target.value })} />
+        <form onSubmit={add} className="w-full max-w-full min-w-0 box-border border border-black rounded-md p-3 space-y-2 mb-4">
+          <input className={field} placeholder="Category (tile, paint, fixture)" value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })} />
+          <input className={field} placeholder="Item" value={form.item_name} onChange={(e) => setForm({ ...form, item_name: e.target.value })} />
+          <input className={field} placeholder="Option" value={form.option_label} onChange={(e) => setForm({ ...form, option_label: e.target.value })} />
           <button type="submit" className="w-full py-2.5 bg-black text-white rounded text-sm">Add selection</button>
         </form>
       )}
       <div className="space-y-2">
         {rows.map((r) => (
-          <div key={r.id} className="border border-black rounded-md p-3 text-sm">
+          <div key={r.id} className="w-full max-w-full min-w-0 box-border border border-black rounded-md p-3 text-sm">
             <div className="text-[11px] font-mono uppercase text-[#6B6E72]">{r.category || 'Selection'}</div>
             <div className="font-medium">{r.item_name}</div>
             {r.option_label && <div>{r.option_label}</div>}
@@ -254,7 +261,7 @@ export function SelectionsPage({ project, profile, isAdmin, isCustomer, onBack }
         ))}
         {!rows.length && <p className="text-sm text-[#6B6E72]">No selections yet.</p>}
       </div>
-    </div>
+    </Page>
   )
 }
 
@@ -295,22 +302,22 @@ export function InvoicesPage({ project, profile, isAdmin, isCustomer, onBack }) 
     } catch (_) {}
   }
   return (
-    <div>
+    <Page>
       <Back onBack={onBack} title="Invoices" />
       {isAdmin && (
-        <form onSubmit={add} className="border border-black rounded-md p-3 space-y-2 mb-4">
-          <input className="w-full border border-black rounded px-3 py-2 text-sm" placeholder="Title" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} />
-          <input className="w-full border border-black rounded px-3 py-2 text-sm" placeholder="Amount" type="number" step="0.01" value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} />
+        <form onSubmit={add} className="w-full max-w-full min-w-0 box-border border border-black rounded-md p-3 space-y-2 mb-4">
+          <input className={field} placeholder="Title" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} />
+          <input className={field} placeholder="Amount" type="number" step="0.01" value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} />
           <label className="block text-[11px] font-mono uppercase text-[#6B6E72]">Due
-            <input type="date" className="w-full border border-black rounded px-3 py-2 text-sm mt-1" value={form.due_date} onChange={(e) => setForm({ ...form, due_date: e.target.value })} />
+            <input type="date" className={field + " mt-1"} value={form.due_date} onChange={(e) => setForm({ ...form, due_date: e.target.value })} />
           </label>
-          <textarea className="w-full border border-black rounded px-3 py-2 text-sm" rows={2} placeholder="Notes" value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} />
+          <textarea className={field} rows={2} placeholder="Notes" value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} />
           <button type="submit" className="w-full py-2.5 bg-black text-white rounded text-sm">Send invoice</button>
         </form>
       )}
       <div className="space-y-2">
         {rows.map((r) => (
-          <div key={r.id} className="border border-black rounded-md p-3 text-sm">
+          <div key={r.id} className="w-full max-w-full min-w-0 box-border border border-black rounded-md p-3 text-sm">
             <div className="flex justify-between">
               <div className="font-medium">{r.title} {r.number ? '#' + r.number : ''}</div>
               <div>{money(r.amount)}</div>
@@ -325,7 +332,7 @@ export function InvoicesPage({ project, profile, isAdmin, isCustomer, onBack }) 
         ))}
         {!rows.length && <p className="text-sm text-[#6B6E72]">No invoices yet.</p>}
       </div>
-    </div>
+    </Page>
   )
 }
 
@@ -343,12 +350,12 @@ export function WeekBoard({ projects, onOpenProject, onBack, hideBack }) {
     return { p, phases }
   }).filter((r) => r.phases.length || r.p.status === 'active')
   return (
-    <div>
+    <Page>
       {!hideBack && <Back onBack={onBack} title="This week" />}
       {hideBack && <h2 className="font-display text-2xl mb-4">This week</h2>}
       <div className="space-y-3">
         {rows.map(({ p, phases }) => (
-          <button key={p.id} type="button" className="w-full text-left border border-black rounded-md p-3" onClick={() => onOpenProject?.(p.id)}>
+          <button key={p.id} type="button" className="w-full max-w-full min-w-0 box-border text-left border border-black rounded-md p-3" onClick={() => onOpenProject?.(p.id)}>
             <div className="font-medium text-sm">{p.address}</div>
             {phases.length ? phases.map((ph) => (
               <div key={ph.id} className="text-xs mt-1">
@@ -359,7 +366,7 @@ export function WeekBoard({ projects, onOpenProject, onBack, hideBack }) {
         ))}
         {!rows.length && <p className="text-sm text-[#6B6E72]">Nothing scheduled this week.</p>}
       </div>
-    </div>
+    </Page>
   )
 }
 
@@ -414,19 +421,19 @@ export function EstimatesPage({ profile, onBack, onOpenProject }) {
     onOpenProject?.(project.id)
   }
   return (
-    <div>
+    <Page>
       <Back onBack={onBack} title="Estimates" />
-      <form onSubmit={add} className="border border-black rounded-md p-3 space-y-2 mb-4">
-        <input className="w-full border border-black rounded px-3 py-2 text-sm" placeholder="Estimate title" value={title} onChange={(e) => setTitle(e.target.value)} />
-        <input className="w-full border border-black rounded px-3 py-2 text-sm" placeholder="Address" value={address} onChange={(e) => setAddress(e.target.value)} />
-        <select className="w-full border border-black rounded px-3 py-2 text-sm" value={style} onChange={(e) => setStyle(e.target.value)}>
+      <form onSubmit={add} className="w-full max-w-full min-w-0 box-border border border-black rounded-md p-3 space-y-2 mb-4">
+        <input className={field} placeholder="Estimate title" value={title} onChange={(e) => setTitle(e.target.value)} />
+        <input className={field} placeholder="Address" value={address} onChange={(e) => setAddress(e.target.value)} />
+        <select className={field} value={style} onChange={(e) => setStyle(e.target.value)}>
           {Object.entries(STYLES).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
         </select>
         <button type="submit" className="w-full py-2.5 bg-black text-white rounded text-sm">New estimate</button>
       </form>
       <div className="space-y-2">
         {rows.map((r) => (
-          <div key={r.id} className="border border-black rounded-md p-3">
+          <div key={r.id} className="w-full max-w-full min-w-0 box-border border border-black rounded-md p-3">
             <button type="button" className="w-full text-left" onClick={() => { setOpenId(r.id === openId ? null : r.id); if (r.id !== openId) loadLines(r.id) }}>
               <div className="font-medium text-sm">{r.title}</div>
               <div className="text-xs text-[#6B6E72]">{r.address || ''} · {r.status}</div>
@@ -440,8 +447,8 @@ export function EstimatesPage({ profile, onBack, onOpenProject }) {
                 ))}
                 {r.status !== 'converted' && (
                   <form onSubmit={addLine} className="flex gap-2">
-                    <input className="flex-1 border border-black rounded px-2 py-1.5 text-sm" placeholder="Line" value={line} onChange={(e) => setLine(e.target.value)} />
-                    <input className="w-24 border border-black rounded px-2 py-1.5 text-sm" placeholder="$" value={amt} onChange={(e) => setAmt(e.target.value)} />
+                    <input className={"flex-1 " + field} placeholder="Line" value={line} onChange={(e) => setLine(e.target.value)} />
+                    <input className={"w-24 min-w-0 " + field} placeholder="$" value={amt} onChange={(e) => setAmt(e.target.value)} />
                     <button type="submit" className="px-2 border border-black rounded"><Plus size={14} /></button>
                   </form>
                 )}
@@ -456,7 +463,7 @@ export function EstimatesPage({ profile, onBack, onOpenProject }) {
           </div>
         ))}
       </div>
-    </div>
+    </Page>
   )
 }
 
@@ -494,7 +501,7 @@ export function PlanMarkupPage({ project, profile, isAdmin, onBack }) {
   }
   const visible = pins.filter((p) => p.file_url === activeUrl)
   return (
-    <div>
+    <Page>
       <Back onBack={onBack} title="Plan markup" />
       {!files.length ? (
         <p className="text-sm text-[#6B6E72]">Upload a plan photo under Plans & files first.</p>
@@ -504,9 +511,9 @@ export function PlanMarkupPage({ project, profile, isAdmin, onBack }) {
             {files.map((f, i) => <option key={i} value={f.src}>{f.file_name || f.name || f.title || 'Plan ' + (i + 1)}</option>)}
           </select>
           {isAdmin && (
-            <div className="flex gap-2 mb-2">
-              <input className="flex-1 border border-black rounded px-3 py-2 text-sm" placeholder="Pin note" value={note} onChange={(e) => setNote(e.target.value)} />
-              <select className="border border-black rounded px-2 text-sm" value={phaseId} onChange={(e) => setPhaseId(e.target.value)}>
+            <div className="flex gap-2 mb-2 min-w-0">
+              <input className={"flex-1 " + field} placeholder="Pin note" value={note} onChange={(e) => setNote(e.target.value)} />
+              <select className={"min-w-0 " + field} value={phaseId} onChange={(e) => setPhaseId(e.target.value)}>
                 <option value="">Phase</option>
                 {(project.phases || []).map((ph) => <option key={ph.id} value={ph.id}>{ph.name}</option>)}
               </select>
@@ -525,7 +532,7 @@ export function PlanMarkupPage({ project, profile, isAdmin, onBack }) {
           </div>
         </>
       )}
-    </div>
+    </Page>
   )
 }
 
@@ -560,23 +567,23 @@ export function CloseoutPage({ project, profile, isAdmin, isCustomer, onBack }) 
     } catch (_) {}
   }
   return (
-    <div>
+    <Page>
       <Back onBack={onBack} title="Closeout" />
       {isAdmin && (
-        <form onSubmit={add} className="border border-black rounded-md p-3 space-y-2 mb-4">
-          <select className="w-full border border-black rounded px-3 py-2 text-sm" value={kind} onChange={(e) => setKind(e.target.value)}>
+        <form onSubmit={add} className="w-full max-w-full min-w-0 box-border border border-black rounded-md p-3 space-y-2 mb-4">
+          <select className={field} value={kind} onChange={(e) => setKind(e.target.value)}>
             <option value="warranty">Warranty</option>
             <option value="manual">Manual</option>
             <option value="note">Note</option>
           </select>
-          <input className="w-full border border-black rounded px-3 py-2 text-sm" placeholder="Title" value={title} onChange={(e) => setTitle(e.target.value)} />
-          <input className="w-full border border-black rounded px-3 py-2 text-sm" placeholder="Detail" value={detail} onChange={(e) => setDetail(e.target.value)} />
+          <input className={field} placeholder="Title" value={title} onChange={(e) => setTitle(e.target.value)} />
+          <input className={field} placeholder="Detail" value={detail} onChange={(e) => setDetail(e.target.value)} />
           <button type="submit" className="w-full py-2.5 bg-black text-white rounded text-sm">Add to packet</button>
         </form>
       )}
       <div className="space-y-2 mb-4">
         {rows.map((r) => (
-          <div key={r.id} className="border border-black rounded-md p-3 text-sm">
+          <div key={r.id} className="w-full max-w-full min-w-0 box-border border border-black rounded-md p-3 text-sm">
             <div className="text-[11px] font-mono uppercase text-[#6B6E72]">{r.kind}</div>
             <div className="font-medium">{r.title}</div>
             {r.detail && <div className="text-xs">{r.detail}</div>}
@@ -584,7 +591,7 @@ export function CloseoutPage({ project, profile, isAdmin, isCustomer, onBack }) 
         ))}
       </div>
       <button type="button" className="w-full py-2.5 border border-black rounded text-sm" onClick={share}>Share closeout packet</button>
-    </div>
+    </Page>
   )
 }
 
@@ -630,19 +637,19 @@ export function ScheduleAsksPage({ project, profile, isAdmin, companyUsers = [],
   const phases = project?.phases || []
   const trades = (companyUsers || []).filter((u) => u.role === 'team')
   return (
-    <div>
+    <Page>
       <Back onBack={onBack} title="Schedule confirm" />
       {isAdmin && project && (
-        <form onSubmit={send} className="border border-black rounded-md p-3 space-y-2 mb-4">
-          <select className="w-full border border-black rounded px-3 py-2 text-sm" value={phaseId} onChange={(e) => setPhaseId(e.target.value)}>
+        <form onSubmit={send} className="w-full max-w-full min-w-0 box-border border border-black rounded-md p-3 space-y-2 mb-4">
+          <select className={field} value={phaseId} onChange={(e) => setPhaseId(e.target.value)}>
             <option value="">Phase</option>
             {phases.map((ph) => <option key={ph.id} value={ph.id}>{ph.name}</option>)}
           </select>
-          <select className="w-full border border-black rounded px-3 py-2 text-sm" value={userId} onChange={(e) => setUserId(e.target.value)}>
+          <select className={field} value={userId} onChange={(e) => setUserId(e.target.value)}>
             <option value="">Trade</option>
             {trades.map((u) => <option key={u.id} value={u.id}>{u.name || u.email}</option>)}
           </select>
-          <input type="date" className="w-full border border-black rounded px-3 py-2 text-sm" value={askDate} onChange={(e) => setAskDate(e.target.value)} />
+          <input type="date" className={field} value={askDate} onChange={(e) => setAskDate(e.target.value)} />
           <button type="submit" className="w-full py-2.5 bg-black text-white rounded text-sm">Ask to confirm</button>
         </form>
       )}
@@ -651,7 +658,7 @@ export function ScheduleAsksPage({ project, profile, isAdmin, companyUsers = [],
           const ph = phases.find((p) => p.id === r.phase_id)
           const mine = r.user_id === profile.id
           return (
-            <div key={r.id} className="border border-black rounded-md p-3 text-sm">
+            <div key={r.id} className="w-full max-w-full min-w-0 box-border border border-black rounded-md p-3 text-sm">
               <div className="font-medium">{ph?.name || 'Phase'} · {fmtDate(r.ask_date)}</div>
               <div className="text-xs uppercase mt-1">{r.status}</div>
               {mine && r.status === 'pending' && (
@@ -665,7 +672,7 @@ export function ScheduleAsksPage({ project, profile, isAdmin, companyUsers = [],
         })}
         {!rows.length && <p className="text-sm text-[#6B6E72]">No schedule asks.</p>}
       </div>
-    </div>
+    </Page>
   )
 }
 
@@ -719,9 +726,9 @@ export function SetupWizard({ profile, company, onDone, onOpenNewProject, onOpen
       title: 'Add a trade to the directory',
       body: (
         <form onSubmit={addContact} className="space-y-2">
-          <input className="w-full border border-black rounded px-3 py-2 text-sm" placeholder="Name" value={name} onChange={(e) => setName(e.target.value)} />
-          <input className="w-full border border-black rounded px-3 py-2 text-sm" placeholder="Trade" value={trade} onChange={(e) => setTrade(e.target.value)} />
-          <input className="w-full border border-black rounded px-3 py-2 text-sm" placeholder="Phone" value={phone} onChange={(e) => setPhone(e.target.value)} />
+          <input className={field} placeholder="Name" value={name} onChange={(e) => setName(e.target.value)} />
+          <input className={field} placeholder="Trade" value={trade} onChange={(e) => setTrade(e.target.value)} />
+          <input className={field} placeholder="Phone" value={phone} onChange={(e) => setPhone(e.target.value)} />
           <button type="submit" className="w-full py-2.5 bg-black text-white rounded text-sm">Save and continue</button>
           <button type="button" className="w-full text-xs underline" onClick={() => setStep(2)}>Skip</button>
         </form>
@@ -741,7 +748,7 @@ export function SetupWizard({ profile, company, onDone, onOpenNewProject, onOpen
       title: 'Invite a trade',
       body: (
         <form onSubmit={invite} className="space-y-2">
-          <input className="w-full border border-black rounded px-3 py-2 text-sm" placeholder="Trade email" value={inviteEmail} onChange={(e) => setInviteEmail(e.target.value)} />
+          <input className={field} placeholder="Trade email" value={inviteEmail} onChange={(e) => setInviteEmail(e.target.value)} />
           <button type="submit" className="w-full py-2.5 bg-black text-white rounded text-sm">Invite trade</button>
           <button type="button" className="w-full text-xs underline" onClick={() => { setInviteRole('customer'); setStep(4) }}>Skip</button>
         </form>
@@ -751,7 +758,7 @@ export function SetupWizard({ profile, company, onDone, onOpenNewProject, onOpen
       title: 'Invite a customer',
       body: (
         <form onSubmit={invite} className="space-y-2">
-          <input className="w-full border border-black rounded px-3 py-2 text-sm" placeholder="Customer email" value={inviteEmail} onChange={(e) => setInviteEmail(e.target.value)} />
+          <input className={field} placeholder="Customer email" value={inviteEmail} onChange={(e) => setInviteEmail(e.target.value)} />
           <button type="submit" className="w-full py-2.5 bg-black text-white rounded text-sm">Invite customer</button>
           <button type="button" className="w-full text-xs underline" onClick={() => setStep(5)}>Skip</button>
         </form>
@@ -769,10 +776,10 @@ export function SetupWizard({ profile, company, onDone, onOpenNewProject, onOpen
   ]
   const s = steps[step] || steps[0]
   return (
-    <div>
+    <Page>
       <div className="text-[11px] font-mono uppercase text-[#6B6E72] mb-1">Setup {step + 1} of {steps.length}</div>
       <h2 className="font-display text-2xl mb-3">{s.title}</h2>
       {s.body}
-    </div>
+    </Page>
   )
 }

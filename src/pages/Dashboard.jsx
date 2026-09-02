@@ -1135,7 +1135,7 @@ export default function Dashboard({ session, profile, company, onCompanyUpdate, 
           </button>
         </div>
       )}
-      <main className="max-w-2xl mx-auto px-4 py-5 pb-28">
+      <main className="max-w-2xl mx-auto px-4 py-5 pb-28 w-full min-w-0 overflow-x-hidden box-border">
         {showNotifs && (isAdmin || profile?.role === 'team') ? (
           <SwipeBack onBack={() => setShowNotifs(false)}>
             <button type="button" onClick={() => setShowNotifs(false)} className="flex items-center gap-1 text-sm text-[#6B6E72] mb-4">
