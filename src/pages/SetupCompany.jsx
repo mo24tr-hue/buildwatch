@@ -61,6 +61,7 @@ export default function SetupCompany({ user, profile, onDone }) {
         .select()
         .single()
       if (cErr) throw cErr
+      await supabase.from('companies').update({ onboarding_complete: false }).eq('id', company.id)
 
       const { error: pErr } = await supabase
         .from('profiles')

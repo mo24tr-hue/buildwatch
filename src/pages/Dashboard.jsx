@@ -6,6 +6,19 @@ import AdminPanel from '../components/AdminPanel'
 import PlatformAdmin from '../components/PlatformAdmin'
 import FeedbackPanel from '../components/FeedbackPanel'
 import AssistantChat from '../components/AssistantChat'
+import {
+  DirectoryPage,
+  DailyLogPage,
+  PermitsPage,
+  SelectionsPage,
+  InvoicesPage,
+  WeekBoard,
+  EstimatesPage,
+  PlanMarkupPage,
+  CloseoutPage,
+  ScheduleAsksPage,
+  SetupWizard,
+} from '../components/ContractorPack'
 import { isPlatformAdmin } from '../lib/platform'
 
 const QUEUE_KEY = 'ay_upload_queue'
@@ -188,6 +201,8 @@ export default function Dashboard({ session, profile, company, onCompanyUpdate, 
   const [showArchived, setShowArchived] = useState(false)
   const [notifications, setNotifications] = useState([])
   const [showNotifs, setShowNotifs] = useState(false)
+  const [packPage, setPackPage] = useState(null)
+  const [showSetup, setShowSetup] = useState(false)
 
   const isAdmin = profile?.role === 'admin'
   const isCustomer = profile?.role === 'customer'
@@ -207,13 +222,14 @@ export default function Dashboard({ session, profile, company, onCompanyUpdate, 
     setShowNew(false)
     setActiveId(null)
     setMenuOpen(false)
+    setPackPage(null)
   }
 
   const refreshCompany = useCallback(async () => {
     if (!profile?.company_id) return
     const { data, error } = await supabase
       .from('companies')
-      .select('id, name, logo_url, app_share_url, header_color')
+      .select('id, name, logo_url, app_share_url, header_color, onboarding_complete')
       .eq('id', profile.company_id)
       .maybeSingle()
     if (error) {
@@ -408,6 +424,12 @@ export default function Dashboard({ session, profile, company, onCompanyUpdate, 
     } catch (_) {}
     loadProjects()
   }, [loadProjects, profile?.company_id])
+
+  useEffect(() => {
+    if (profile?.role === 'admin' && company && company.onboarding_complete === false) {
+      setShowSetup(true)
+    }
+  }, [profile?.role, company?.id, company?.onboarding_complete])
 
   // Offline queue: retry when back online
   useEffect(() => {
@@ -964,6 +986,63 @@ export default function Dashboard({ session, profile, company, onCompanyUpdate, 
                       This week
                     </button>
                   )}
+                  {isAdmin && (
+                    <button
+                      type="button"
+                      className="w-full text-left px-3 py-2.5 text-sm hover:bg-[#F5F5F5]"
+                      onClick={() => {
+                        setMenuOpen(false)
+                        setPackPage('directory')
+                        setShowWeek(false)
+                        setShowCalendar(false)
+                        setShowAdmin(false)
+                        setActiveId(null)
+                      }}
+                    >
+                      Directory
+                    </button>
+                  )}
+                  {isAdmin && (
+                    <button
+                      type="button"
+                      className="w-full text-left px-3 py-2.5 text-sm hover:bg-[#F5F5F5]"
+                      onClick={() => {
+                        setMenuOpen(false)
+                        setPackPage('estimates')
+                        setShowWeek(false)
+                        setShowCalendar(false)
+                        setShowAdmin(false)
+                        setActiveId(null)
+                      }}
+                    >
+                      Estimates
+                    </button>
+                  )}
+                  {isAdmin && (
+                    <button
+                      type="button"
+                      className="w-full text-left px-3 py-2.5 text-sm hover:bg-[#F5F5F5]"
+                      onClick={() => {
+                        setMenuOpen(false)
+                        setShowSetup(true)
+                      }}
+                    >
+                      Setup guide
+                    </button>
+                  )}
+                  {profile?.role === 'team' && (
+                    <button
+                      type="button"
+                      className="w-full text-left px-3 py-2.5 text-sm hover:bg-[#F5F5F5]"
+                      onClick={() => {
+                        setMenuOpen(false)
+                        setPackPage('asks')
+                        setActiveId(null)
+                      }}
+                    >
+                      Schedule confirms
+                    </button>
+                  )}
                   <button
                     type="button"
                     className="w-full text-left px-3 py-2.5 text-sm hover:bg-[#F5F5F5]"
@@ -1161,6 +1240,41 @@ export default function Dashboard({ session, profile, company, onCompanyUpdate, 
             email={profile?.email}
             onBack={() => setShowPassword(false)}
           />
+        ) : showSetup && isAdmin ? (
+          <SetupWizard
+            profile={profile}
+            company={headerCompany || company}
+            onDone={() => {
+              setShowSetup(false)
+              onCompanyUpdate?.()
+            }}
+            onOpenNewProject={() => {
+              setShowSetup(false)
+              setShowNew(true)
+              setHomeTab('projects')
+            }}
+          />
+        ) : packPage === 'directory' && isAdmin ? (
+          <DirectoryPage profile={profile} onBack={() => setPackPage(null)} />
+        ) : packPage === 'estimates' && isAdmin ? (
+          <EstimatesPage
+            profile={profile}
+            onBack={() => setPackPage(null)}
+            onOpenProject={(id) => {
+              setPackPage(null)
+              setHomeTab('projects')
+              setActiveId(id)
+              loadProjects()
+            }}
+          />
+        ) : packPage === 'asks' ? (
+          <ScheduleAsksPage
+            project={null}
+            profile={profile}
+            isAdmin={isAdmin}
+            companyUsers={[]}
+            onBack={() => setPackPage(null)}
+          />
         ) : showHelp ? (
           <InviteHelpGuide
             company={headerCompany || company}
@@ -1196,19 +1310,32 @@ export default function Dashboard({ session, profile, company, onCompanyUpdate, 
             }}
           />
         ) : showWeek && isAdmin ? (
-          <ThisWeekView
-            digest={digest}
-            projects={projects}
-            onBack={() => goTab('projects')}
-            hideBack
-            onOpenProject={(id) => {
-              setShowWeek(false)
-              setShowCalendar(false)
-              setShowAdmin(false)
-              setHomeTab('projects')
-              setActiveId(id)
-            }}
-          />
+          <div>
+            <WeekBoard
+              projects={projects}
+              hideBack
+              onOpenProject={(id) => {
+                setShowWeek(false)
+                setShowCalendar(false)
+                setShowAdmin(false)
+                setHomeTab('projects')
+                setActiveId(id)
+              }}
+            />
+            <div className="mt-8">
+              <ThisWeekView
+                digest={digest}
+                projects={projects}
+                onBack={() => goTab('projects')}
+                hideBack
+                onOpenProject={(id) => {
+                  setShowWeek(false)
+                  setHomeTab('projects')
+                  setActiveId(id)
+                }}
+              />
+            </div>
+          </div>
         ) : showAdmin && isAdmin ? (
           <AdminPanel
             profile={profile}
@@ -1362,7 +1489,7 @@ export default function Dashboard({ session, profile, company, onCompanyUpdate, 
         )}
       </main>
 
-      {!showNotifs && !showPlatform && !showFeedback && !showPassword && !showHelp && (
+      {!showNotifs && !showPlatform && !showFeedback && !showPassword && !showHelp && !showSetup && !packPage && (
         <nav
           className="fixed bottom-0 left-0 right-0 z-40 bg-white border-t border-black"
           style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
@@ -3903,6 +4030,27 @@ function ProjectDetail({ project, isAdmin, canUpload, isCustomer, profile, onBac
       />
     )
   }
+  if (projectPage === 'dailyLog') {
+    return <DailyLogPage project={project} profile={profile} isAdmin={isAdmin} onBack={() => setProjectPage(null)} />
+  }
+  if (projectPage === 'permits') {
+    return <PermitsPage project={project} profile={profile} isAdmin={isAdmin} onBack={() => setProjectPage(null)} />
+  }
+  if (projectPage === 'selections') {
+    return <SelectionsPage project={project} profile={profile} isAdmin={isAdmin} isCustomer={isCustomer} onBack={() => setProjectPage(null)} />
+  }
+  if (projectPage === 'invoices' && (isAdmin || isCustomer)) {
+    return <InvoicesPage project={project} profile={profile} isAdmin={isAdmin} isCustomer={isCustomer} onBack={() => setProjectPage(null)} />
+  }
+  if (projectPage === 'planMarkup') {
+    return <PlanMarkupPage project={project} profile={profile} isAdmin={isAdmin} onBack={() => setProjectPage(null)} />
+  }
+  if (projectPage === 'closeout' && (isAdmin || isCustomer)) {
+    return <CloseoutPage project={project} profile={profile} isAdmin={isAdmin} isCustomer={isCustomer} onBack={() => setProjectPage(null)} />
+  }
+  if (projectPage === 'asks') {
+    return <ScheduleAsksPage project={project} profile={profile} isAdmin={isAdmin} companyUsers={companyUsers} onBack={() => setProjectPage(null)} />
+  }
 
   if (projectPage === 'files') {
     return (
@@ -4314,7 +4462,20 @@ className={`bg-white border border-black rounded-md flex items-stretch overflow-
 
       <div className="space-y-2 mb-6">
         <ProjectNavRow icon={<FolderOpen size={16} />} label="Plans & files" count={files.length || null} onClick={() => setProjectPage('files')} />
+        <ProjectNavRow icon={<FolderOpen size={16} />} label="Plan markup" onClick={() => setProjectPage('planMarkup')} />
         <ProjectNavRow icon={<Clock size={16} />} label="Meetings" onClick={() => setProjectPage('meetings')} />
+        <ProjectNavRow icon={<FileText size={16} />} label="Daily log" onClick={() => setProjectPage('dailyLog')} />
+        <ProjectNavRow icon={<FileText size={16} />} label="Permits" onClick={() => setProjectPage('permits')} />
+        <ProjectNavRow icon={<Check size={16} />} label="Selections" onClick={() => setProjectPage('selections')} />
+        {(isAdmin || isCustomer) && (
+          <ProjectNavRow icon={<DollarSign size={16} />} label="Invoices" onClick={() => setProjectPage('invoices')} />
+        )}
+        {isAdmin && (
+          <ProjectNavRow icon={<Clock size={16} />} label="Schedule confirm" onClick={() => setProjectPage('asks')} />
+        )}
+        {(isAdmin || isCustomer) && (
+          <ProjectNavRow icon={<Archive size={16} />} label="Closeout" onClick={() => setProjectPage('closeout')} />
+        )}
         <ProjectNavRow
           icon={<FileText size={16} />}
           label="Change orders"
