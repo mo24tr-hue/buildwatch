@@ -1,5 +1,5 @@
 /* PWA service worker — safe fetch handling (never return null) */
-const CACHE = 'BuildWatch-v6'
+const CACHE = 'BuildWatch-v7'
 
 self.addEventListener('install', (event) => {
   self.skipWaiting()
@@ -49,13 +49,18 @@ self.addEventListener('fetch', (event) => {
   }
 
   event.respondWith(
-    fetch(req)
-      .then((res) => res)
-      .catch(async () => {
-        const cached = await caches.match(req)
-        if (cached) return cached
-        return new Response('', { status: 504, statusText: 'Gateway Timeout' })
-      })
+    caches.match(req).then((cached) => {
+      const net = fetch(req)
+        .then((res) => {
+          if (res && res.ok && url.origin === self.location.origin) {
+            const copy = res.clone()
+            caches.open(CACHE).then((c) => c.put(req, copy)).catch(() => {})
+          }
+          return res
+        })
+        .catch(() => cached || new Response('', { status: 504, statusText: 'Gateway Timeout' }))
+      return cached || net
+    })
   )
 })
 

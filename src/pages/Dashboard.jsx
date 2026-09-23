@@ -181,6 +181,7 @@ function fmtMeetTime(t) {
 export default function Dashboard({ session, profile, company, onCompanyUpdate, onLogout, platformOwner = false, onLeavePlatformWorkspace }) {
   const [projects, setProjects] = useState([])
   const [loading, setLoading] = useState(true)
+  const [online, setOnline] = useState(() => typeof navigator === 'undefined' || navigator.onLine)
   const [updateAvailable, setUpdateAvailable] = useState(false)
   const [digest, setDigest] = useState([])
   const [activeId, setActiveId] = useState(null)
@@ -278,7 +279,7 @@ export default function Dashboard({ session, profile, company, onCompanyUpdate, 
 
     if (error) {
       console.error(error)
-      if (!soft) setProjects([])
+      // Keep cached jobs if the network failed
     } else {
       let list = (data || []).map((p) => ({
         ...p,
@@ -411,17 +412,22 @@ export default function Dashboard({ session, profile, company, onCompanyUpdate, 
 
 
   useEffect(() => {
-    // Offline: show last cached projects immediately
+    let hadCache = false
     try {
       if (profile?.company_id) {
         const raw = localStorage.getItem('bw_projects_cache_' + profile.company_id)
         if (raw) {
           const parsed = JSON.parse(raw)
-          if (parsed?.list?.length) setProjects(parsed.list)
+          if (parsed?.list) {
+            setProjects(parsed.list)
+            hadCache = parsed.list.length >= 0
+            setLoading(false)
+          }
         }
       }
     } catch (_) {}
-    loadProjects()
+    if (typeof navigator !== 'undefined' && !navigator.onLine && hadCache) return
+    loadProjects({ soft: hadCache })
   }, [loadProjects, profile?.company_id])
 
   useEffect(() => {
@@ -469,6 +475,17 @@ export default function Dashboard({ session, profile, company, onCompanyUpdate, 
     if (navigator.onLine) flush()
     return () => window.removeEventListener('online', flush)
   }, [loadProjects, profile?.id])
+
+  useEffect(() => {
+    const up = () => { setOnline(true); loadProjects({ soft: true }) }
+    const down = () => setOnline(false)
+    window.addEventListener('online', up)
+    window.addEventListener('offline', down)
+    return () => {
+      window.removeEventListener('online', up)
+      window.removeEventListener('offline', down)
+    }
+  }, [loadProjects])
 
 
   useEffect(() => {
@@ -1126,6 +1143,11 @@ export default function Dashboard({ session, profile, company, onCompanyUpdate, 
         </div>
       </header>
 
+      {!online && (
+        <div className="bg-[#E9E9E7] border-b border-black text-center text-sm px-4 py-2">
+          Offline — showing saved jobs. Changes wait until you are back online.
+        </div>
+      )}
       {updateAvailable && (
         <div className="bg-[#FFF8DB] border-b border-[#E6B800] text-center text-sm px-4 py-2">
           New version available.{' '}
