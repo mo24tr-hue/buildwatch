@@ -197,6 +197,12 @@ export function InspectionsPage({ project, profile, isAdmin, onBack }) {
     load()
   }
 
+  const removeInspection = async (id) => {
+    if (!confirm('Delete this inspection?')) return
+    await supabase.from('permits').delete().eq('id', id)
+    load()
+  }
+
   const uploadPhoto = async (e) => {
     const file = e.target.files?.[0]
     e.target.value = ''
@@ -231,7 +237,10 @@ export function InspectionsPage({ project, profile, isAdmin, onBack }) {
 
   return (
     <Page>
-      <Back onBack={onBack} title="Inspections" />
+      <button type="button" onClick={onBack} className="flex items-center gap-1 text-sm text-[#6B6E72] mb-2">
+        <ChevronLeft size={16} /> {project.address}
+      </button>
+      <h2 className="font-display text-xl mb-3">Inspections</h2>
       {isAdmin && (
         <form onSubmit={add} className="w-full max-w-full min-w-0 box-border border border-black rounded-md p-3 space-y-2 mb-4">
           <input className={field} placeholder="Inspection (plumbing, electrical, final…)" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} />
@@ -245,13 +254,22 @@ export function InspectionsPage({ project, profile, isAdmin, onBack }) {
       <div className="space-y-2 mb-8">
         {rows.map((r) => (
           <div key={r.id} className="w-full max-w-full min-w-0 box-border border border-black rounded-md p-3 text-sm">
-            <div className="font-medium">{r.title}</div>
-            <div className="text-xs text-[#6B6E72] mt-0.5">{fmtDate(r.inspection_on)}</div>
+            <div className="flex justify-between gap-2 items-start">
+              <div>
+                <div className="font-medium">{r.title}</div>
+                <div className="text-xs text-[#6B6E72] mt-0.5">{fmtDate(r.inspection_on)}</div>
+              </div>
+              {isAdmin && (
+                <button type="button" className="text-[#B5533C] p-1 flex-shrink-0" onClick={() => removeInspection(r.id)}>
+                  <Trash2 size={14} />
+                </button>
+              )}
+            </div>
             {isAdmin ? (
-              <div className="flex gap-2 mt-2">
-                {['pending', 'pass', 'fail'].map((s) => (
-                  <button key={s} type="button" onClick={() => setResult(r.id, s)} className={`px-2 py-1 text-xs border border-black rounded capitalize ${r.result === s ? 'bg-black text-white' : ''}`}>{s === 'pass' ? 'Passed' : s === 'fail' ? 'Failed' : 'Pending'}</button>
-                ))}
+              <div className="flex gap-2 mt-2 flex-wrap">
+                <button type="button" onClick={() => setResult(r.id, 'pending')} className={`px-2 py-1 text-xs border rounded ${r.result === 'pending' ? 'bg-[#6B6E72] text-white border-[#6B6E72]' : 'border-black'}`}>Pending</button>
+                <button type="button" onClick={() => setResult(r.id, 'pass')} className={`px-2 py-1 text-xs border rounded ${r.result === 'pass' ? 'bg-[#3F7D58] text-white border-[#3F7D58]' : 'border-[#3F7D58] text-[#3F7D58]'}`}>Passed</button>
+                <button type="button" onClick={() => setResult(r.id, 'fail')} className={`px-2 py-1 text-xs border rounded ${r.result === 'fail' ? 'bg-[#B5533C] text-white border-[#B5533C]' : 'border-[#B5533C] text-[#B5533C]'}`}>Failed</button>
               </div>
             ) : (
               <div className="text-xs uppercase mt-1">{r.result === 'pass' ? 'Passed' : r.result === 'fail' ? 'Failed' : 'Pending'}</div>
