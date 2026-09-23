@@ -1922,42 +1922,12 @@ function ProjectMeetingsPage({ project, profile, isAdmin, isCustomer, companyUse
 }
 
 
-function CalendarInspectionAdd({ selected, projects, profile, onSaved }) {
-  const [title, setTitle] = useState('')
-  const [projectId, setProjectId] = useState(projects[0]?.id || '')
-  const add = async (e) => {
-    e.preventDefault()
-    if (!title.trim() || !projectId) return
-    const { error } = await supabase.from('permits').insert({
-      company_id: profile.company_id,
-      project_id: projectId,
-      title: title.trim(),
-      inspection_on: selected,
-      result: 'pending',
-    })
-    if (error) { alert(error.message); return }
-    setTitle('')
-    onSaved?.()
-  }
-  return (
-    <form onSubmit={add} className="w-full border border-black rounded-md p-3 space-y-2">
-      <div className="text-[11px] font-mono uppercase text-[#6B6E72]">Inspection on this day</div>
-      <select className="w-full border border-black rounded px-3 py-2 text-sm" value={projectId} onChange={(e) => setProjectId(e.target.value)}>
-        {(projects || []).map((pr) => <option key={pr.id} value={pr.id}>{pr.address}</option>)}
-      </select>
-      <input className="w-full border border-black rounded px-3 py-2 text-sm" placeholder="Inspection name" value={title} onChange={(e) => { setTitle(e.target.value); if (typeof window !== 'undefined') window.__bwDirty = !!e.target.value }} />
-      <button type="submit" className="w-full py-2.5 bg-black text-white rounded text-sm">Add inspection</button>
-    </form>
-  )
-}
-
 function AdminCalendarView({ projects, role, profile, onBack, onOpenProject, hideBack }) {
   const today = new Date()
   const [year, setYear] = useState(today.getFullYear())
   const [month, setMonth] = useState(today.getMonth()) // 0-11
   const [selected, setSelected] = useState(today.toISOString().slice(0, 10))
   const [meetings, setMeetings] = useState([])
-  const [inspections, setInspections] = useState([])
   const [showSchedule, setShowSchedule] = useState(false)
   const isTrade = role === 'team'
   const isCustomer = role === 'customer'
@@ -1974,12 +1944,6 @@ function AdminCalendarView({ projects, role, profile, onBack, onOpenProject, hid
       .order('meet_time', { ascending: true })
     if (error) console.warn('meetings', error.message)
     setMeetings(data || [])
-    const { data: insp } = await supabase
-      .from('permits')
-      .select('id, project_id, title, inspection_on, result, notes')
-      .eq('company_id', profile.company_id)
-      .not('inspection_on', 'is', null)
-    setInspections(role === 'admin' ? (insp || []) : [])
   }, [profile?.company_id])
 
   useEffect(() => { loadMeetings() }, [loadMeetings])
@@ -2026,17 +1990,6 @@ function AdminCalendarView({ projects, role, profile, onBack, onOpenProject, hid
       })
     })
   })
-  const visibleIds = new Set((projects || []).map((p) => p.id))
-  ;(inspections || []).forEach((ins) => {
-    if (ins.project_id && !visibleIds.has(ins.project_id)) return
-    const proj = (projects || []).find((p) => p.id === ins.project_id)
-    mark(ins.inspection_on, {
-      projectId: ins.project_id || null,
-      label: ins.title || 'Inspection',
-      detail: 'Inspection' + (proj?.address ? ' · ' + proj.address : '') + (ins.result === 'pass' ? ' · passed' : ins.result === 'fail' ? ' · failed' : ''),
-      status: ins.result || 'inspection',
-    })
-  })
   ;(meetings || []).forEach((m) => {
     const proj = (projects || []).find((p) => p.id === m.project_id)
     mark(m.meet_date, {
@@ -2050,17 +2003,6 @@ function AdminCalendarView({ projects, role, profile, onBack, onOpenProject, hid
 
   const dayItems = []
   const day = selected
-  ;(inspections || []).forEach((ins) => {
-    if (ins.inspection_on !== day) return
-    if (ins.project_id && !(projects || []).some((pr) => pr.id === ins.project_id)) return
-    const proj = (projects || []).find((pr) => pr.id === ins.project_id)
-    dayItems.push({
-      projectId: ins.project_id || null,
-      label: ins.title || 'Inspection',
-      detail: 'Inspection' + (proj?.address ? ' · ' + proj.address : '') + (ins.result === 'pass' ? ' · passed' : ins.result === 'fail' ? ' · failed' : ''),
-      status: ins.result || 'inspection',
-    })
-  })
   ;(projects || []).forEach((pr) => {
     if (!isTrade && (pr.start_date === day || pr.end_date === day)) {
       dayItems.push({
@@ -2264,9 +2206,6 @@ function AdminCalendarView({ projects, role, profile, onBack, onOpenProject, hid
           <span className="flex-1 text-sm font-medium">Meeting on this day</span>
           <ChevronRight size={16} className="text-[#8A8D91]" />
         </button>
-      )}
-      {isAdmin && (projects || []).length > 0 && (
-        <CalendarInspectionAdd selected={selected} projects={projects} profile={profile} onSaved={loadMeetings} />
       )}
     </SwipeBack>
   )
