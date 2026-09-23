@@ -9,8 +9,7 @@ import AssistantChat from '../components/AssistantChat'
 import {
   DirectoryPage,
   DailyLogPage,
-  PermitsPage,
-  SelectionsPage,
+  InspectionsPage,
   InvoicesPage,
   WeekBoard,
   EstimatesPage,
@@ -1851,6 +1850,7 @@ function AdminCalendarView({ projects, role, profile, onBack, onOpenProject, hid
   const [month, setMonth] = useState(today.getMonth()) // 0-11
   const [selected, setSelected] = useState(today.toISOString().slice(0, 10))
   const [meetings, setMeetings] = useState([])
+  const [inspections, setInspections] = useState([])
   const [showSchedule, setShowSchedule] = useState(false)
   const isTrade = role === 'team'
   const isCustomer = role === 'customer'
@@ -1865,11 +1865,14 @@ function AdminCalendarView({ projects, role, profile, onBack, onOpenProject, hid
       .eq('company_id', profile.company_id)
       .order('meet_date', { ascending: true })
       .order('meet_time', { ascending: true })
-    if (error) {
-      console.warn('meetings', error.message)
-      return
-    }
+    if (error) console.warn('meetings', error.message)
     setMeetings(data || [])
+    const { data: insp } = await supabase
+      .from('permits')
+      .select('id, project_id, title, inspection_on, result, notes')
+      .eq('company_id', profile.company_id)
+      .not('inspection_on', 'is', null)
+    setInspections(insp || [])
   }, [profile?.company_id])
 
   useEffect(() => { loadMeetings() }, [loadMeetings])
@@ -1916,6 +1919,17 @@ function AdminCalendarView({ projects, role, profile, onBack, onOpenProject, hid
       })
     })
   })
+  const visibleIds = new Set((projects || []).map((p) => p.id))
+  ;(inspections || []).forEach((ins) => {
+    if (ins.project_id && !visibleIds.has(ins.project_id)) return
+    const proj = (projects || []).find((p) => p.id === ins.project_id)
+    mark(ins.inspection_on, {
+      projectId: ins.project_id || null,
+      label: ins.title || 'Inspection',
+      detail: 'Inspection' + (proj?.address ? ' · ' + proj.address : '') + (ins.result === 'pass' ? ' · passed' : ins.result === 'fail' ? ' · failed' : ''),
+      status: ins.result || 'inspection',
+    })
+  })
   ;(meetings || []).forEach((m) => {
     const proj = (projects || []).find((p) => p.id === m.project_id)
     mark(m.meet_date, {
@@ -1929,6 +1943,17 @@ function AdminCalendarView({ projects, role, profile, onBack, onOpenProject, hid
 
   const dayItems = []
   const day = selected
+  ;(inspections || []).forEach((ins) => {
+    if (ins.inspection_on !== day) return
+    if (ins.project_id && !(projects || []).some((pr) => pr.id === ins.project_id)) return
+    const proj = (projects || []).find((pr) => pr.id === ins.project_id)
+    dayItems.push({
+      projectId: ins.project_id || null,
+      label: ins.title || 'Inspection',
+      detail: 'Inspection' + (proj?.address ? ' · ' + proj.address : '') + (ins.result === 'pass' ? ' · passed' : ins.result === 'fail' ? ' · failed' : ''),
+      status: ins.result || 'inspection',
+    })
+  })
   ;(projects || []).forEach((pr) => {
     if (!isTrade && (pr.start_date === day || pr.end_date === day)) {
       dayItems.push({
@@ -4049,11 +4074,8 @@ function ProjectDetail({ project, isAdmin, canUpload, isCustomer, profile, onBac
   if (projectPage === 'dailyLog') {
     return <DailyLogPage project={project} profile={profile} isAdmin={isAdmin} onBack={() => setProjectPage(null)} />
   }
-  if (projectPage === 'permits') {
-    return <PermitsPage project={project} profile={profile} isAdmin={isAdmin} onBack={() => setProjectPage(null)} />
-  }
-  if (projectPage === 'selections') {
-    return <SelectionsPage project={project} profile={profile} isAdmin={isAdmin} isCustomer={isCustomer} onBack={() => setProjectPage(null)} />
+  if (projectPage === 'permits' || projectPage === 'inspections') {
+    return <InspectionsPage project={project} profile={profile} isAdmin={isAdmin} onBack={() => setProjectPage(null)} />
   }
 
   if (projectPage === 'files') {
@@ -4468,8 +4490,7 @@ className={`bg-white border border-black rounded-md flex items-stretch overflow-
         <ProjectNavRow icon={<FolderOpen size={16} />} label="Plans & files" count={files.length || null} onClick={() => setProjectPage('files')} />
         <ProjectNavRow icon={<Clock size={16} />} label="Meetings" onClick={() => setProjectPage('meetings')} />
         <ProjectNavRow icon={<FileText size={16} />} label="Daily log" onClick={() => setProjectPage('dailyLog')} />
-        <ProjectNavRow icon={<FileText size={16} />} label="Permits" onClick={() => setProjectPage('permits')} />
-        <ProjectNavRow icon={<Check size={16} />} label="Selections" onClick={() => setProjectPage('selections')} />
+        <ProjectNavRow icon={<FileText size={16} />} label="Inspections" onClick={() => setProjectPage('inspections')} />
         <ProjectNavRow
           icon={<FileText size={16} />}
           label="Change orders"

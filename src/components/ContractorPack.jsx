@@ -157,113 +157,144 @@ export function DailyLogPage({ project, profile, isAdmin, onBack }) {
   )
 }
 
-export function PermitsPage({ project, profile, isAdmin, onBack }) {
+export function InspectionsPage({ project, profile, isAdmin, onBack }) {
   const [rows, setRows] = useState([])
-  const [form, setForm] = useState({ title: '', number: '', office: '', filed_on: '', inspection_on: '', result: 'pending' })
+  const [photos, setPhotos] = useState([])
+  const [uploading, setUploading] = useState(false)
+  const [form, setForm] = useState({ title: '', inspection_on: '', notes: '' })
+  const [noteDraft, setNoteDraft] = useState({})
+
   const load = async () => {
-    const { data } = await supabase.from('permits').select('*').eq('project_id', project.id).order('created_at', { ascending: false })
+    const { data } = await supabase.from('permits').select('*').eq('project_id', project.id).order('inspection_on', { ascending: true })
     setRows(data || [])
+    const { data: ph } = await supabase.from('permit_photos').select('*').eq('project_id', project.id).order('created_at', { ascending: false })
+    setPhotos(ph || [])
   }
   useEffect(() => { load() }, [project.id])
+
   const add = async (e) => {
     e.preventDefault()
-    if (!isAdmin || !form.title.trim()) return
-    await supabase.from('permits').insert({ ...form, title: form.title.trim(), company_id: profile.company_id, project_id: project.id })
-    setForm({ title: '', number: '', office: '', filed_on: '', inspection_on: '', result: 'pending' })
+    if (!isAdmin || !form.title.trim() || !form.inspection_on) return
+    await supabase.from('permits').insert({
+      company_id: profile.company_id,
+      project_id: project.id,
+      title: form.title.trim(),
+      inspection_on: form.inspection_on,
+      notes: form.notes || null,
+      result: 'pending',
+    })
+    setForm({ title: '', inspection_on: '', notes: '' })
     load()
   }
+
   const setResult = async (id, result) => {
     await supabase.from('permits').update({ result }).eq('id', id)
     load()
   }
+
+  const saveNotes = async (id) => {
+    await supabase.from('permits').update({ notes: noteDraft[id] ?? '' }).eq('id', id)
+    load()
+  }
+
+  const uploadPhoto = async (e) => {
+    const file = e.target.files?.[0]
+    e.target.value = ''
+    if (!file || !isAdmin) return
+    setUploading(true)
+    try {
+      const safe = (file.name || 'permit.jpg').replace(/[^a-zA-Z0-9._-]/g, '_')
+      const path = profile.company_id + '/' + project.id + '/permits/' + Date.now() + '-' + safe
+      const { error: upErr } = await supabase.storage.from('project-photos').upload(path, file, { upsert: true })
+      if (upErr) throw upErr
+      const { data: pub } = supabase.storage.from('project-photos').getPublicUrl(path)
+      const { error: insErr } = await supabase.from('permit_photos').insert({
+        company_id: profile.company_id,
+        project_id: project.id,
+        public_url: pub.publicUrl,
+        storage_path: path,
+        file_name: file.name,
+      })
+      if (insErr) throw insErr
+      load()
+    } catch (err) {
+      alert(err.message || 'Upload failed')
+    }
+    setUploading(false)
+  }
+
+  const removePhoto = async (p) => {
+    if (p.storage_path) await supabase.storage.from('project-photos').remove([p.storage_path])
+    await supabase.from('permit_photos').delete().eq('id', p.id)
+    load()
+  }
+
   return (
     <Page>
-      <Back onBack={onBack} title="Permits" />
+      <Back onBack={onBack} title="Inspections" />
       {isAdmin && (
         <form onSubmit={add} className="w-full max-w-full min-w-0 box-border border border-black rounded-md p-3 space-y-2 mb-4">
-          <input className={field} placeholder="Permit name" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} />
-          <input className={field} placeholder="Number" value={form.number} onChange={(e) => setForm({ ...form, number: e.target.value })} />
-          <input className={field} placeholder="Office" value={form.office} onChange={(e) => setForm({ ...form, office: e.target.value })} />
-          <label className="block text-[11px] font-mono uppercase text-[#6B6E72]">Filed
-            <input type="date" className={field + " mt-1"} value={form.filed_on} onChange={(e) => setForm({ ...form, filed_on: e.target.value })} />
+          <input className={field} placeholder="Inspection (plumbing, electrical, final…)" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} />
+          <label className="block text-[11px] font-mono uppercase text-[#6B6E72]">Scheduled
+            <input type="date" className={field + ' mt-1'} value={form.inspection_on} onChange={(e) => setForm({ ...form, inspection_on: e.target.value })} />
           </label>
-          <label className="block text-[11px] font-mono uppercase text-[#6B6E72]">Inspection
-            <input type="date" className={field + " mt-1"} value={form.inspection_on} onChange={(e) => setForm({ ...form, inspection_on: e.target.value })} />
-          </label>
-          <button type="submit" className="w-full py-2.5 bg-black text-white rounded text-sm">Add permit</button>
+          <textarea className={field} rows={2} placeholder="Notes" value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} />
+          <button type="submit" className="w-full py-2.5 bg-black text-white rounded text-sm">Add inspection</button>
         </form>
       )}
-      <div className="space-y-2">
+      <div className="space-y-2 mb-8">
         {rows.map((r) => (
           <div key={r.id} className="w-full max-w-full min-w-0 box-border border border-black rounded-md p-3 text-sm">
             <div className="font-medium">{r.title}</div>
-            <div className="text-xs text-[#6B6E72]">{[r.number, r.office].filter(Boolean).join(' · ')}</div>
-            <div className="text-xs mt-1">Filed {fmtDate(r.filed_on)} · Inspection {fmtDate(r.inspection_on)}</div>
+            <div className="text-xs text-[#6B6E72] mt-0.5">{fmtDate(r.inspection_on)}</div>
             {isAdmin ? (
               <div className="flex gap-2 mt-2">
                 {['pending', 'pass', 'fail'].map((s) => (
-                  <button key={s} type="button" onClick={() => setResult(r.id, s)} className={`px-2 py-1 text-xs border border-black rounded ${r.result === s ? 'bg-black text-white' : ''}`}>{s}</button>
+                  <button key={s} type="button" onClick={() => setResult(r.id, s)} className={`px-2 py-1 text-xs border border-black rounded capitalize ${r.result === s ? 'bg-black text-white' : ''}`}>{s === 'pass' ? 'Passed' : s === 'fail' ? 'Failed' : 'Pending'}</button>
                 ))}
               </div>
-            ) : <div className="text-xs uppercase mt-1">{r.result}</div>}
-          </div>
-        ))}
-        {!rows.length && <p className="text-sm text-[#6B6E72]">No permits yet.</p>}
-      </div>
-    </Page>
-  )
-}
-
-export function SelectionsPage({ project, profile, isAdmin, isCustomer, onBack }) {
-  const [rows, setRows] = useState([])
-  const [form, setForm] = useState({ category: '', item_name: '', option_label: '', notes: '' })
-  const load = async () => {
-    const { data } = await supabase.from('selections').select('*').eq('project_id', project.id).order('created_at', { ascending: false })
-    setRows(data || [])
-  }
-  useEffect(() => { load() }, [project.id])
-  const add = async (e) => {
-    e.preventDefault()
-    if (!isAdmin || !form.item_name.trim()) return
-    await supabase.from('selections').insert({ ...form, item_name: form.item_name.trim(), company_id: profile.company_id, project_id: project.id, status: 'pending' })
-    setForm({ category: '', item_name: '', option_label: '', notes: '' })
-    load()
-  }
-  const setStatus = async (id, status) => {
-    await supabase.from('selections').update({ status, decided_at: status === 'pending' ? null : new Date().toISOString() }).eq('id', id)
-    load()
-  }
-  return (
-    <Page>
-      <Back onBack={onBack} title="Selections" />
-      {isAdmin && (
-        <form onSubmit={add} className="w-full max-w-full min-w-0 box-border border border-black rounded-md p-3 space-y-2 mb-4">
-          <input className={field} placeholder="Category (tile, paint, fixture)" value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })} />
-          <input className={field} placeholder="Item" value={form.item_name} onChange={(e) => setForm({ ...form, item_name: e.target.value })} />
-          <input className={field} placeholder="Option" value={form.option_label} onChange={(e) => setForm({ ...form, option_label: e.target.value })} />
-          <button type="submit" className="w-full py-2.5 bg-black text-white rounded text-sm">Add selection</button>
-        </form>
-      )}
-      <div className="space-y-2">
-        {rows.map((r) => (
-          <div key={r.id} className="w-full max-w-full min-w-0 box-border border border-black rounded-md p-3 text-sm">
-            <div className="text-[11px] font-mono uppercase text-[#6B6E72]">{r.category || 'Selection'}</div>
-            <div className="font-medium">{r.item_name}</div>
-            {r.option_label && <div>{r.option_label}</div>}
-            <div className="text-xs mt-1 uppercase">{r.status}{r.decided_at ? ' · ' + fmtDate(r.decided_at.slice(0, 10)) : ''}</div>
-            {(isCustomer || isAdmin) && r.status === 'pending' && (
-              <div className="flex gap-2 mt-2">
-                <button type="button" className="px-3 py-1.5 bg-black text-white rounded text-xs" onClick={() => setStatus(r.id, 'approved')}>Approve</button>
-                {isAdmin && <button type="button" className="px-3 py-1.5 border border-black rounded text-xs" onClick={() => setStatus(r.id, 'locked')}>Lock</button>}
+            ) : (
+              <div className="text-xs uppercase mt-1">{r.result === 'pass' ? 'Passed' : r.result === 'fail' ? 'Failed' : 'Pending'}</div>
+            )}
+            {isAdmin ? (
+              <div className="mt-2 space-y-2">
+                <textarea
+                  className={field}
+                  rows={2}
+                  placeholder="Notes"
+                  value={noteDraft[r.id] ?? r.notes ?? ''}
+                  onChange={(e) => setNoteDraft((d) => ({ ...d, [r.id]: e.target.value }))}
+                />
+                <button type="button" className="text-xs underline" onClick={() => saveNotes(r.id)}>Save notes</button>
               </div>
-            )}
-            {isAdmin && r.status === 'approved' && (
-              <button type="button" className="mt-2 px-3 py-1.5 border border-black rounded text-xs" onClick={() => setStatus(r.id, 'locked')}>Lock choice</button>
+            ) : (
+              r.notes ? <div className="text-xs mt-2 whitespace-pre-wrap">{r.notes}</div> : null
             )}
           </div>
         ))}
-        {!rows.length && <p className="text-sm text-[#6B6E72]">No selections yet.</p>}
+        {!rows.length && <p className="text-sm text-[#6B6E72]">No inspections scheduled.</p>}
       </div>
+
+      <h3 className="font-display text-xl mb-3">Permits</h3>
+      {isAdmin && (
+        <label className="w-full flex items-center justify-center gap-1.5 text-sm border border-black rounded px-3 py-2 cursor-pointer mb-3">
+          {uploading ? 'Uploading…' : 'Upload permit photo'}
+          <input type="file" accept="image/*" className="hidden" disabled={uploading} onChange={uploadPhoto} />
+        </label>
+      )}
+      <div className="grid grid-cols-2 gap-2">
+        {photos.map((p) => (
+          <div key={p.id} className="border border-black rounded overflow-hidden">
+            <a href={p.public_url} target="_blank" rel="noreferrer">
+              <img src={p.public_url} alt="" className="w-full h-36 object-cover" />
+            </a>
+            {isAdmin && (
+              <button type="button" className="w-full text-xs py-1.5 text-[#B5533C]" onClick={() => removePhoto(p)}>Delete</button>
+            )}
+          </div>
+        ))}
+      </div>
+      {!photos.length && <p className="text-sm text-[#6B6E72]">No permit photos yet.</p>}
     </Page>
   )
 }
