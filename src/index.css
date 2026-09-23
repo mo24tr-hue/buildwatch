@@ -19,6 +19,16 @@ select {
   box-sizing: border-box !important;
 }
 
+input[type='date'],
+input[type='time'] {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  appearance: none;
+  -webkit-appearance: none;
+}
+
 html {
   overflow-x: hidden;
 }

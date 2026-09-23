@@ -251,9 +251,15 @@ export function InspectionsPage({ project, profile, isAdmin, onBack }) {
       {isAdmin && (
         <form onSubmit={add} className="w-full max-w-full min-w-0 box-border border border-black rounded-md p-3 space-y-2 mb-4">
           <input className={field} placeholder="Inspection (plumbing, electrical, final…)" value={form.title} onChange={(e) => { setForm({ ...form, title: e.target.value }); if (typeof window !== 'undefined') window.__bwDirty = true }} />
-          <label className="block text-[11px] font-mono uppercase text-[#6B6E72]">Scheduled
-            <input type="date" className={field + ' mt-1'} value={form.inspection_on} onChange={(e) => setForm({ ...form, inspection_on: e.target.value })} />
-          </label>
+          <div className="w-full min-w-0 overflow-hidden">
+            <div className="text-[11px] font-mono uppercase text-[#6B6E72] mb-1">Scheduled</div>
+            <input
+              type="date"
+              className={field}
+              value={form.inspection_on}
+              onChange={(e) => setForm({ ...form, inspection_on: e.target.value })}
+            />
+          </div>
           <textarea className={field} rows={2} placeholder="Notes" value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} />
           <button type="submit" className="w-full py-2.5 bg-black text-white rounded text-sm">Add inspection</button>
         </form>
