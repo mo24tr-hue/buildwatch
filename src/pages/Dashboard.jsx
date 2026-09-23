@@ -1872,7 +1872,7 @@ function AdminCalendarView({ projects, role, profile, onBack, onOpenProject, hid
       .select('id, project_id, title, inspection_on, result, notes')
       .eq('company_id', profile.company_id)
       .not('inspection_on', 'is', null)
-    setInspections(insp || [])
+    setInspections(role === 'admin' ? (insp || []) : [])
   }, [profile?.company_id])
 
   useEffect(() => { loadMeetings() }, [loadMeetings])
@@ -4071,10 +4071,10 @@ function ProjectDetail({ project, isAdmin, canUpload, isCustomer, profile, onBac
       />
     )
   }
-  if (projectPage === 'dailyLog') {
+  if (projectPage === 'dailyLog' && isAdmin) {
     return <DailyLogPage project={project} profile={profile} isAdmin={isAdmin} onBack={() => setProjectPage(null)} />
   }
-  if (projectPage === 'permits' || projectPage === 'inspections') {
+  if ((projectPage === 'permits' || projectPage === 'inspections') && isAdmin) {
     return <InspectionsPage project={project} profile={profile} isAdmin={isAdmin} onBack={() => setProjectPage(null)} />
   }
 
@@ -4489,8 +4489,12 @@ className={`bg-white border border-black rounded-md flex items-stretch overflow-
       <div className="space-y-2 mb-6">
         <ProjectNavRow icon={<FolderOpen size={16} />} label="Plans & files" count={files.length || null} onClick={() => setProjectPage('files')} />
         <ProjectNavRow icon={<Clock size={16} />} label="Meetings" onClick={() => setProjectPage('meetings')} />
-        <ProjectNavRow icon={<FileText size={16} />} label="Daily log" onClick={() => setProjectPage('dailyLog')} />
-        <ProjectNavRow icon={<FileText size={16} />} label="Inspections" onClick={() => setProjectPage('inspections')} />
+        {isAdmin && (
+          <ProjectNavRow icon={<FileText size={16} />} label="Daily log" onClick={() => setProjectPage('dailyLog')} />
+        )}
+        {isAdmin && (
+          <ProjectNavRow icon={<FileText size={16} />} label="Inspections" onClick={() => setProjectPage('inspections')} />
+        )}
         <ProjectNavRow
           icon={<FileText size={16} />}
           label="Change orders"
