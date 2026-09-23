@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { ChevronLeft, Plus, Trash2 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { STYLES, fmtDate } from '../lib/styles'
@@ -163,6 +163,9 @@ export function InspectionsPage({ project, profile, isAdmin, onBack }) {
   const [uploading, setUploading] = useState(false)
   const [form, setForm] = useState({ title: '', inspection_on: '', notes: '' })
   const [noteDraft, setNoteDraft] = useState({})
+  const [lb, setLb] = useState(null)
+  const [undoRow, setUndoRow] = useState(null)
+  const undoRef = useRef(null)
 
   const load = async () => {
     const { data } = await supabase.from('permits').select('*').eq('project_id', project.id).order('inspection_on', { ascending: true })
@@ -197,10 +200,14 @@ export function InspectionsPage({ project, profile, isAdmin, onBack }) {
     load()
   }
 
-  const removeInspection = async (id) => {
-    if (!confirm('Delete this inspection?')) return
-    await supabase.from('permits').delete().eq('id', id)
-    load()
+  const removeInspection = async (row) => {
+    setUndoRow(row)
+    setRows((cur) => cur.filter((x) => x.id !== row.id))
+    if (undoRef.current) clearTimeout(undoRef.current)
+    undoRef.current = setTimeout(async () => {
+      await supabase.from('permits').delete().eq('id', row.id)
+      setUndoRow(null)
+    }, 5000)
   }
 
   const uploadPhoto = async (e) => {
@@ -243,7 +250,7 @@ export function InspectionsPage({ project, profile, isAdmin, onBack }) {
       <h2 className="font-display text-xl mb-3">Inspections</h2>
       {isAdmin && (
         <form onSubmit={add} className="w-full max-w-full min-w-0 box-border border border-black rounded-md p-3 space-y-2 mb-4">
-          <input className={field} placeholder="Inspection (plumbing, electrical, final…)" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} />
+          <input className={field} placeholder="Inspection (plumbing, electrical, final…)" value={form.title} onChange={(e) => { setForm({ ...form, title: e.target.value }); if (typeof window !== 'undefined') window.__bwDirty = true }} />
           <label className="block text-[11px] font-mono uppercase text-[#6B6E72]">Scheduled
             <input type="date" className={field + ' mt-1'} value={form.inspection_on} onChange={(e) => setForm({ ...form, inspection_on: e.target.value })} />
           </label>
@@ -260,7 +267,7 @@ export function InspectionsPage({ project, profile, isAdmin, onBack }) {
                 <div className="text-xs text-[#6B6E72] mt-0.5">{fmtDate(r.inspection_on)}</div>
               </div>
               {isAdmin && (
-                <button type="button" className="text-[#B5533C] p-1 flex-shrink-0" onClick={() => removeInspection(r.id)}>
+                <button type="button" className="text-[#B5533C] p-1 flex-shrink-0" onClick={() => removeInspection(r)}>
                   <Trash2 size={14} />
                 </button>
               )}
@@ -290,7 +297,13 @@ export function InspectionsPage({ project, profile, isAdmin, onBack }) {
             )}
           </div>
         ))}
-        {!rows.length && <p className="text-sm text-[#6B6E72]">No inspections scheduled.</p>}
+        {undoRow && (
+          <div className="border border-black rounded px-3 py-2 text-sm flex justify-between">
+            <span>Inspection removed</span>
+            <button type="button" className="underline" onClick={() => { if (undoRef.current) clearTimeout(undoRef.current); setRows((cur) => [undoRow, ...cur]); setUndoRow(null) }}>Undo</button>
+          </div>
+        )}
+        {!rows.length && <p className="text-sm text-[#6B6E72]">No inspections scheduled. Add one above.</p>}
       </div>
 
       <h3 className="font-display text-xl mb-3">Permits</h3>
@@ -303,16 +316,26 @@ export function InspectionsPage({ project, profile, isAdmin, onBack }) {
       <div className="grid grid-cols-2 gap-2">
         {photos.map((p) => (
           <div key={p.id} className="border border-black rounded overflow-hidden">
-            <a href={p.public_url} target="_blank" rel="noreferrer">
+            <button type="button" className="w-full" onClick={() => setLb(p)}>
               <img src={p.public_url} alt="" className="w-full h-36 object-cover" />
-            </a>
+            </button>
             {isAdmin && (
               <button type="button" className="w-full text-xs py-1.5 text-[#B5533C]" onClick={() => removePhoto(p)}>Delete</button>
             )}
           </div>
         ))}
       </div>
-      {!photos.length && <p className="text-sm text-[#6B6E72]">No permit photos yet.</p>}
+      {!photos.length && <p className="text-sm text-[#6B6E72]">No permit photos yet. Upload one above.</p>}
+      {lb && (
+        <div className="fixed inset-0 z-50 bg-black/90 flex flex-col" onClick={() => setLb(null)}>
+          <div className="flex justify-end px-4 py-3 text-white">
+            <button type="button" onClick={() => setLb(null)}>Close</button>
+          </div>
+          <div className="flex-1 flex items-center justify-center px-2">
+            <img src={lb.public_url} alt="" className="max-h-full max-w-full object-contain" onClick={(e) => e.stopPropagation()} />
+          </div>
+        </div>
+      )}
     </Page>
   )
 }
@@ -358,7 +381,7 @@ export function InvoicesPage({ project, profile, isAdmin, isCustomer, onBack }) 
       <Back onBack={onBack} title="Invoices" />
       {isAdmin && (
         <form onSubmit={add} className="w-full max-w-full min-w-0 box-border border border-black rounded-md p-3 space-y-2 mb-4">
-          <input className={field} placeholder="Title" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} />
+          <input className={field} placeholder="Title" value={form.title} onChange={(e) => { setForm({ ...form, title: e.target.value }); if (typeof window !== 'undefined') window.__bwDirty = true }} />
           <input className={field} placeholder="Amount" type="number" step="0.01" value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} />
           <label className="block text-[11px] font-mono uppercase text-[#6B6E72]">Due
             <input type="date" className={field + " mt-1"} value={form.due_date} onChange={(e) => setForm({ ...form, due_date: e.target.value })} />

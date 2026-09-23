@@ -98,7 +98,13 @@ function SwipeBack({ onBack, children, className = '', disabled = false, fromAny
     // Rightward swipe; edge is more forgiving, mid-screen needs a clearer gesture
     const quick = dt < 320 && dx > (fromEdge ? 40 : 72)
     const long = dx >= (fromEdge ? MIN_DX : 96)
-    if ((quick || long) && dx > Math.abs(dy) * (fromEdge ? 1.2 : 1.6)) onBack()
+    if ((quick || long) && dx > Math.abs(dy) * (fromEdge ? 1.2 : 1.6)) {
+      if (typeof window !== 'undefined' && window.__bwDirty) {
+        if (!window.confirm('Leave without saving?')) return
+        window.__bwDirty = false
+      }
+      onBack()
+    }
   }
   return (
     <div
@@ -188,11 +194,21 @@ export default function Dashboard({ session, profile, company, onCompanyUpdate, 
   const [showNew, setShowNew] = useState(false)
   const [showAdmin, setShowAdmin] = useState(false)
   const [showPassword, setShowPassword] = useState(false)
-  const [showCalendar, setShowCalendar] = useState(false)
+  const [whatsNew, setWhatsNew] = useState(() => {
+    try { return localStorage.getItem('bw_whats_new') !== '2026-09-22' } catch { return false }
+  })
+  const initialTab = (() => {
+    try {
+      const s = localStorage.getItem('bw_home_tab')
+      if (s && ['projects', 'calendar', 'users', 'assistant'].includes(s)) return s
+    } catch {}
+    return profile?.role === 'team' ? 'calendar' : 'projects'
+  })()
+  const [showCalendar, setShowCalendar] = useState(initialTab === 'calendar')
   const [showPlatform, setShowPlatform] = useState(false)
   const [showFeedback, setShowFeedback] = useState(false)
   const [showWeek, setShowWeek] = useState(false)
-  const [homeTab, setHomeTab] = useState('projects')
+  const [homeTab, setHomeTab] = useState(initialTab)
   const [menuOpen, setMenuOpen] = useState(false)
   const [showHelp, setShowHelp] = useState(false)
   const [headerCompany, setHeaderCompany] = useState(company)
@@ -211,6 +227,7 @@ export default function Dashboard({ session, profile, company, onCompanyUpdate, 
 
   const goTab = (tab) => {
     setHomeTab(tab)
+    try { localStorage.setItem('bw_home_tab', tab) } catch {}
     setShowCalendar(tab === 'calendar')
     setShowWeek(tab === 'week')
     setShowAdmin(tab === 'users')
@@ -404,7 +421,8 @@ export default function Dashboard({ session, profile, company, onCompanyUpdate, 
     }
     if (searchQ.trim()) {
       const q = searchQ.trim().toLowerCase()
-      const hay = (p.address || '') + ' ' + (p.style || '')
+      const phases = (p.phases || []).map((ph) => ph.name || '').join(' ')
+      const hay = (p.address || '') + ' ' + (p.style || '') + ' ' + phases
       if (!hay.toLowerCase().includes(q)) return false
     }
     return true
@@ -1403,7 +1421,37 @@ export default function Dashboard({ session, profile, company, onCompanyUpdate, 
               )}
             </div>
 
-            
+
+            {whatsNew && (
+              <div className="mb-4 border border-black rounded-md p-3 text-sm flex justify-between gap-3">
+                <div>Inspections, offline jobs, and a faster home list are in this version.</div>
+                <button type="button" className="underline flex-shrink-0" onClick={() => { setWhatsNew(false); try { localStorage.setItem('bw_whats_new', '2026-09-22') } catch {} }}>Got it</button>
+              </div>
+            )}
+            {isAdmin && (() => {
+              const today = new Date().toISOString().slice(0, 10)
+              const items = []
+              projects.forEach((pr) => {
+                if (pr.archived) return
+                ;(pr.change_orders || []).forEach((c) => {
+                  if (['pending', 'quoted'].includes(c.status || '')) items.push({ id: 'co-' + c.id, label: pr.address + ' · change order', projectId: pr.id })
+                })
+                ;(pr.phases || []).forEach((ph) => {
+                  if (ph.start_date === today && ph.status !== 'done') items.push({ id: 'ph-' + ph.id, label: pr.address + ' · ' + (ph.name || 'Phase') + ' starts today', projectId: pr.id })
+                })
+              })
+              if (!items.length) return null
+              return (
+                <div className="mb-4 border border-black rounded-md p-3">
+                  <div className="text-[11px] font-mono uppercase text-[#6B6E72] mb-2">Needs you</div>
+                  <div className="space-y-1">
+                    {items.slice(0, 6).map((it) => (
+                      <button key={it.id} type="button" className="w-full text-left text-sm py-1" onClick={() => setActiveId(it.projectId)}>{it.label}</button>
+                    ))}
+                  </div>
+                </div>
+              )
+            })()}
         {!isCustomer && (
           <div className="mb-4 space-y-2">
             <div className="relative">
@@ -1411,7 +1459,7 @@ export default function Dashboard({ session, profile, company, onCompanyUpdate, 
               <input
                 value={searchQ}
                 onChange={(e) => setSearchQ(e.target.value)}
-                placeholder="Search address"
+                placeholder="Search address or phase"
                 className="w-full border border-black rounded pl-9 pr-3 py-2 text-sm"
               />
             </div>
@@ -1490,6 +1538,13 @@ export default function Dashboard({ session, profile, company, onCompanyUpdate, 
                           {doneCount} of {phases.length} phases complete
                           {phases.length > 0 ? ` · ${Math.round((doneCount / phases.length) * 100)}%` : ''}
                         </div>
+                        {(() => {
+                          const dates = [p.start_date, p.end_date].concat(phases.flatMap((ph) => [ph.start_date, ph.end_date])).filter(Boolean).sort()
+                          const today = new Date().toISOString().slice(0, 10)
+                          const next = dates.find((d) => d >= today) || dates[dates.length - 1]
+                          if (!next) return null
+                          return <div className="text-[11px] text-[#6B6E72] mt-0.5">Next {next}</div>
+                        })()}
                         {isCustomer && (() => {
                           const active = phases.find((ph) => ph.status === 'active')
                           const recent = (p.change_orders || []).filter((c) => ['quoted', 'pending'].includes(c.status || ''))
@@ -1866,6 +1921,36 @@ function ProjectMeetingsPage({ project, profile, isAdmin, isCustomer, companyUse
   )
 }
 
+
+function CalendarInspectionAdd({ selected, projects, profile, onSaved }) {
+  const [title, setTitle] = useState('')
+  const [projectId, setProjectId] = useState(projects[0]?.id || '')
+  const add = async (e) => {
+    e.preventDefault()
+    if (!title.trim() || !projectId) return
+    const { error } = await supabase.from('permits').insert({
+      company_id: profile.company_id,
+      project_id: projectId,
+      title: title.trim(),
+      inspection_on: selected,
+      result: 'pending',
+    })
+    if (error) { alert(error.message); return }
+    setTitle('')
+    onSaved?.()
+  }
+  return (
+    <form onSubmit={add} className="w-full border border-black rounded-md p-3 space-y-2">
+      <div className="text-[11px] font-mono uppercase text-[#6B6E72]">Inspection on this day</div>
+      <select className="w-full border border-black rounded px-3 py-2 text-sm" value={projectId} onChange={(e) => setProjectId(e.target.value)}>
+        {(projects || []).map((pr) => <option key={pr.id} value={pr.id}>{pr.address}</option>)}
+      </select>
+      <input className="w-full border border-black rounded px-3 py-2 text-sm" placeholder="Inspection name" value={title} onChange={(e) => { setTitle(e.target.value); if (typeof window !== 'undefined') window.__bwDirty = !!e.target.value }} />
+      <button type="submit" className="w-full py-2.5 bg-black text-white rounded text-sm">Add inspection</button>
+    </form>
+  )
+}
+
 function AdminCalendarView({ projects, role, profile, onBack, onOpenProject, hideBack }) {
   const today = new Date()
   const [year, setYear] = useState(today.getFullYear())
@@ -2173,12 +2258,15 @@ function AdminCalendarView({ projects, role, profile, onBack, onOpenProject, hid
         <button
           type="button"
           onClick={() => setShowSchedule(true)}
-          className="w-full py-3 px-4 rounded border border-black bg-white text-left flex items-center gap-3 hover:bg-[#F5F5F5]"
+          className="w-full py-4 px-4 rounded border border-black bg-white text-left flex items-center gap-3 hover:bg-[#F5F5F5] min-h-[56px] mb-2"
         >
           <Clock size={16} />
-          <span className="flex-1 text-sm font-medium">Schedule a meeting</span>
+          <span className="flex-1 text-sm font-medium">Meeting on this day</span>
           <ChevronRight size={16} className="text-[#8A8D91]" />
         </button>
+      )}
+      {isAdmin && (projects || []).length > 0 && (
+        <CalendarInspectionAdd selected={selected} projects={projects} profile={profile} onSaved={loadMeetings} />
       )}
     </SwipeBack>
   )
@@ -3661,7 +3749,7 @@ function ProjectNavRow({ icon, label, count, extra, onClick }) {
     <button
       type="button"
       onClick={onClick}
-      className="w-full py-3 px-4 rounded border border-black bg-white text-left flex items-center gap-3 hover:bg-[#F5F5F5]"
+      className="w-full py-4 px-4 rounded border border-black bg-white text-left flex items-center gap-3 hover:bg-[#F5F5F5] min-h-[56px]"
     >
       <span className="text-black">{icon}</span>
       <span className="flex-1 text-sm font-medium">{label}</span>
@@ -4541,7 +4629,7 @@ className={`bg-white border border-black rounded-md flex items-stretch overflow-
         {isAdmin && (
           <button
             type="button"
-            className="w-full py-3 px-4 rounded border border-black bg-white text-left flex items-center gap-3 hover:bg-[#F5F5F5]"
+            className="w-full py-4 px-4 rounded border border-black bg-white text-left flex items-center gap-3 hover:bg-[#F5F5F5] min-h-[56px]"
             onClick={async () => {
               if (!project.archived && !confirm('Archive this project? You can restore it from Archived.')) return
               await supabase.from('projects').update({ archived: !project.archived }).eq('id', project.id)
@@ -4557,7 +4645,7 @@ className={`bg-white border border-black rounded-md flex items-stretch overflow-
         {isAdmin && project.status === 'done' && !(project.phases || []).some((ph) => /punch/i.test(ph.name || '')) && (
           <button
             type="button"
-            className="w-full py-3 px-4 rounded border border-black bg-white text-left flex items-center gap-3 hover:bg-[#F5F5F5]"
+            className="w-full py-4 px-4 rounded border border-black bg-white text-left flex items-center gap-3 hover:bg-[#F5F5F5] min-h-[56px]"
             onClick={async () => {
               if (!confirm('Add a Punch List / Warranty phase to this completed project?')) return
               const maxOrder = Math.max(0, ...(project.phases || []).map((ph) => ph.sort_order || 0))
@@ -5399,10 +5487,13 @@ function PhaseDetail({ phase, project, isAdmin, canUpload, isCustomer, profile, 
   const [uploadingPhaseFile, setUploadingPhaseFile] = useState(false)
   const [showMarkup, setShowMarkup] = useState(false)
   const [phasePage, setPhasePage] = useState(null)
+  const [pendingPreviews, setPendingPreviews] = useState([])
+  const [undoPhoto, setUndoPhoto] = useState(null)
+  const undoTimer = useRef(null)
   const markupCanvasRef = useRef(null)
   const markupDrawing = useRef(false)
   const touchX = useRef(null)
-  const photos = (phase.photos || []).slice().sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0))
+  const photos = (phase.photos || []).slice().sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0)).filter((p) => p.id !== undoPhoto?.id)
   const phaseFiles = phase.phase_files || []
   const showPhaseFiles = isAdmin || (!isCustomer && canUpload)
 
@@ -5558,6 +5649,7 @@ function PhaseDetail({ phase, project, isAdmin, canUpload, isCustomer, profile, 
     }
 
     setUploading(true)
+    setPendingPreviews(files.filter((f) => (f.type || '').startsWith('image/')).map((f) => URL.createObjectURL(f)))
     const cap = caption || null
     const tag = photoTag || null
     setCaption('')
@@ -5633,6 +5725,7 @@ function PhaseDetail({ phase, project, isAdmin, canUpload, isCustomer, profile, 
     }
 
     setUploading(false)
+    setPendingPreviews([])
     if (ok) {
       await logActivity('uploaded media', ok + ' file' + (ok > 1 ? 's' : ''), project.id, phase.name)
       onReload()
@@ -5725,18 +5818,19 @@ function PhaseDetail({ phase, project, isAdmin, canUpload, isCustomer, profile, 
 
   const deletePhoto = async (photo) => {
     if (!isAdmin) return
-    if (!confirm('Delete this media?')) return
-    try {
-      if (photo.storage_path) {
-        await supabase.storage.from('project-photos').remove([photo.storage_path])
+    setLightboxIdx(null)
+    setUndoPhoto(photo)
+    if (undoTimer.current) clearTimeout(undoTimer.current)
+    undoTimer.current = setTimeout(async () => {
+      try {
+        if (photo.storage_path) await supabase.storage.from('project-photos').remove([photo.storage_path])
+        await supabase.from('photos').delete().eq('id', photo.id)
+      } catch (err) {
+        alert(err.message || 'Could not delete')
       }
-      const { error } = await supabase.from('photos').delete().eq('id', photo.id)
-      if (error) throw error
-      setLightboxIdx(null)
+      setUndoPhoto(null)
       onReload()
-    } catch (err) {
-      alert(err.message || 'Could not delete')
-    }
+    }, 5000)
   }
 
   const shareMedia = async (photo) => {
@@ -6143,6 +6237,20 @@ function PhaseDetail({ phase, project, isAdmin, canUpload, isCustomer, profile, 
             </label>
           </div>
         </div>
+        {pendingPreviews.length > 0 && (
+          <div className="grid grid-cols-3 gap-2 mt-3">
+            {pendingPreviews.map((src) => (
+              <img key={src} src={src} alt="" className="w-full h-20 object-cover rounded border border-black opacity-80" />
+            ))}
+          </div>
+        )}
+      )}
+
+      {undoPhoto && (
+        <div className="mb-3 border border-black rounded px-3 py-2 text-sm flex justify-between gap-2">
+          <span>Photo removed</span>
+          <button type="button" className="underline" onClick={() => { if (undoTimer.current) clearTimeout(undoTimer.current); setUndoPhoto(null) }}>Undo</button>
+        </div>
       )}
 
       {uploading && (
@@ -6195,7 +6303,7 @@ function PhaseDetail({ phase, project, isAdmin, canUpload, isCustomer, profile, 
           onTouchMove={(e) => e.stopPropagation()}
         >
           <div className="flex items-center justify-between px-4 py-3 text-white" style={{ paddingTop: 'max(0.75rem, env(safe-area-inset-top))' }}>
-            <span className="text-sm">{lightboxIdx + 1} / {photos.length}</span>
+            <span className="text-sm">{lightboxIdx + 1} of {photos.length}</span>
             <button type="button" onClick={() => setLightboxIdx(null)} className="p-2">
               <X size={22} />
             </button>
