@@ -6236,14 +6236,14 @@ function PhaseDetail({ phase, project, isAdmin, canUpload, isCustomer, profile, 
               />
             </label>
           </div>
+          {pendingPreviews.length > 0 && (
+            <div className="grid grid-cols-3 gap-2 mt-3">
+              {pendingPreviews.map((src) => (
+                <img key={src} src={src} alt="" className="w-full h-20 object-cover rounded border border-black opacity-80" />
+              ))}
+            </div>
+          )}
         </div>
-        {pendingPreviews.length > 0 && (
-          <div className="grid grid-cols-3 gap-2 mt-3">
-            {pendingPreviews.map((src) => (
-              <img key={src} src={src} alt="" className="w-full h-20 object-cover rounded border border-black opacity-80" />
-            ))}
-          </div>
-        )}
       )}
 
       {undoPhoto && (
