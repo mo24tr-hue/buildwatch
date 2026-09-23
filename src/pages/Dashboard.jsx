@@ -19,6 +19,7 @@ import {
   SetupWizard,
 } from '../components/ContractorPack'
 import { isPlatformAdmin } from '../lib/platform'
+import { companyAccess, trialLabel } from '../lib/billing'
 
 const QUEUE_KEY = 'ay_upload_queue'
 
@@ -222,6 +223,8 @@ export default function Dashboard({ session, profile, company, onCompanyUpdate, 
 
   const isAdmin = profile?.role === 'admin'
   const isCustomer = profile?.role === 'customer'
+  const billing = companyAccess(headerCompany || company)
+  const billingLocked = !billing.ok
   const platformAdmin = isPlatformAdmin(profile)
   const canUpload = profile?.role === 'admin' || profile?.role === 'team'
 
@@ -246,7 +249,7 @@ export default function Dashboard({ session, profile, company, onCompanyUpdate, 
     if (!profile?.company_id) return
     const { data, error } = await supabase
       .from('companies')
-      .select('id, name, logo_url, app_share_url, header_color, onboarding_complete')
+      .select('id, name, logo_url, app_share_url, header_color, onboarding_complete, plan, trial_ends_at, billing_exempt')
       .eq('id', profile.company_id)
       .maybeSingle()
     if (error) {
@@ -1161,6 +1164,12 @@ export default function Dashboard({ session, profile, company, onCompanyUpdate, 
         </div>
       </header>
 
+      {isAdmin && (headerCompany || company) && trialLabel(headerCompany || company) && (
+        <div className={'text-center text-sm px-4 py-2 border-b ' + (billingLocked ? 'bg-[#FDF2F0] border-[#B5533C]' : 'bg-[#F5F5F5] border-black')}>
+          {trialLabel(headerCompany || company)}
+          {billingLocked ? ' — new projects are paused until this company is marked paid or complimentary.' : ''}
+        </div>
+      )}
       {!online && (
         <div className="bg-[#E9E9E7] border-b border-black text-center text-sm px-4 py-2">
           Offline — showing saved jobs. Changes wait until you are back online.
@@ -1413,7 +1422,7 @@ export default function Dashboard({ session, profile, company, onCompanyUpdate, 
               </span>
               {isAdmin && (
                 <button
-                  onClick={() => setShowNew(true)}
+                  onClick={() => { if (billingLocked) { alert('Trial ended. Ask BuildWatch to mark this company paid or complimentary.'); return } setShowNew(true) }}
                   className="flex items-center gap-1.5 bg-black text-white text-sm font-medium px-3 py-2 rounded"
                 >
                   <Plus size={16} /> New project
@@ -1497,7 +1506,7 @@ export default function Dashboard({ session, profile, company, onCompanyUpdate, 
                       : 'No projects yet.'}
                 </p>
                 {isAdmin && (
-                  <button onClick={() => setShowNew(true)} className="text-sm font-medium text-white bg-black px-4 py-2 rounded">
+                  <button onClick={() => { if (billingLocked) { alert('Trial ended. Ask BuildWatch to mark this company paid or complimentary.'); return } setShowNew(true) }} className="text-sm font-medium text-white bg-black px-4 py-2 rounded">
                     Start a project
                   </button>
                 )}

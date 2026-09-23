@@ -3,6 +3,7 @@ import { Building2, MessageSquare, Users, FolderKanban, LogOut, RefreshCw } from
 import { supabase } from '../lib/supabase'
 import { FEEDBACK_EMAIL } from '../lib/platform'
 import { fmtDateTime } from '../lib/styles'
+import { companyAccess, trialLabel } from '../lib/billing'
 
 /**
  * Platform owner screen: companies + feedback.
@@ -24,7 +25,7 @@ export default function PlatformAdmin({ profile, session, onLogout, onOpenWorksp
     try {
       const { data: comps, error: cErr } = await supabase
         .from('companies')
-        .select('id, name, logo_url, created_at')
+        .select('id, name, logo_url, created_at, plan, trial_ends_at, billing_exempt')
         .order('created_at', { ascending: false })
       if (cErr) throw cErr
 
@@ -92,6 +93,15 @@ export default function PlatformAdmin({ profile, session, onLogout, onOpenWorksp
           : f
       )
     )
+  }
+
+  const setBilling = async (id, patch) => {
+    const { error: uErr } = await supabase.from('companies').update(patch).eq('id', id)
+    if (uErr) {
+      alert(uErr.message)
+      return
+    }
+    load()
   }
 
   const openWorkspace = async () => {
@@ -237,6 +247,30 @@ export default function PlatformAdmin({ profile, session, onLogout, onOpenWorksp
                           <FolderKanban size={14} /> {c.projectCount} project
                           {c.projectCount !== 1 ? 's' : ''}
                         </span>
+                      </div>
+                      <div className="text-xs mt-2">{trialLabel(c) || companyAccess(c).plan}</div>
+                      <div className="flex flex-wrap gap-2 mt-3">
+                        <button
+                          type="button"
+                          className="text-xs border border-black rounded px-2 py-1.5"
+                          onClick={() => setBilling(c.id, { billing_exempt: !c.billing_exempt, plan: c.billing_exempt ? (c.plan || 'trial') : 'free' })}
+                        >
+                          {c.billing_exempt ? 'Revoke free use' : 'Grant free use'}
+                        </button>
+                        <button
+                          type="button"
+                          className="text-xs border border-black rounded px-2 py-1.5"
+                          onClick={() => setBilling(c.id, { plan: 'paid', billing_exempt: false })}
+                        >
+                          Mark paid
+                        </button>
+                        <button
+                          type="button"
+                          className="text-xs border border-black rounded px-2 py-1.5"
+                          onClick={() => setBilling(c.id, { plan: 'trial', trial_ends_at: new Date(Date.now() + 14 * 86400000).toISOString(), billing_exempt: false })}
+                        >
+                          +14 day trial
+                        </button>
                       </div>
                     </div>
                   </div>
