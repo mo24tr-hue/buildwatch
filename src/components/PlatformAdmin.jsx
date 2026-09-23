@@ -95,6 +95,16 @@ export default function PlatformAdmin({ profile, session, onLogout, onOpenWorksp
     )
   }
 
+  const deleteCompany = async (c) => {
+    if (!confirm('Delete company "' + (c.name || 'Untitled') + '" and all of its jobs? This cannot be undone.')) return
+    const { error: dErr } = await supabase.from('companies').delete().eq('id', c.id)
+    if (dErr) {
+      alert(dErr.message)
+      return
+    }
+    setCompanies((prev) => prev.filter((x) => x.id !== c.id))
+  }
+
   const setBilling = async (id, patch) => {
     const { error: uErr } = await supabase.from('companies').update(patch).eq('id', id)
     if (uErr) {
@@ -255,7 +265,7 @@ export default function PlatformAdmin({ profile, session, onLogout, onOpenWorksp
                           className="text-xs border border-black rounded px-2 py-1.5"
                           onClick={() => setBilling(c.id, { billing_exempt: !c.billing_exempt, plan: c.billing_exempt ? (c.plan || 'trial') : 'free' })}
                         >
-                          {c.billing_exempt ? 'Revoke free use' : 'Grant free use'}
+                          {c.billing_exempt ? 'Remove free access' : 'Make free'}
                         </button>
                         <button
                           type="button"
@@ -270,6 +280,13 @@ export default function PlatformAdmin({ profile, session, onLogout, onOpenWorksp
                           onClick={() => setBilling(c.id, { plan: 'trial', trial_ends_at: new Date(Date.now() + 14 * 86400000).toISOString(), billing_exempt: false })}
                         >
                           +14 day trial
+                        </button>
+                        <button
+                          type="button"
+                          className="text-xs border border-[#B5533C] text-[#B5533C] rounded px-2 py-1.5"
+                          onClick={() => deleteCompany(c)}
+                        >
+                          Delete company
                         </button>
                       </div>
                     </div>

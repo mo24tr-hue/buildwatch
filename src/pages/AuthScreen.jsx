@@ -12,6 +12,7 @@ export default function AuthScreen() {
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   const [message, setMessage] = useState('')
+  const [acceptTrial, setAcceptTrial] = useState(false)
 
   const goChoose = () => {
     setMode('choose')
@@ -126,6 +127,11 @@ export default function AuthScreen() {
           setLoading(false)
           return
         }
+        if (!acceptTrial) {
+          setError('Accept the 14-day trial to start a company.')
+          setLoading(false)
+          return
+        }
         const { data, error: err } = await supabase.auth.signUp({
           email: cleanEmail,
           password,
@@ -165,7 +171,7 @@ export default function AuthScreen() {
         ? 'Enter your email to receive a reset link'
         : mode === 'join'
         ? 'Use the email and one-time password from your admin'
-        : 'Create a private workspace. You will be the admin.'
+        : '14-day free trial. Then the workspace pauses unless you subscribe or BuildWatch comps the company.'
 
   return (
     <div className="min-h-screen bg-white flex flex-col">
@@ -270,6 +276,12 @@ export default function AuthScreen() {
                     placeholder="••••••••"
                   />
                 </div>
+                )}
+                {mode === 'signup' && (
+                  <label className="flex items-start gap-2 text-sm text-[#6B6E72]">
+                    <input type="checkbox" className="mt-1" checked={acceptTrial} onChange={(e) => setAcceptTrial(e.target.checked)} />
+                    <span>I understand this company gets 14 days free. After that, new projects pause until the company is paid or marked complimentary.</span>
+                  </label>
                 )}
                 {error && (
                   <div className="flex items-start gap-1.5 text-[#B5533C] text-xs">

@@ -7,6 +7,7 @@ export default function SetupCompany({ user, profile, onDone }) {
   const [loading, setLoading] = useState(false)
   const [checkingInvite, setCheckingInvite] = useState(true)
   const [inviteMsg, setInviteMsg] = useState('')
+  const [acceptTrial, setAcceptTrial] = useState(false)
 
   useEffect(() => {
     let cancelled = false
@@ -51,6 +52,10 @@ export default function SetupCompany({ user, profile, onDone }) {
     const companyName = name.trim()
     if (!companyName) {
       setError('Enter your company name.')
+      return
+    }
+    if (!acceptTrial) {
+      setError('Accept the 14-day trial to create a company.')
       return
     }
     setLoading(true)
@@ -113,6 +118,10 @@ export default function SetupCompany({ user, profile, onDone }) {
               autoFocus
             />
           </div>
+          <label className="flex items-start gap-2 text-sm text-[#6B6E72]">
+            <input type="checkbox" className="mt-1" checked={acceptTrial} onChange={(e) => setAcceptTrial(e.target.checked)} />
+            <span>14-day free trial. After that this workspace pauses unless it is paid or BuildWatch marks it complimentary.</span>
+          </label>
           {error && <p className="text-xs text-[#B5533C]">{error}</p>}
           <button type="submit" disabled={loading} className="w-full py-2.5 rounded text-sm font-medium text-white bg-black disabled:opacity-50">
             {loading ? 'Creating…' : 'Create company workspace'}

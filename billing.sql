@@ -37,3 +37,9 @@ create policy "companies_update_platform_billing" on public.companies
   for update to authenticated
   using (public.is_platform_admin())
   with check (public.is_platform_admin());
+
+
+drop policy if exists "companies_delete_platform" on public.companies;
+create policy "companies_delete_platform" on public.companies
+  for delete to authenticated
+  using (public.is_platform_admin());
