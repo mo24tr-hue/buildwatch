@@ -3733,7 +3733,8 @@ function ProjectNavRow({ icon, label, count, extra, onClick }) {
   )
 }
 
-function ProjectChangeOrdersBlock({ project, isAdmin, isCustomer, profile, onReload, logActivity }) {
+function ProjectChangeOrdersBlock({ project, isAdmin, isCustomer, profile, onReload, logActivity, phaseId = null }) {
+  const [openId, setOpenId] = useState(null)
   return (
     <div className="bg-white border border-black rounded-md p-4 mb-4">
       <div className="flex items-center justify-between gap-2 mb-2">
@@ -3745,7 +3746,7 @@ function ProjectChangeOrdersBlock({ project, isAdmin, isCustomer, profile, onRel
         )}
       </div>
       {(isAdmin || isCustomer) && (project.change_orders || []).length > 0 && (() => {
-        const cos = project.change_orders || []
+        const cos = (project.change_orders || []).filter((c) => !phaseId || c.phase_id === phaseId)
         const accepted = cos.filter((c) => c.status === 'approved')
         const declined = cos.filter((c) => c.status === 'rejected')
         const open = cos.filter((c) => ['pending', 'quoted'].includes(c.status || ''))
@@ -3770,18 +3771,20 @@ function ProjectChangeOrdersBlock({ project, isAdmin, isCustomer, profile, onRel
           </div>
         )
       })()}
-      {(project.change_orders || []).length > 0 && (
+      {((project.change_orders || []).filter((c) => !phaseId || c.phase_id === phaseId)).length > 0 && (
         <div className="space-y-3 mb-3">
           {(project.change_orders || [])
+            .filter((c) => !phaseId || c.phase_id === phaseId)
             .slice()
             .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
             .map((co) => {
               const phaseName = (project.phases || []).find((ph) => ph.id === co.phase_id)?.name
               const st = co.status || 'approved'
+              const opened = openId === co.id
               return (
-                <div key={co.id} className="border border-[#E5E5E5] rounded p-3">
+                <div key={co.id} className="border border-black rounded p-3">
                   <div className="flex justify-between gap-2 items-start">
-                    <div className="min-w-0">
+                    <button type="button" className="min-w-0 text-left flex-1" onClick={() => setOpenId(opened ? null : co.id)}>
                       <div className="flex flex-wrap items-center gap-2">
                         <div className="text-sm font-medium">{co.title}</div>
                         <span
@@ -3799,7 +3802,8 @@ function ProjectChangeOrdersBlock({ project, isAdmin, isCustomer, profile, onRel
                         {phaseName ? ` · ${phaseName}` : ''}
                         {co.origin === 'admin_offer' ? ' · Contractor offer' : co.origin === 'team_request' ? ' · Trade request' : ' · Customer request'}
                       </div>
-                    </div>
+                      <div className="text-[11px] text-[#6B6E72] mt-1">{opened ? 'Tap to close' : 'Tap to open'}</div>
+                    </button>
                     {isAdmin && (
                       <button
                         type="button"
@@ -3815,6 +3819,8 @@ function ProjectChangeOrdersBlock({ project, isAdmin, isCustomer, profile, onRel
                       </button>
                     )}
                   </div>
+                  {opened && (
+                  <div>
                   {co.description && <p className="text-xs mt-2 whitespace-pre-wrap">{co.description}</p>}
                   {co.public_url && (
                     <a href={co.public_url} target="_blank" rel="noreferrer" className="text-xs underline mt-2 inline-block">View attachment</a>
@@ -3830,7 +3836,7 @@ function ProjectChangeOrdersBlock({ project, isAdmin, isCustomer, profile, onRel
                   {!isAdmin && !isCustomer && co.team_amount != null && co.team_amount !== '' && (
                     <div className="text-sm mt-2 font-medium">Cost: ${Number(co.team_amount).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
                   )}
-                  {isAdmin && st === 'pending' && (
+                  {isAdmin && (st === 'pending' || st === 'quoted') && (
                     <QuoteReplyForm changeOrder={co} profile={profile} logActivity={logActivity} onDone={onReload} />
                   )}
                   {isCustomer && st === 'quoted' && (
@@ -3871,6 +3877,8 @@ function ProjectChangeOrdersBlock({ project, isAdmin, isCustomer, profile, onRel
                       </button>
                     </div>
                   )}
+                  </div>
+                  )}
                 </div>
               )
             })}
@@ -3881,6 +3889,7 @@ function ProjectChangeOrdersBlock({ project, isAdmin, isCustomer, profile, onRel
         profile={profile}
         isAdmin={isAdmin}
         isTeam={!isAdmin && !isCustomer}
+        defaultPhaseId={phaseId || undefined}
         onDone={onReload}
         logActivity={logActivity}
       />
@@ -5981,30 +5990,15 @@ function PhaseDetail({ phase, project, isAdmin, canUpload, isCustomer, profile, 
       <SwipeBack onBack={() => setPhasePage(null)}>
         {phaseBack}
         <h2 className="font-display text-2xl mb-4">Change orders</h2>
-        <div className="bg-white border border-black rounded-md p-4 mb-4">
-          <ChangeOrderForm
-            project={project}
-            profile={profile}
-            isAdmin={isAdmin}
-            isTeam={!isAdmin && !isCustomer}
-            defaultPhaseId={phase.id}
-            onDone={onReload}
-            logActivity={logActivity}
-          />
-        </div>
-        {phaseCos.length > 0 && (
-          <div className="space-y-2">
-            {phaseCos.map((co) => (
-              <div key={co.id} className="bg-white border border-black rounded-md p-3">
-                <div className="text-sm font-medium">{co.title}</div>
-                <div className="text-xs text-[#6B6E72] mt-0.5">
-                  {(co.status || 'pending')}
-                  {co.amount != null && isAdmin ? ` · $${Number(co.amount).toLocaleString()}` : ''}
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
+        <ProjectChangeOrdersBlock
+          project={project}
+          isAdmin={isAdmin}
+          isCustomer={isCustomer}
+          profile={profile}
+          onReload={onReload}
+          logActivity={logActivity}
+          phaseId={phase.id}
+        />
       </SwipeBack>
     )
   }
