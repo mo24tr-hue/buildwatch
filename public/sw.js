@@ -1,5 +1,5 @@
 /* PWA service worker — safe fetch handling (never return null) */
-const CACHE = 'BuildWatch-v7'
+const CACHE = 'BuildWatch-v8'
 
 self.addEventListener('install', (event) => {
   self.skipWaiting()
@@ -96,6 +96,10 @@ self.addEventListener('notificationclick', (event) => {
 })
 
 self.addEventListener('message', (event) => {
+  if (event.data && event.data.type === 'SKIP_WAITING') {
+    self.skipWaiting()
+    return
+  }
   if (event.data && event.data.type === 'show-notification') {
     const { title, body, data } = event.data
     event.waitUntil(
