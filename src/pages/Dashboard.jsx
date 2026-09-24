@@ -212,6 +212,7 @@ export default function Dashboard({ session, profile, company, onCompanyUpdate, 
   const [homeTab, setHomeTab] = useState(initialTab)
   const [menuOpen, setMenuOpen] = useState(false)
   const [showHelp, setShowHelp] = useState(false)
+  const [showBilling, setShowBilling] = useState(false)
   const [headerCompany, setHeaderCompany] = useState(company)
   const [searchQ, setSearchQ] = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
@@ -238,6 +239,7 @@ export default function Dashboard({ session, profile, company, onCompanyUpdate, 
     setShowPlatform(false)
     setShowFeedback(false)
     setShowHelp(false)
+    setShowBilling(false)
     setShowNotifs(false)
     setShowNew(false)
     setActiveId(null)
@@ -1121,6 +1123,27 @@ export default function Dashboard({ session, profile, company, onCompanyUpdate, 
                       className="w-full text-left px-3 py-2.5 text-sm hover:bg-[#F5F5F5]"
                       onClick={() => {
                         setMenuOpen(false)
+                        setShowBilling(true)
+                        setShowPassword(false)
+                        setShowAdmin(false)
+                        setShowCalendar(false)
+                        setShowWeek(false)
+                        setShowPlatform(false)
+                        setShowFeedback(false)
+                        setShowHelp(false)
+                        setActiveId(null)
+                        setShowNew(false)
+                      }}
+                    >
+                      Plan status
+                    </button>
+                  )}
+                  {isAdmin && (
+                    <button
+                      type="button"
+                      className="w-full text-left px-3 py-2.5 text-sm hover:bg-[#F5F5F5]"
+                      onClick={() => {
+                        setMenuOpen(false)
                         setShowHelp(true)
                         setShowPassword(false)
                         setShowAdmin(false)
@@ -1164,11 +1187,6 @@ export default function Dashboard({ session, profile, company, onCompanyUpdate, 
         </div>
       </header>
 
-      {isAdmin && (headerCompany || company) && trialLabel(headerCompany || company) && (
-        <div className={'text-center text-sm px-4 py-2 border-b ' + (billingLocked ? 'bg-[#FDF2F0] border-[#B5533C]' : 'bg-[#F5F5F5] border-black')}>
-          <div>{trialLabel(headerCompany || company)}{billingLocked ? ' — new projects pause until this company is marked paid or complimentary.' : ''}</div>
-        </div>
-      )}
       {!online && (
         <div className="bg-[#E9E9E7] border-b border-black text-center text-sm px-4 py-2">
           Offline — showing saved jobs. Changes wait until you are back online.
@@ -1322,6 +1340,21 @@ export default function Dashboard({ session, profile, company, onCompanyUpdate, 
             companyUsers={[]}
             onBack={() => setPackPage(null)}
           />
+        ) : showBilling && isAdmin ? (
+          <SwipeBack onBack={() => setShowBilling(false)}>
+            <button type="button" onClick={() => setShowBilling(false)} className="flex items-center gap-1 text-sm text-[#6B6E72] mb-4">
+              <ChevronLeft size={16} /> Back
+            </button>
+            <h2 className="font-display text-2xl mb-4">Plan status</h2>
+            <div className="border border-black rounded-md p-4 space-y-2">
+              <div className="text-[11px] font-mono uppercase text-[#6B6E72]">This company</div>
+              <div className="font-medium">{(headerCompany || company)?.name || 'Company'}</div>
+              <div className="text-sm mt-2">{trialLabel(headerCompany || company) || (billing.plan === 'legacy' ? 'Active' : billing.plan)}</div>
+              {billingLocked && (
+                <p className="text-sm text-[#B5533C] mt-2">New projects are paused until this company is marked paid or complimentary.</p>
+              )}
+            </div>
+          </SwipeBack>
         ) : showHelp ? (
           <InviteHelpGuide
             company={headerCompany || company}
