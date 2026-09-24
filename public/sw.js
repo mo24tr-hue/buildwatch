@@ -1,5 +1,5 @@
 /* PWA service worker — safe fetch handling (never return null) */
-const CACHE = 'BuildWatch-v8'
+const CACHE = 'BuildWatch-v9'
 
 self.addEventListener('install', (event) => {
   self.skipWaiting()
@@ -25,7 +25,7 @@ self.addEventListener('fetch', (event) => {
 
   const url = new URL(req.url)
   // Bypass Supabase / external APIs — go straight to network
-  if (url.hostname.includes('supabase') || url.pathname.startsWith('/auth')) {
+  if (url.hostname.includes('supabase') || url.pathname.startsWith('/auth') || url.pathname.endsWith('/version.json')) {
     return
   }
 
