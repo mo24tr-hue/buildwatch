@@ -1,13 +1,9 @@
-/* PWA service worker — safe fetch handling (never return null) */
-const CACHE = 'BuildWatch-v9'
+/* PWA service worker — never cache the HTML shell */
+const CACHE = 'BuildWatch-v10'
 
 self.addEventListener('install', (event) => {
   self.skipWaiting()
-  event.waitUntil(
-    caches.open(CACHE).then((cache) =>
-      cache.addAll(['/', '/manifest.webmanifest', '/icon-192.png']).catch(() => {})
-    )
-  )
+  event.waitUntil(caches.open(CACHE).catch(() => {}))
 })
 
 self.addEventListener('activate', (event) => {
@@ -20,47 +16,27 @@ self.addEventListener('activate', (event) => {
 
 self.addEventListener('fetch', (event) => {
   const req = event.request
-  // Never intercept non-GET (can break APIs / uploads)
   if (req.method !== 'GET') return
 
   const url = new URL(req.url)
-  // Bypass Supabase / external APIs — go straight to network
-  if (url.hostname.includes('supabase') || url.pathname.startsWith('/auth') || url.pathname.endsWith('/version.json')) {
-    return
-  }
-
-  if (req.mode === 'navigate') {
-    event.respondWith(
-      fetch(req)
-        .then((res) => {
-          const copy = res.clone()
-          caches.open(CACHE).then((c) => c.put(req, copy)).catch(() => {})
-          return res
-        })
-        .catch(async () => {
-          const cached = await caches.match(req)
-          if (cached) return cached
-          const fallback = await caches.match('/')
-          if (fallback) return fallback
-          return new Response('Offline', { status: 503, statusText: 'Offline', headers: { 'Content-Type': 'text/plain' } })
-        })
-    )
-    return
-  }
+  if (url.hostname.includes('supabase') || url.pathname.startsWith('/auth')) return
+  if (url.pathname.endsWith('/version.json') || url.pathname.endsWith('/sw.js')) return
+  if (req.mode === 'navigate' || url.pathname === '/' || url.pathname.endsWith('.html')) return
 
   event.respondWith(
-    caches.match(req).then((cached) => {
-      const net = fetch(req)
-        .then((res) => {
-          if (res && res.ok && url.origin === self.location.origin) {
-            const copy = res.clone()
-            caches.open(CACHE).then((c) => c.put(req, copy)).catch(() => {})
-          }
-          return res
-        })
-        .catch(() => cached || new Response('', { status: 504, statusText: 'Gateway Timeout' }))
-      return cached || net
-    })
+    fetch(req)
+      .then((res) => {
+        if (res && res.ok && url.origin === self.location.origin && url.pathname.startsWith('/assets/')) {
+          const copy = res.clone()
+          caches.open(CACHE).then((c) => c.put(req, copy)).catch(() => {})
+        }
+        return res
+      })
+      .catch(async () => {
+        const cached = await caches.match(req)
+        if (cached) return cached
+        return new Response('', { status: 504, statusText: 'Gateway Timeout' })
+      })
   )
 })
 
