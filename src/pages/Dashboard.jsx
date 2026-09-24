@@ -1166,8 +1166,7 @@ export default function Dashboard({ session, profile, company, onCompanyUpdate, 
 
       {isAdmin && (headerCompany || company) && trialLabel(headerCompany || company) && (
         <div className={'text-center text-sm px-4 py-2 border-b ' + (billingLocked ? 'bg-[#FDF2F0] border-[#B5533C]' : 'bg-[#F5F5F5] border-black')}>
-          {trialLabel(headerCompany || company)}
-          {billingLocked ? ' — new projects are paused until this company is marked paid or complimentary.' : ''}
+          <div>{trialLabel(headerCompany || company)}{billingLocked ? ' — new projects pause until this company is marked paid or complimentary.' : ''}</div>
         </div>
       )}
       {!online && (
