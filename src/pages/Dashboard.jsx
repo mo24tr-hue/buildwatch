@@ -1579,13 +1579,6 @@ export default function Dashboard({ session, profile, company, onCompanyUpdate, 
                           {doneCount} of {phases.length} phases complete
                           {phases.length > 0 ? ` · ${Math.round((doneCount / phases.length) * 100)}%` : ''}
                         </div>
-                        {(() => {
-                          const dates = [p.start_date, p.end_date].concat(phases.flatMap((ph) => [ph.start_date, ph.end_date])).filter(Boolean).sort()
-                          const today = new Date().toISOString().slice(0, 10)
-                          const next = dates.find((d) => d >= today) || dates[dates.length - 1]
-                          if (!next) return null
-                          return <div className="text-[11px] text-[#6B6E72] mt-0.5">Next {next}</div>
-                        })()}
                         {isCustomer && (() => {
                           const active = phases.find((ph) => ph.status === 'active')
                           const recent = (p.change_orders || []).filter((c) => ['quoted', 'pending'].includes(c.status || ''))
