@@ -63,13 +63,14 @@ function photoDisplayUrl(url) {
   return url
 }
 
-function SwipeBack({ onBack, children, className = '', disabled = false, fromAnywhere = true }) {
+function SwipeBack({ onBack, children, className = '', disabled = false, fromAnywhere = false }) {
   const start = useRef(null)
-  // Left edge is always active; fromAnywhere also allows a clear horizontal swipe from mid-screen
-  const EDGE = 56
-  const MIN_DX = 64
+  const EDGE = 28
+  const MIN_DX = 56
   const onTouchStart = (e) => {
     if (disabled || !onBack) return
+    const el = e.target
+    if (el && (el.closest && (el.closest('input, textarea, select, [data-no-swipe]')))) return
     const t = e.touches[0]
     const fromEdge = t.clientX <= EDGE
     if (!fromEdge && !fromAnywhere) {
@@ -83,8 +84,7 @@ function SwipeBack({ onBack, children, className = '', disabled = false, fromAny
     const t = e.touches[0]
     const dx = t.clientX - start.current.x
     const dy = t.clientY - start.current.y
-    // Cancel if clearly scrolling vertically
-    if (Math.abs(dy) > 16 && Math.abs(dy) > Math.abs(dx) * 1.05) {
+    if (Math.abs(dy) > 14 && Math.abs(dy) > Math.abs(dx) * 0.85) {
       start.current = null
     }
   }
@@ -96,10 +96,9 @@ function SwipeBack({ onBack, children, className = '', disabled = false, fromAny
     const dt = Date.now() - (start.current.t || Date.now())
     const fromEdge = start.current.fromEdge
     start.current = null
-    // Rightward swipe; edge is more forgiving, mid-screen needs a clearer gesture
-    const quick = dt < 320 && dx > (fromEdge ? 40 : 72)
-    const long = dx >= (fromEdge ? MIN_DX : 96)
-    if ((quick || long) && dx > Math.abs(dy) * (fromEdge ? 1.2 : 1.6)) {
+    const quick = dt < 280 && dx > (fromEdge ? 36 : 80)
+    const long = dx >= (fromEdge ? MIN_DX : 110)
+    if ((quick || long) && dx > Math.abs(dy) * (fromEdge ? 1.35 : 1.8)) {
       if (typeof window !== 'undefined' && window.__bwDirty) {
         if (!window.confirm('Leave without saving?')) return
         window.__bwDirty = false
@@ -1200,7 +1199,7 @@ export default function Dashboard({ session, profile, company, onCompanyUpdate, 
           </button>
         </div>
       )}
-      <main className="max-w-2xl mx-auto px-4 py-5 pb-28 w-full min-w-0 overflow-x-hidden box-border">
+      <main className="max-w-2xl mx-auto px-4 py-5 pb-28 w-full min-w-0 overflow-x-hidden box-border" style={{ WebkitOverflowScrolling: 'touch' }}>
         {showNotifs && (isAdmin || profile?.role === 'team') ? (
           <SwipeBack onBack={() => setShowNotifs(false)}>
             <button type="button" onClick={() => setShowNotifs(false)} className="flex items-center gap-1 text-sm text-[#6B6E72] mb-4">
