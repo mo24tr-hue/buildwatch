@@ -10,37 +10,49 @@ ReactDOM.createRoot(document.getElementById('root')).render(
 )
 
 const compiled = typeof __BW_BUILD__ !== 'undefined' ? String(__BW_BUILD__) : ''
+const APPLIED = 'bw_applied_build'
+const standalone =
+  (typeof window !== 'undefined' &&
+    (window.navigator.standalone === true ||
+      window.matchMedia('(display-mode: standalone)').matches))
 
 async function hardReload(next) {
-  const lock = 'bw_hard_reload_' + (next || '')
-  if (sessionStorage.getItem(lock) === '1') return
-  sessionStorage.setItem(lock, '1')
+  if (sessionStorage.getItem('bw_reloading') === '1') return
+  sessionStorage.setItem('bw_reloading', '1')
+  localStorage.setItem(APPLIED, next)
+  if (standalone) {
+    window.location.reload()
+    return
+  }
   try {
-    if ('serviceWorker' in navigator) {
-      const regs = await navigator.serviceWorker.getRegistrations()
-      await Promise.all(regs.map((r) => r.unregister()))
-    }
     if (window.caches) {
       const keys = await caches.keys()
       await Promise.all(keys.map((k) => caches.delete(k)))
     }
   } catch (_) {}
-  const url = new URL(window.location.href)
-  url.searchParams.set('bwv', next || String(Date.now()))
-  window.location.replace(url.toString())
+  window.location.reload()
 }
 
 async function checkBuild() {
   try {
-    const res = await fetch('/version.json?t=' + Date.now(), {
-      cache: 'no-store',
-      headers: { 'Cache-Control': 'no-cache', Pragma: 'no-cache' },
-    })
+    const res = await fetch('/version.json?t=' + Date.now(), { cache: 'no-store' })
     if (!res.ok) return
     const data = await res.json()
     const next = String(data.v || '')
-    if (!next) return
+    if (!next || next === 'bootstrap') return
+    if (compiled && next === compiled) {
+      localStorage.setItem(APPLIED, next)
+      return
+    }
+    const applied = localStorage.getItem(APPLIED)
+    if (applied === next && compiled && compiled !== next) {
+      // last reload did not pick up new JS; try once more after a short wait
+    }
     if (compiled && next !== compiled) {
+      await hardReload(next)
+      return
+    }
+    if (!compiled && applied && applied !== next) {
       await hardReload(next)
     }
   } catch (_) {}
@@ -53,7 +65,7 @@ if ('serviceWorker' in navigator) {
     reloading = true
     window.location.reload()
   })
-  const attach = (reg) => {
+  navigator.serviceWorker.register('/sw.js').then((reg) => {
     const kick = () => { if (reg.waiting) reg.waiting.postMessage({ type: 'SKIP_WAITING' }) }
     kick()
     reg.addEventListener('updatefound', () => {
@@ -61,18 +73,14 @@ if ('serviceWorker' in navigator) {
       if (!w) return
       w.addEventListener('statechange', () => { if (w.state === 'installed') kick() })
     })
-    setInterval(() => { reg.update().catch(() => {}) }, 15 * 1000)
-  }
-  navigator.serviceWorker.register('/sw.js').then(attach).catch(() => {})
+    setInterval(() => { reg.update().catch(() => {}) }, 20 * 1000)
+  }).catch(() => {})
 }
 
 checkBuild()
-setInterval(checkBuild, 10 * 1000)
+setInterval(checkBuild, 15 * 1000)
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'visible') checkBuild()
 })
 window.addEventListener('focus', checkBuild)
-window.addEventListener('pageshow', (e) => {
-  if (e.persisted) checkBuild()
-  else checkBuild()
-})
+window.addEventListener('pageshow', () => checkBuild())

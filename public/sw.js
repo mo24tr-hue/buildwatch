@@ -1,5 +1,5 @@
 /* PWA service worker — never cache the HTML shell */
-const CACHE = 'BuildWatch-v10'
+const CACHE = 'BuildWatch-v11'
 
 self.addEventListener('install', (event) => {
   self.skipWaiting()
