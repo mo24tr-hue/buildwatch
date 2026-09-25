@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { ChevronLeft } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { roleLabel } from '../lib/styles'
+import SwipeBack from './SwipeBack'
 
 export default function AdminPanel({ profile, company, onBack, onCompanyUpdate, digest = [], allProjects = [] }) {
   const [users, setUsers] = useState([])
@@ -307,7 +308,7 @@ export default function AdminPanel({ profile, company, onBack, onCompanyUpdate, 
   }
 
   return (
-    <div>
+    <SwipeBack onBack={onBack}>
       <button onClick={onBack} className="flex items-center gap-1 text-sm text-[#6B6E72] mb-4">
         <ChevronLeft size={16} /> Back to projects
       </button>
@@ -449,6 +450,6 @@ export default function AdminPanel({ profile, company, onBack, onCompanyUpdate, 
           </div>
         )})}
       </div>
-    </div>
+    </SwipeBack>
   )
 }

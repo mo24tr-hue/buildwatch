@@ -2,6 +2,7 @@ import { useEffect, useState, useRef } from 'react'
 import { ChevronLeft, Plus, Trash2 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { STYLES, fmtDate } from '../lib/styles'
+import SwipeBack from './SwipeBack'
 
 function money(n) {
   if (n == null || n === '' || Number.isNaN(Number(n))) return '—'
@@ -16,8 +17,10 @@ function todayYmd() {
 const field =
   'w-full max-w-full min-w-0 box-border border border-black rounded px-3 py-2 text-sm appearance-none bg-white'
 
-function Page({ children }) {
-  return <div className="w-full max-w-full min-w-0 overflow-x-hidden box-border">{children}</div>
+function Page({ children, onBack }) {
+  const inner = <div className="w-full max-w-full min-w-0 overflow-x-hidden box-border">{children}</div>
+  if (!onBack) return inner
+  return <SwipeBack onBack={onBack}>{inner}</SwipeBack>
 }
 
 function Back({ onBack, title }) {
@@ -65,7 +68,7 @@ export function DirectoryPage({ profile, onBack }) {
     load()
   }
   return (
-    <Page>
+    <Page onBack={onBack}>
       <Back onBack={onBack} title="Directory" />
       <form onSubmit={add} className="w-full max-w-full min-w-0 box-border border border-black rounded-md p-3 space-y-2 mb-4">
         <input className={field} placeholder="Name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
@@ -127,7 +130,7 @@ export function DailyLogPage({ project, profile, isAdmin, onBack }) {
     load()
   }
   return (
-    <Page>
+    <Page onBack={onBack}>
       <Back onBack={onBack} title="Daily log" />
       {isAdmin && (
         <form onSubmit={add} className="w-full max-w-full min-w-0 box-border border border-black rounded-md p-3 space-y-2 mb-4">
@@ -243,7 +246,7 @@ export function InspectionsPage({ project, profile, isAdmin, onBack }) {
   }
 
   return (
-    <Page>
+    <Page onBack={onBack}>
       <button type="button" onClick={onBack} className="flex items-center gap-1 text-sm text-[#6B6E72] mb-2">
         <ChevronLeft size={16} /> {project.address}
       </button>
@@ -383,7 +386,7 @@ export function InvoicesPage({ project, profile, isAdmin, isCustomer, onBack }) 
     } catch (_) {}
   }
   return (
-    <Page>
+    <Page onBack={onBack}>
       <Back onBack={onBack} title="Invoices" />
       {isAdmin && (
         <form onSubmit={add} className="w-full max-w-full min-w-0 box-border border border-black rounded-md p-3 space-y-2 mb-4">
@@ -431,7 +434,7 @@ export function WeekBoard({ projects, onOpenProject, onBack, hideBack }) {
     return { p, phases }
   }).filter((r) => r.phases.length || r.p.status === 'active')
   return (
-    <Page>
+    <Page onBack={hideBack ? undefined : onBack}>
       {!hideBack && <Back onBack={onBack} title="This week" />}
       {hideBack && <h2 className="font-display text-2xl mb-4">This week</h2>}
       <div className="space-y-3">
@@ -502,7 +505,7 @@ export function EstimatesPage({ profile, onBack, onOpenProject }) {
     onOpenProject?.(project.id)
   }
   return (
-    <Page>
+    <Page onBack={onBack}>
       <Back onBack={onBack} title="Estimates" />
       <form onSubmit={add} className="w-full max-w-full min-w-0 box-border border border-black rounded-md p-3 space-y-2 mb-4">
         <input className={field} placeholder="Estimate title" value={title} onChange={(e) => setTitle(e.target.value)} />
@@ -582,7 +585,7 @@ export function PlanMarkupPage({ project, profile, isAdmin, onBack }) {
   }
   const visible = pins.filter((p) => p.file_url === activeUrl)
   return (
-    <Page>
+    <Page onBack={onBack}>
       <Back onBack={onBack} title="Plan markup" />
       {!files.length ? (
         <p className="text-sm text-[#6B6E72]">Upload a plan photo under Plans & files first.</p>
@@ -648,7 +651,7 @@ export function CloseoutPage({ project, profile, isAdmin, isCustomer, onBack }) 
     } catch (_) {}
   }
   return (
-    <Page>
+    <Page onBack={onBack}>
       <Back onBack={onBack} title="Closeout" />
       {isAdmin && (
         <form onSubmit={add} className="w-full max-w-full min-w-0 box-border border border-black rounded-md p-3 space-y-2 mb-4">
@@ -718,7 +721,7 @@ export function ScheduleAsksPage({ project, profile, isAdmin, companyUsers = [],
   const phases = project?.phases || []
   const trades = (companyUsers || []).filter((u) => u.role === 'team')
   return (
-    <Page>
+    <Page onBack={onBack}>
       <Back onBack={onBack} title="Schedule confirm" />
       {isAdmin && project && (
         <form onSubmit={send} className="w-full max-w-full min-w-0 box-border border border-black rounded-md p-3 space-y-2 mb-4">
@@ -857,7 +860,7 @@ export function SetupWizard({ profile, company, onDone, onOpenNewProject, onOpen
   ]
   const s = steps[step] || steps[0]
   return (
-    <Page>
+    <Page onBack={onBack}>
       <div className="text-[11px] font-mono uppercase text-[#6B6E72] mb-1">Setup {step + 1} of {steps.length}</div>
       <h2 className="font-display text-2xl mb-3">{s.title}</h2>
       {s.body}

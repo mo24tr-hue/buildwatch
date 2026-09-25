@@ -20,6 +20,7 @@ import {
 } from '../components/ContractorPack'
 import { isPlatformAdmin } from '../lib/platform'
 import { companyAccess, trialLabel } from '../lib/billing'
+import SwipeBack from '../components/SwipeBack'
 
 const QUEUE_KEY = 'ay_upload_queue'
 
@@ -61,62 +62,6 @@ async function compressImageFile(file, maxEdge = 1400, quality = 0.72) {
 /** Always use the stored file. Resize happens in the app before upload — no Supabase Image Transforms. */
 function photoDisplayUrl(url) {
   return url
-}
-
-function SwipeBack({ onBack, children, className = '', disabled = false, fromAnywhere = false }) {
-  const start = useRef(null)
-  const EDGE = 28
-  const MIN_DX = 56
-  const onTouchStart = (e) => {
-    if (disabled || !onBack) return
-    const el = e.target
-    if (el && (el.closest && (el.closest('input, textarea, select, [data-no-swipe]')))) return
-    const t = e.touches[0]
-    const fromEdge = t.clientX <= EDGE
-    if (!fromEdge && !fromAnywhere) {
-      start.current = null
-      return
-    }
-    start.current = { x: t.clientX, y: t.clientY, t: Date.now(), fromEdge }
-  }
-  const onTouchMove = (e) => {
-    if (!start.current) return
-    const t = e.touches[0]
-    const dx = t.clientX - start.current.x
-    const dy = t.clientY - start.current.y
-    if (Math.abs(dy) > 14 && Math.abs(dy) > Math.abs(dx) * 0.85) {
-      start.current = null
-    }
-  }
-  const onTouchEnd = (e) => {
-    if (disabled || !start.current || !onBack) return
-    const t = e.changedTouches[0]
-    const dx = t.clientX - start.current.x
-    const dy = t.clientY - start.current.y
-    const dt = Date.now() - (start.current.t || Date.now())
-    const fromEdge = start.current.fromEdge
-    start.current = null
-    const quick = dt < 280 && dx > (fromEdge ? 36 : 80)
-    const long = dx >= (fromEdge ? MIN_DX : 110)
-    if ((quick || long) && dx > Math.abs(dy) * (fromEdge ? 1.35 : 1.8)) {
-      if (typeof window !== 'undefined' && window.__bwDirty) {
-        if (!window.confirm('Leave without saving?')) return
-        window.__bwDirty = false
-      }
-      onBack()
-    }
-  }
-  return (
-    <div
-      className={className}
-      onTouchStart={onTouchStart}
-      onTouchMove={onTouchMove}
-      onTouchEnd={onTouchEnd}
-      onTouchCancel={() => { start.current = null }}
-    >
-      {children}
-    </div>
-  )
 }
 
 function SwipeDeleteRow({ children, onDelete }) {
