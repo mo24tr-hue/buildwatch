@@ -1,5 +1,6 @@
-/* PWA service worker — never cache the HTML shell */
-const CACHE = 'BuildWatch-v11'
+/* PWA service worker — never cache the HTML shell. Photos live in their own cache. */
+const CACHE = 'BuildWatch-v12'
+const PHOTO_CACHE = 'BuildWatch-photos-v1'
 
 self.addEventListener('install', (event) => {
   self.skipWaiting()
@@ -9,16 +10,38 @@ self.addEventListener('install', (event) => {
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches.keys().then((keys) =>
-      Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k)))
+      Promise.all(keys.filter((k) => k !== CACHE && k !== PHOTO_CACHE).map((k) => caches.delete(k)))
     ).then(() => self.clients.claim())
   )
 })
+
+async function photoResponse(req) {
+  const cache = await caches.open(PHOTO_CACHE)
+  const cached = await cache.match(req)
+  const update = fetch(req)
+    .then((res) => {
+      if (res && res.ok) cache.put(req, res.clone()).catch(() => {})
+      return res
+    })
+    .catch(() => cached || null)
+  if (cached) {
+    update.catch(() => {})
+    return cached
+  }
+  const fresh = await update
+  if (fresh) return fresh
+  return new Response('', { status: 504, statusText: 'Offline' })
+}
 
 self.addEventListener('fetch', (event) => {
   const req = event.request
   if (req.method !== 'GET') return
 
   const url = new URL(req.url)
+  if (url.hostname.includes('supabase') && url.pathname.includes('/storage/')) {
+    event.respondWith(photoResponse(req))
+    return
+  }
   if (url.hostname.includes('supabase') || url.pathname.startsWith('/auth')) return
   if (url.pathname.endsWith('/version.json') || url.pathname.endsWith('/sw.js')) return
   if (req.mode === 'navigate' || url.pathname === '/' || url.pathname.endsWith('.html')) return
@@ -72,6 +95,22 @@ self.addEventListener('notificationclick', (event) => {
 })
 
 self.addEventListener('message', (event) => {
+  if (event.data && event.data.type === 'CACHE_PHOTOS') {
+    const urls = event.data.urls || []
+    event.waitUntil((async () => {
+      const cache = await caches.open(PHOTO_CACHE)
+      for (const url of urls) {
+        if (!url || /\.(mp4|mov|webm)(\?|$)/i.test(url)) continue
+        const hit = await cache.match(url)
+        if (hit) continue
+        try {
+          const res = await fetch(url)
+          if (res && res.ok) await cache.put(url, res)
+        } catch (_) {}
+      }
+    })())
+    return
+  }
   if (event.data && event.data.type === 'SKIP_WAITING') {
     self.skipWaiting()
     return

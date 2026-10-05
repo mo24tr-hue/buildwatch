@@ -21,6 +21,7 @@ import {
 import { isPlatformAdmin } from '../lib/platform'
 import { companyAccess, trialLabel } from '../lib/billing'
 import SwipeBack from '../components/SwipeBack'
+import { collectPhotoUrls, resolvePhoto, warmPhotos } from '../lib/photoStore'
 
 const QUEUE_KEY = 'ay_upload_queue'
 
@@ -62,6 +63,21 @@ async function compressImageFile(file, maxEdge = 1400, quality = 0.72) {
 /** Always use the stored file. Resize happens in the app before upload — no Supabase Image Transforms. */
 function photoDisplayUrl(url) {
   return url
+}
+
+function CachedImg({ src, ...rest }) {
+  const [shown, setShown] = useState(src)
+  useEffect(() => {
+    let dead = false
+    setShown(src)
+    if (!src) return
+    resolvePhoto(src).then((local) => {
+      if (!dead && local) setShown(local)
+    })
+    return () => { dead = true }
+  }, [src])
+  if (!shown) return null
+  return <img src={shown} {...rest} />
 }
 
 function SwipeDeleteRow({ children, onDelete }) {
@@ -396,6 +412,15 @@ export default function Dashboard({ session, profile, company, onCompanyUpdate, 
     if (typeof navigator !== 'undefined' && !navigator.onLine && hadCache) return
     loadProjects({ soft: hadCache })
   }, [loadProjects, profile?.company_id])
+
+  useEffect(() => {
+    const urls = collectPhotoUrls(projects, headerCompany || company)
+    if (!urls.length) return
+    warmPhotos(urls)
+    if (navigator.serviceWorker?.controller) {
+      navigator.serviceWorker.controller.postMessage({ type: 'CACHE_PHOTOS', urls })
+    }
+  }, [projects, headerCompany, company])
 
   useEffect(() => {
     if (profile?.role === 'admin' && company && company.onboarding_complete === false) {
@@ -1501,7 +1526,7 @@ export default function Dashboard({ session, profile, company, onCompanyUpdate, 
                     >
                       <div className="w-14 h-14 rounded bg-[#F5F5F5] flex items-center justify-center flex-shrink-0 overflow-hidden">
                         {thumb ? (
-                          <img src={photoDisplayUrl(thumb, 320)} alt="" loading="lazy" decoding="async" className="w-full h-full object-cover" />
+                          <CachedImg src={photoDisplayUrl(thumb, 320)} alt="" loading="lazy" decoding="async" className="w-full h-full object-cover" />
                         ) : (
                           <ImageIcon size={20} className="text-[#C9C4B8]" />
                         )}
@@ -2697,7 +2722,7 @@ function ProjectJobCostsPanel({ project, profile, onReload, logActivity, mode })
                     <div key={inv.id} className="flex items-center gap-2">
                       {inv.public_url ? (
                         <button type="button" onClick={() => openDoc(inv)} className="flex-shrink-0">
-                          <img src={photoDisplayUrl(inv.public_url)} alt="" className="w-12 h-12 object-cover rounded border border-black" />
+                          <CachedImg src={photoDisplayUrl(inv.public_url)} alt="" className="w-12 h-12 object-cover rounded border border-black" />
                         </button>
                       ) : null}
                       <button type="button" onClick={() => openDoc(inv)} className="flex-1 text-left text-xs truncate">
@@ -2749,7 +2774,7 @@ function ProjectJobCostsPanel({ project, profile, onReload, logActivity, mode })
             <div key={r.id} className="bg-white border border-black rounded-md p-3 flex gap-3">
               {r.public_url ? (
                 <button type="button" onClick={() => openDoc(r)} className="flex-shrink-0">
-                  <img src={photoDisplayUrl(r.public_url)} alt="" className="w-16 h-16 object-cover rounded" />
+                  <CachedImg src={photoDisplayUrl(r.public_url)} alt="" className="w-16 h-16 object-cover rounded" />
                 </button>
               ) : null}
               <div className="flex-1 min-w-0">
@@ -2775,7 +2800,7 @@ function ProjectJobCostsPanel({ project, profile, onReload, logActivity, mode })
             <X size={22} strokeWidth={2.5} />
           </button>
           <div className="flex-1 flex items-center justify-center px-3" style={{ paddingTop: 'calc(env(safe-area-inset-top, 0px) + 64px)', paddingBottom: '24px' }}>
-            <img src={photoDisplayUrl(viewDoc.public_url)} alt="" className="max-h-full max-w-full object-contain" />
+            <CachedImg src={photoDisplayUrl(viewDoc.public_url)} alt="" className="max-h-full max-w-full object-contain" />
           </div>
         </div>
       )}
@@ -4301,7 +4326,7 @@ function ProjectDetail({ project, isAdmin, canUpload, isCustomer, profile, onBac
 
       <div className="bg-white border border-black rounded-md overflow-hidden mb-4">
         {(editingProject ? editCover : project.cover_photo_url) && (
-          <img src={photoDisplayUrl(editingProject ? editCover : project.cover_photo_url, 800)} alt="" decoding="async" className="w-full h-44 object-cover" />
+          <CachedImg src={photoDisplayUrl(editingProject ? editCover : project.cover_photo_url, 800)} alt="" decoding="async" className="w-full h-44 object-cover" />
         )}
         <div className="p-5">
           {!editingProject ? (
@@ -4928,7 +4953,7 @@ function PhaseTasks({ phase, project, isAdmin, profile, onReload, logActivity })
                 <div className="grid grid-cols-3 gap-2 mt-2">
                   {(task.task_photos || []).map((ph) => (
                     <a key={ph.id} href={ph.public_url} target="_blank" rel="noreferrer">
-                      <img src={photoDisplayUrl(ph.public_url, 400)} alt="" loading="lazy" decoding="async" className="w-full h-20 object-cover rounded border border-black" />
+                      <CachedImg src={photoDisplayUrl(ph.public_url, 400)} alt="" loading="lazy" decoding="async" className="w-full h-20 object-cover rounded border border-black" />
                     </a>
                   ))}
                 </div>
@@ -6181,7 +6206,7 @@ function PhaseDetail({ phase, project, isAdmin, canUpload, isCustomer, profile, 
                     <Video size={28} />
                   </div>
                 ) : (
-                  <img src={photoDisplayUrl(p.public_url, 480)} alt="" loading="lazy" decoding="async" className="w-full h-32 object-cover" />
+                  <CachedImg src={photoDisplayUrl(p.public_url, 480)} alt="" loading="lazy" decoding="async" className="w-full h-32 object-cover" />
                 )}
               </button>
               <div className="p-2">
@@ -6231,7 +6256,7 @@ function PhaseDetail({ phase, project, isAdmin, canUpload, isCustomer, profile, 
             {lb.media_type === 'video' ? (
               <video src={lb.public_url} controls className="max-h-full max-w-full" playsInline />
             ) : (
-              <img src={photoDisplayUrl(lb.public_url, 1400)} alt="" decoding="async" className="max-h-full max-w-full object-contain" />
+              <CachedImg src={photoDisplayUrl(lb.public_url, 1400)} alt="" decoding="async" className="max-h-full max-w-full object-contain" />
             )}
             <button
               type="button"
