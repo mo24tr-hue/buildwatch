@@ -3712,10 +3712,9 @@ function ProjectSummaryShare({ project, phases, doneCount, isAdmin, isCustomer, 
             </div>
           )}
         </div>
-      </div>
-    </div>,
-    document.body
-  )
+      </div>,
+      document.body
+    )
 }
 
 function ProjectNavRow({ icon, label, count, extra, onClick }) {
