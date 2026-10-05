@@ -181,6 +181,7 @@ export default function Dashboard({ session, profile, company, onCompanyUpdate, 
   const [showNotifs, setShowNotifs] = useState(false)
   const [packPage, setPackPage] = useState(null)
   const [showSetup, setShowSetup] = useState(false)
+  const [touched, setTouched] = useState({})
 
   const isAdmin = profile?.role === 'admin'
   const isCustomer = profile?.role === 'customer'
@@ -393,6 +394,37 @@ export default function Dashboard({ session, profile, company, onCompanyUpdate, 
     return true
   })
 
+  const touchKey = profile?.company_id ? 'bw_project_touch_' + profile.company_id : ''
+  useEffect(() => {
+    if (!touchKey) return
+    try {
+      const raw = localStorage.getItem(touchKey)
+      if (raw) setTouched(JSON.parse(raw) || {})
+    } catch (_) {}
+  }, [touchKey])
+
+  const markTouched = (id) => {
+    if (!id || !touchKey) return
+    const next = { ...touched, [id]: Date.now() }
+    setTouched(next)
+    try { localStorage.setItem(touchKey, JSON.stringify(next)) } catch (_) {}
+  }
+
+  useEffect(() => {
+    if (activeId) markTouched(activeId)
+  }, [activeId])
+
+  const projectRecency = (p) => {
+    const times = [touched[p.id] || 0, Date.parse(p.created_at) || 0]
+    for (const ph of p.phases || []) {
+      for (const photo of ph.photos || []) times.push(Date.parse(photo.created_at || photo.taken_at) || 0)
+    }
+    for (const co of p.change_orders || []) times.push(Date.parse(co.created_at) || 0)
+    return Math.max(...times)
+  }
+
+  const orderedProjects = visibleProjects.slice().sort((a, b) => projectRecency(b) - projectRecency(a))
+
 
   useEffect(() => {
     let hadCache = false
@@ -416,10 +448,8 @@ export default function Dashboard({ session, profile, company, onCompanyUpdate, 
   useEffect(() => {
     const urls = collectPhotoUrls(projects, headerCompany || company)
     if (!urls.length) return
-    warmPhotos(urls)
-    if (navigator.serviceWorker?.controller) {
-      navigator.serviceWorker.controller.postMessage({ type: 'CACHE_PHOTOS', urls })
-    }
+    const t = setTimeout(() => warmPhotos(urls), 8000)
+    return () => clearTimeout(t)
   }, [projects, headerCompany, company])
 
   useEffect(() => {
@@ -1514,7 +1544,7 @@ export default function Dashboard({ session, profile, company, onCompanyUpdate, 
               </div>
             ) : (
               <div className="space-y-3">
-                {visibleProjects.map((p) => {
+                {orderedProjects.map((p) => {
                   const phases = p.phases || []
                   const doneCount = phases.filter((ph) => ph.status === 'done').length
                   const thumb = p.cover_photo_url
