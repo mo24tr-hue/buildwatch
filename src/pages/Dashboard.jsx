@@ -1606,6 +1606,7 @@ export default function Dashboard({ session, profile, company, onCompanyUpdate, 
 
       {!showNotifs && !showPlatform && !showFeedback && !showPassword && !showHelp && !showSetup && !packPage && (
         <nav
+          data-no-swipe
           className="fixed bottom-0 left-0 right-0 z-40 bg-white border-t border-black"
           style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
         >

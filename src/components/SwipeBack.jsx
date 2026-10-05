@@ -27,8 +27,10 @@ function bind() {
     const rec = topLayer()
     if (!rec || !rec.el.current) return
     const node = rec.el.current
-    if (!(node === e.target || node.contains(e.target))) return
-    if (e.target.closest && e.target.closest('input, textarea, select, [data-no-swipe], [data-swipe-delete]')) return
+    if (e.target.closest && e.target.closest('input, textarea, select, [data-no-swipe], [data-swipe-delete], header, nav')) return
+    const inNode = node === e.target || node.contains(e.target)
+    // Empty white under a short page is still this page.
+    if (!inNode && !rec.fromAnywhere) return
     const t = e.touches[0]
     active = {
       rec,
@@ -108,8 +110,13 @@ export default function SwipeBack({ onBack, children, className = '', disabled =
   }, [disabled, fromAnywhere])
 
   return (
-    <div ref={el} className={className} style={{ touchAction: 'pan-y', minHeight: '100%', width: '100%' }}>
-      {children}
+    <div
+      ref={el}
+      className={className}
+      style={{ touchAction: 'pan-y', minHeight: '100dvh', width: '100%', position: 'relative', background: '#fff' }}
+    >
+      <div aria-hidden="true" style={{ position: 'fixed', inset: 0, zIndex: 0 }} />
+      <div style={{ position: 'relative', zIndex: 1, minHeight: '100dvh' }}>{children}</div>
     </div>
   )
 }
