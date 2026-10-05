@@ -8,10 +8,29 @@ function keyFor(projectId, url, page) {
 }
 
 function dist(a, b, w, h) {
-  const dx = (a.x - b.x) * w
-  const dy = (a.y - b.y) * h
+  const dx = ((a.x2 ?? a.x) - a.x) * w
+  const dy = ((a.y2 ?? a.y) - a.y) * h
   return Math.sqrt(dx * dx + dy * dy)
 }
+
+function parseFeet(raw) {
+  const s = String(raw || '')
+  const m = s.match(/(\d+)\s*'\s*-?\s*(\d+)?(?:\s*(\d+)\s*\/\s*(\d+))?\s*"?/)
+  if (!m) return null
+  const feet = Number(m[1]) || 0
+  const inches = Number(m[2]) || 0
+  const frac = m[3] && m[4] ? Number(m[3]) / Number(m[4]) : 0
+  return Math.round((feet + (inches + frac) / 12) * 100) / 100
+}
+
+const SCALES = [
+  { id: '1/8', label: '1/8" = 1\'', inchesPerFoot: 1 / 8 },
+  { id: '3/16', label: '3/16" = 1\'', inchesPerFoot: 3 / 16 },
+  { id: '1/4', label: '1/4" = 1\'', inchesPerFoot: 1 / 4 },
+  { id: '3/8', label: '3/8" = 1\'', inchesPerFoot: 3 / 8 },
+  { id: '1/2', label: '1/2" = 1\'', inchesPerFoot: 1 / 2 },
+  { id: '1', label: '1" = 1\'', inchesPerFoot: 1 },
+]
 
 export default function PlanEditor({ project, profile, isAdmin }) {
   const files = [
@@ -27,9 +46,11 @@ export default function PlanEditor({ project, profile, isAdmin }) {
   const [items, setItems] = useState([])
   const [scale, setScale] = useState(null)
   const [text, setText] = useState('')
-  const drag = useRef(null)
-  const [draft, setDraft] = useState(null)
-  const view = useRef(null)
+  const [sheetScale, setSheetScale] = useState('1/8')
+  const [sheetText, setSheetText] = useState([])
+  const pageIn = useRef(null)
+  const pinch = useRef(null)
+  const scroller = useRef(null)
 
   const file = files.find((f) => f.public_url === fileUrl)
   const isPdf = /\.pdf(\?|$)/i.test(fileUrl) || (file?.file_name || '').toLowerCase().endsWith('.pdf')
@@ -50,6 +71,18 @@ export default function PlanEditor({ project, profile, isAdmin }) {
       if (dead) return
       setPageCount(doc.numPages)
       const pg = await doc.getPage(Math.min(page, doc.numPages))
+      const base = pg.getViewport({ scale: 1 })
+      pageIn.current = { w: base.width / 72, h: base.height / 72 }
+      const content = await pg.getTextContent()
+      const found = []
+      for (const item of content.items || []) {
+        const feet = parseFeet(item.str)
+        if (feet == null || feet <= 0 || feet > 500) continue
+        const x = ((item.transform?.[4] || 0) / base.width) * 100
+        const y = (1 - (item.transform?.[5] || 0) / base.height) * 100
+        found.push({ x, y, feet, text: item.str })
+      }
+      if (!dead) setSheetText(found)
       const viewport = pg.getViewport({ scale: 1.6 })
       const canvas = document.createElement('canvas')
       canvas.width = viewport.width
@@ -143,34 +176,52 @@ export default function PlanEditor({ project, profile, isAdmin }) {
       return
     }
     const box = view.current?.getBoundingClientRect()
-    const px = box ? dist(draft, { x: draft.x2, y: draft.y2 }, box.width, box.height) : 0
-    let nextScale = scale
+    const paper = pageIn.current
+    const paperInches = box && paper
+      ? dist(draft, { x: draft.x2, y: draft.y2 }, paper.w, paper.h)
+      : 0
+    const ratio = SCALES.find((s) => s.id === sheetScale) || SCALES[0]
     let feet = null
-    if (tool === 'measure' && px > 8) {
-      if (!nextScale) {
-        const entered = window.prompt('How many feet is this line? Later lines will use this scale.')
-        const n = parseFloat(entered)
-        if (!n || n <= 0) {
-          drag.current = null
-          setDraft(null)
-          return
-        }
-        nextScale = px / n
-        feet = n
-      } else {
-        feet = Math.round((px / nextScale) * 10) / 10
-      }
+    if (tool === 'measure' && paperInches > 0.02) {
+      const mid = { x: (draft.x + draft.x2) / 2, y: (draft.y + draft.y2) / 2 }
+      const near = sheetText
+        .map((t) => ({ ...t, d: Math.hypot(t.x - mid.x, t.y - mid.y) }))
+        .filter((t) => t.d < 8)
+        .sort((a, b) => a.d - b.d)[0]
+      const drawn = items.filter((it) => it.feet)
+      const fromSheet = near?.feet
+      const fromDrawn = drawn.length
+        ? drawn.map((it) => it.feet).sort((a, b) => a - b)[Math.floor(drawn.length / 2)]
+        : null
+      const calculated = Math.round((paperInches / ratio.inchesPerFoot) * 10) / 10
+      feet = fromSheet || calculated
+      if (!fromSheet && fromDrawn && Math.abs(fromDrawn - calculated) / calculated < 0.15) feet = calculated
     }
-    if (px > 8) {
+    if ((tool === 'pen' && paperInches > 0) || (tool === 'measure' && feet)) {
       save([...items, {
         id: crypto.randomUUID(),
         type: tool === 'measure' ? 'dim' : 'pen',
         x: draft.x, y: draft.y, x2: draft.x2, y2: draft.y2,
-        feet,
-      }], nextScale)
+        feet: tool === 'measure' ? feet : null,
+      }], scale)
     }
     drag.current = null
     setDraft(null)
+  }
+
+  const onPinchStart = (e) => {
+    if (e.touches.length !== 2) return
+    const a = e.touches[0]
+    const b = e.touches[1]
+    pinch.current = { d: Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY), z: zoom }
+  }
+  const onPinchMove = (e) => {
+    if (!pinch.current || e.touches.length !== 2) return
+    e.preventDefault()
+    const a = e.touches[0]
+    const b = e.touches[1]
+    const d = Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY)
+    setZoom(Math.min(5, Math.max(1, pinch.current.z * (d / pinch.current.d))))
   }
 
   return (
@@ -192,8 +243,6 @@ export default function PlanEditor({ project, profile, isAdmin }) {
                 {t === 'pan' ? 'Move' : t === 'pen' ? 'Mark' : t === 'text' ? 'Text' : 'Measure'}
               </button>
             ))}
-            <button type="button" className="px-3 py-1.5 text-xs border border-black rounded" onClick={() => setZoom((z) => Math.min(4, z + 0.25))}>+</button>
-            <button type="button" className="px-3 py-1.5 text-xs border border-black rounded" onClick={() => setZoom((z) => Math.max(1, z - 0.25))}>−</button>
             {pageCount > 1 && (
               <>
                 <button type="button" className="px-3 py-1.5 text-xs border border-black rounded" onClick={() => setPage((p) => Math.max(1, p - 1))}>Prev</button>
@@ -201,14 +250,22 @@ export default function PlanEditor({ project, profile, isAdmin }) {
                 <button type="button" className="px-3 py-1.5 text-xs border border-black rounded" onClick={() => setPage((p) => Math.min(pageCount, p + 1))}>Next</button>
               </>
             )}
+            <select className="px-2 py-1.5 text-xs border border-black rounded" value={sheetScale} onChange={(e) => setSheetScale(e.target.value)}>
+              {SCALES.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}
+            </select>
           </div>
           {tool === 'text' && isAdmin && (
             <input className={field + ' mb-2'} placeholder="Text to place" value={text} onChange={(e) => setText(e.target.value)} />
           )}
-          <p className="text-[11px] text-[#6B6E72] mb-2">
-            {scale ? 'Scale set. New measurements use it.' : 'Draw a measure line and enter its real length once. The next lines calculate from that.'}
-          </p>
-          <div className="overflow-auto border border-black rounded bg-[#F5F5F5] max-h-[70vh]" data-no-swipe>
+          <p className="text-[11px] text-[#6B6E72] mb-2">Pinch with two fingers to zoom. Measure uses the sheet scale. If a printed dimension is next to your line, that number is used.</p>
+          <div
+            ref={scroller}
+            className="overflow-auto border border-black rounded bg-[#F5F5F5] max-h-[70vh]"
+            data-no-swipe
+            onTouchStart={onPinchStart}
+            onTouchMove={onPinchMove}
+            onTouchEnd={() => { pinch.current = null }}
+          >
             <div style={{ width: (zoom * 100) + '%', position: 'relative' }}>
               {img ? <img src={img} alt="" className="w-full block select-none" draggable={false} /> : <div className="p-6 text-sm">Opening plan…</div>}
               <svg
