@@ -3,6 +3,7 @@ import { ChevronLeft, Plus, Trash2 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { STYLES, fmtDate } from '../lib/styles'
 import SwipeBack from './SwipeBack'
+import PlanEditor from './PlanEditor'
 
 function money(n) {
   if (n == null || n === '' || Number.isNaN(Number(n))) return '—'
@@ -552,70 +553,10 @@ export function EstimatesPage({ profile, onBack, onOpenProject }) {
 }
 
 export function PlanMarkupPage({ project, profile, isAdmin, onBack }) {
-  const files = [...(project.project_files || []), ...(project.phases || []).flatMap((ph) => (ph.phase_files || []).map((f) => ({ ...f, phase_id: ph.id })))]
-    .map((f) => ({ ...f, src: f.public_url || f.url || f.file_url || '' }))
-    .filter((f) => f.src.match(/\.(png|jpe?g|webp|gif)(\?|$)/i) || (f.kind || f.type || f.mime || '').includes('image'))
-  const [activeUrl, setActiveUrl] = useState(files[0]?.src || '')
-  const [pins, setPins] = useState([])
-  const [note, setNote] = useState('')
-  const [phaseId, setPhaseId] = useState('')
-  const load = async () => {
-    const { data } = await supabase.from('plan_pins').select('*').eq('project_id', project.id)
-    setPins(data || [])
-  }
-  useEffect(() => { load() }, [project.id])
-  const onTap = async (e) => {
-    if (!isAdmin || !activeUrl) return
-    const rect = e.currentTarget.getBoundingClientRect()
-    const x = ((e.clientX - rect.left) / rect.width) * 100
-    const y = ((e.clientY - rect.top) / rect.height) * 100
-    const text = note.trim() || 'Pin'
-    await supabase.from('plan_pins').insert({
-      company_id: profile.company_id,
-      project_id: project.id,
-      phase_id: phaseId || null,
-      file_url: activeUrl,
-      x_pct: x,
-      y_pct: y,
-      note: text,
-      created_by: profile.id,
-    })
-    setNote('')
-    load()
-  }
-  const visible = pins.filter((p) => p.file_url === activeUrl)
   return (
     <Page onBack={onBack}>
-      <Back onBack={onBack} title="Plan markup" />
-      {!files.length ? (
-        <p className="text-sm text-[#6B6E72]">Upload a plan photo under Plans & files first.</p>
-      ) : (
-        <>
-          <select className="w-full border border-black rounded px-3 py-2 text-sm mb-2" value={activeUrl} onChange={(e) => setActiveUrl(e.target.value)}>
-            {files.map((f, i) => <option key={i} value={f.src}>{f.file_name || f.name || f.title || 'Plan ' + (i + 1)}</option>)}
-          </select>
-          {isAdmin && (
-            <div className="flex gap-2 mb-2 min-w-0">
-              <input className={"flex-1 " + field} placeholder="Pin note" value={note} onChange={(e) => setNote(e.target.value)} />
-              <select className={"min-w-0 " + field} value={phaseId} onChange={(e) => setPhaseId(e.target.value)}>
-                <option value="">Phase</option>
-                {(project.phases || []).map((ph) => <option key={ph.id} value={ph.id}>{ph.name}</option>)}
-              </select>
-            </div>
-          )}
-          <div className="relative border border-black rounded overflow-hidden" onClick={onTap}>
-            <img src={activeUrl} alt="" className="w-full block" />
-            {visible.map((p) => (
-              <div key={p.id} className="absolute w-4 h-4 -ml-2 -mt-2 rounded-full bg-[#E6B800] border border-black" style={{ left: p.x_pct + '%', top: p.y_pct + '%' }} title={p.note} />
-            ))}
-          </div>
-          <div className="mt-3 space-y-1">
-            {visible.map((p) => (
-              <div key={p.id} className="text-xs">{p.note}{p.phase_id ? ' · ' + ((project.phases || []).find((ph) => ph.id === p.phase_id)?.name || '') : ''}</div>
-            ))}
-          </div>
-        </>
-      )}
+      <Back onBack={onBack} title="Plans" />
+      <PlanEditor project={project} profile={profile} isAdmin={isAdmin} />
     </Page>
   )
 }
