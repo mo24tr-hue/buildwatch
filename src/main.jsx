@@ -9,6 +9,22 @@ ReactDOM.createRoot(document.getElementById('root')).render(
   </React.StrictMode>
 )
 
+function fitScreen() {
+  const h = window.visualViewport?.height || window.innerHeight
+  const w = window.visualViewport?.width || window.innerWidth
+  document.documentElement.style.setProperty('--app-h', Math.round(h) + 'px')
+  document.documentElement.style.setProperty('--app-w', Math.round(w) + 'px')
+}
+fitScreen()
+window.addEventListener('resize', fitScreen)
+window.addEventListener('orientationchange', () => {
+  fitScreen()
+  setTimeout(fitScreen, 60)
+  setTimeout(fitScreen, 250)
+})
+window.visualViewport?.addEventListener('resize', fitScreen)
+window.visualViewport?.addEventListener('scroll', fitScreen)
+
 const compiled = typeof __BW_BUILD__ !== 'undefined' ? String(__BW_BUILD__) : ''
 const APPLIED = 'bw_applied_build'
 const standalone =
