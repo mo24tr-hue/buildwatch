@@ -4271,47 +4271,65 @@ function ProjectDetail({ project, isAdmin, canUpload, isCustomer, profile, onBac
     )
   }
 
+  if (projectPage === 'cost-phases' && isAdmin) {
+    return (
+      <SwipeBack onBack={() => setProjectPage('cost')}>
+        <button type="button" onClick={() => setProjectPage('cost')} className="flex items-center gap-1 text-sm text-[#6B6E72] mb-4">
+          <ChevronLeft size={16} /> Cost of construction
+        </button>
+        <h2 className="font-display text-2xl mb-4">Phase costs</h2>
+        <ProjectJobCostsPanel project={project} profile={profile} onReload={onReload} logActivity={logActivity} mode="phases" />
+      </SwipeBack>
+    )
+  }
+
+  if (projectPage === 'cost-extra' && isAdmin) {
+    return (
+      <SwipeBack onBack={() => setProjectPage('cost')}>
+        <button type="button" onClick={() => setProjectPage('cost')} className="flex items-center gap-1 text-sm text-[#6B6E72] mb-4">
+          <ChevronLeft size={16} /> Cost of construction
+        </button>
+        <h2 className="font-display text-2xl mb-4">Additional costs</h2>
+        <ProjectJobCostsPanel project={project} profile={profile} onReload={onReload} logActivity={logActivity} mode="extra" />
+      </SwipeBack>
+    )
+  }
+
+  if (projectPage === 'cost-invoices') {
+    return (
+      <SwipeBack onBack={() => setProjectPage('cost')}>
+        <button type="button" onClick={() => setProjectPage('cost')} className="flex items-center gap-1 text-sm text-[#6B6E72] mb-4">
+          <ChevronLeft size={16} /> Cost of construction
+        </button>
+        <h2 className="font-display text-2xl mb-4">Invoices</h2>
+        <InvoicesPage project={project} profile={profile} isAdmin={isAdmin} isCustomer={isCustomer} onBack={null} />
+      </SwipeBack>
+    )
+  }
+
   if (projectPage === 'cost') {
     return (
       <SwipeBack onBack={() => setProjectPage(null)}>
         {pageBack}
         <h2 className="font-display text-2xl mb-4">Cost of construction</h2>
-        <ProjectCostSection
-          project={project}
-          isAdmin={isAdmin}
-          profile={profile}
-          onReload={onReload}
-          logActivity={logActivity}
-        />
-        {isAdmin && (
-          <div className="mt-8">
-            <h3 className="font-display text-xl mb-3">Phase costs</h3>
-            <ProjectJobCostsPanel
-              project={project}
-              profile={profile}
-              onReload={onReload}
-              logActivity={logActivity}
-              mode="phases"
-            />
-          </div>
-        )}
-        {isAdmin && (
-          <div className="mt-8">
-            <h3 className="font-display text-xl mb-3">Additional costs</h3>
-            <ProjectJobCostsPanel
-              project={project}
-              profile={profile}
-              onReload={onReload}
-              logActivity={logActivity}
-              mode="extra"
-            />
-          </div>
-        )}
-        {(isAdmin || isCustomer) && (
-          <div className="mt-8">
-            <InvoicesPage project={project} profile={profile} isAdmin={isAdmin} isCustomer={isCustomer} onBack={null} />
-          </div>
-        )}
+        <div className="space-y-2 mb-6">
+          <ProjectNavRow icon={<DollarSign size={16} />} label="Overview" onClick={() => setProjectPage('cost-overview')} />
+          {isAdmin && <ProjectNavRow icon={<DollarSign size={16} />} label="Phase costs" onClick={() => setProjectPage('cost-phases')} />}
+          {isAdmin && <ProjectNavRow icon={<DollarSign size={16} />} label="Additional costs" onClick={() => setProjectPage('cost-extra')} />}
+          {(isAdmin || isCustomer) && <ProjectNavRow icon={<FileText size={16} />} label="Invoices" onClick={() => setProjectPage('cost-invoices')} />}
+        </div>
+      </SwipeBack>
+    )
+  }
+
+  if (projectPage === 'cost-overview') {
+    return (
+      <SwipeBack onBack={() => setProjectPage('cost')}>
+        <button type="button" onClick={() => setProjectPage('cost')} className="flex items-center gap-1 text-sm text-[#6B6E72] mb-4">
+          <ChevronLeft size={16} /> Cost of construction
+        </button>
+        <h2 className="font-display text-2xl mb-4">Overview</h2>
+        <ProjectCostSection project={project} isAdmin={isAdmin} profile={profile} onReload={onReload} logActivity={logActivity} />
       </SwipeBack>
     )
   }
