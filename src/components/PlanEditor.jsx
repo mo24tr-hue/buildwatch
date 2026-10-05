@@ -51,6 +51,9 @@ export default function PlanEditor({ project, profile, isAdmin }) {
   const pageIn = useRef(null)
   const pinch = useRef(null)
   const scroller = useRef(null)
+  const drag = useRef(null)
+  const view = useRef(null)
+  const [draft, setDraft] = useState(null)
 
   const file = files.find((f) => f.public_url === fileUrl)
   const isPdf = /\.pdf(\?|$)/i.test(fileUrl) || (file?.file_name || '').toLowerCase().endsWith('.pdf')

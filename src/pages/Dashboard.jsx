@@ -22,6 +22,7 @@ import {
 import { isPlatformAdmin } from '../lib/platform'
 import { companyAccess, trialLabel } from '../lib/billing'
 import SwipeBack from '../components/SwipeBack'
+import PlanEditor from '../components/PlanEditor'
 import { collectPhotoUrls, resolvePhoto, warmPhotos } from '../lib/photoStore'
 
 const QUEUE_KEY = 'ay_upload_queue'
@@ -4242,7 +4243,8 @@ function ProjectDetail({ project, isAdmin, canUpload, isCustomer, profile, onBac
           )}
         </div>
         <div className="mt-6">
-          <PlanMarkupPage project={project} profile={profile} isAdmin={isAdmin} onBack={null} />
+          <h3 className="font-display text-xl mb-3">Mark up plan</h3>
+          <PlanEditor project={project} profile={profile} isAdmin={isAdmin} />
         </div>
       </SwipeBack>
     )
