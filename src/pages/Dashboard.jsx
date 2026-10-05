@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState, useRef } from 'react'
+import { createPortal } from 'react-dom'
 import { HardHat, Plus, Image as ImageIcon, MapPin, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Camera, Trash2, Check, FileText, X, Video, Menu, Share2, Bell, Search, Copy, Archive, Printer, CalendarDays, Users, FolderOpen, DollarSign, Activity, CircleDot, Clock, ListChecks, MessageSquare } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { STYLES, PROJECT_STATUS, PHASE_STATUS, nextPhaseStatus, fmtDate, fmtDateTime, isFinishingPhase, FINISHING_PHASES, finishingLabel, roleLabel } from '../lib/styles'
@@ -6261,20 +6262,21 @@ function PhaseDetail({ phase, project, isAdmin, canUpload, isCustomer, profile, 
         </div>
       )}
 
-      {lb && (
+      {lb && createPortal(
         <div
-          className="fixed inset-0 z-50 bg-black/90 flex flex-col"
+          className="fixed inset-0 z-[300] bg-black flex flex-col"
+          style={{ paddingTop: 'env(safe-area-inset-top, 0px)', paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}
           onTouchStart={(e) => { e.stopPropagation(); lbTouchStart(e) }}
           onTouchEnd={(e) => { e.stopPropagation(); lbTouchEnd(e) }}
           onTouchMove={(e) => e.stopPropagation()}
         >
-          <div className="flex items-center justify-between px-4 py-3 text-white" style={{ paddingTop: 'max(0.75rem, env(safe-area-inset-top))' }}>
+          <div className="flex items-center justify-between px-4 h-14 text-white flex-shrink-0">
             <span className="text-sm">{lightboxIdx + 1} of {photos.length}</span>
-            <button type="button" onClick={() => setLightboxIdx(null)} className="p-2">
+            <button type="button" onClick={() => setLightboxIdx(null)} aria-label="Close" className="w-11 h-11 rounded-full bg-white text-black flex items-center justify-center">
               <X size={22} />
             </button>
           </div>
-          <div className="flex-1 flex items-center justify-center relative px-2 min-h-0">
+          <div className="flex-1 flex items-center justify-center relative px-3 min-h-0">
             <button
               type="button"
               className="absolute left-2 z-10 bg-white/20 text-white rounded-full p-2 disabled:opacity-30"
@@ -6284,9 +6286,9 @@ function PhaseDetail({ phase, project, isAdmin, canUpload, isCustomer, profile, 
               <ChevronLeft size={28} />
             </button>
             {lb.media_type === 'video' ? (
-              <video src={lb.public_url} controls className="max-h-full max-w-full" playsInline />
+              <video src={lb.public_url} controls className="max-h-full max-w-full object-contain" playsInline />
             ) : (
-              <CachedImg src={photoDisplayUrl(lb.public_url, 1400)} alt="" decoding="async" className="max-h-full max-w-full object-contain" />
+              <CachedImg src={photoDisplayUrl(lb.public_url, 1400)} alt="" decoding="async" className="max-h-full max-w-full w-auto h-auto object-contain" style={{ objectFit: 'contain' }} />
             )}
             <button
               type="button"
@@ -6297,7 +6299,7 @@ function PhaseDetail({ phase, project, isAdmin, canUpload, isCustomer, profile, 
               <ChevronRight size={28} />
             </button>
           </div>
-          <div className="px-4 py-3 text-white text-center text-sm" style={{ paddingBottom: 'max(0.75rem, env(safe-area-inset-bottom))' }}>
+          <div className="px-4 py-3 text-white text-center text-sm flex-shrink-0">
             {lb.caption || ''}
             <div className="flex justify-center gap-4 mt-3">
               <button
@@ -6319,7 +6321,8 @@ function PhaseDetail({ phase, project, isAdmin, canUpload, isCustomer, profile, 
               )}
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {showMarkup && (
