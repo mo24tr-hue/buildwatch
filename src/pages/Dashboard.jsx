@@ -149,6 +149,9 @@ function fmtMeetTime(t) {
 
 export default function Dashboard({ session, profile, company, onCompanyUpdate, onLogout, platformOwner = false, onLeavePlatformWorkspace }) {
   const [projects, setProjects] = useState([])
+  const patchProject = useCallback((id, mutator) => {
+    setProjects((prev) => prev.map((p) => (p.id === id ? mutator(p) : p)))
+  }, [])
   const [loading, setLoading] = useState(true)
   const [online, setOnline] = useState(() => typeof navigator === 'undefined' || navigator.onLine)
   const [updateAvailable, setUpdateAvailable] = useState(false)
@@ -1444,6 +1447,7 @@ export default function Dashboard({ session, profile, company, onCompanyUpdate, 
             profile={profile}
             onBack={() => setActiveId(null)}
             onReload={softReload}
+            onPatch={patchProject}
             onDelete={deleteProject}
             logActivity={logActivity}
           />
@@ -3897,7 +3901,7 @@ function ProjectChangeOrdersBlock({ project, isAdmin, isCustomer, profile, onRel
   )
 }
 
-function ProjectDetail({ project, isAdmin, canUpload, isCustomer, profile, onBack, onReload, onDelete, logActivity }) {
+function ProjectDetail({ project, isAdmin, canUpload, isCustomer, profile, onBack, onReload, onPatch, onDelete, logActivity }) {
   const [showExport, setShowExport] = useState(false)
   const [selectedPhaseId, setSelectedPhaseId] = useState(null)
   const [newPhaseName, setNewPhaseName] = useState('')
@@ -3954,6 +3958,13 @@ function ProjectDetail({ project, isAdmin, canUpload, isCustomer, profile, onBac
         profile={profile}
         onBack={() => setSelectedPhaseId(null)}
         onReload={onReload}
+        onPhasePatch={(phaseId, patch) => {
+          setLocalPhases((prev) => prev.map((ph) => (ph.id === phaseId ? { ...ph, ...patch } : ph)))
+          onPatch?.(project.id, (p) => ({
+            ...p,
+            phases: (p.phases || []).map((ph) => (ph.id === phaseId ? { ...ph, ...patch } : ph)),
+          }))
+        }}
         logActivity={logActivity}
       />
     )
@@ -3973,40 +3984,34 @@ function ProjectDetail({ project, isAdmin, canUpload, isCustomer, profile, onBac
 
   const doneCount = phases.filter((p) => p.status === 'done').length
 
-  const setStatus = async (status) => {
+  const setStatus = (status) => {
     if (!isAdmin) return
-    await supabase.from('projects').update({ status }).eq('id', project.id)
-    await logActivity('updated project status', status)
-    if (status === 'done' && !project.archived) {
-      if (confirm('Project marked complete. Archive it so it leaves the active list? You can restore it anytime from Archived.')) {
-        await supabase.from('projects').update({ archived: true }).eq('id', project.id)
-      }
-    }
-    onReload()
+    onPatch?.(project.id, (p) => ({ ...p, status }))
+    supabase.from('projects').update({ status }).eq('id', project.id)
+    logActivity('updated project status', status)
   }
 
-  const cyclePhase = async (phase) => {
+  const cyclePhase = (phase) => {
     if (!isAdmin) return
     const next = nextPhaseStatus(phase.status)
     const today = new Date().toISOString().slice(0, 10)
     const patch = { status: next }
-    // Entering in progress → set start date (keep existing if already set)
-    if (next === 'active' && !phase.start_date) {
-      patch.start_date = today
-    }
-    // Marking done → set completion (end) date
+    if (next === 'active' && !phase.start_date) patch.start_date = today
     if (next === 'done') {
       patch.end_date = today
       if (!phase.start_date) patch.start_date = today
     }
-    // Back to pending (undo) — clear start and end dates
     if (next === 'pending') {
       patch.start_date = null
       patch.end_date = null
     }
-    await supabase.from('phases').update(patch).eq('id', phase.id)
-    await logActivity('updated phase status', phase.name + ' → ' + next, project.id, phase.name)
-    onReload()
+    setLocalPhases((prev) => prev.map((ph) => (ph.id === phase.id ? { ...ph, ...patch } : ph)))
+    onPatch?.(project.id, (p) => ({
+      ...p,
+      phases: (p.phases || []).map((ph) => (ph.id === phase.id ? { ...ph, ...patch } : ph)),
+    }))
+    supabase.from('phases').update(patch).eq('id', phase.id)
+    logActivity('updated phase status', phase.name + ' → ' + next, project.id, phase.name)
   }
 
   const addPhase = async (toFinishing = false) => {
@@ -5457,7 +5462,7 @@ function AdminPunchList({ phase, value, onChange, onSave }) {
   )
 }
 
-function PhaseDetail({ phase, project, isAdmin, canUpload, isCustomer, profile, onBack, onReload, logActivity, onDeletePhase }) {
+function PhaseDetail({ phase, project, isAdmin, canUpload, isCustomer, profile, onBack, onReload, onPhasePatch, logActivity, onDeletePhase }) {
   const [caption, setCaption] = useState('')
   const [photoTag, setPhotoTag] = useState('')
   const [uploading, setUploading] = useState(false)
@@ -5497,7 +5502,7 @@ function PhaseDetail({ phase, project, isAdmin, canUpload, isCustomer, profile, 
     onReload()
   }
 
-  const setPhaseStatus = async (next) => {
+  const setPhaseStatus = (next) => {
     if (!isAdmin) return
     const today = new Date().toISOString().slice(0, 10)
     const patch = { status: next }
@@ -5510,9 +5515,9 @@ function PhaseDetail({ phase, project, isAdmin, canUpload, isCustomer, profile, 
       patch.start_date = null
       patch.end_date = null
     }
-    await supabase.from('phases').update(patch).eq('id', phase.id)
-    await logActivity?.('updated phase status', phase.name + ' → ' + next, project.id, phase.name)
-    onReload()
+    onPhasePatch?.(phase.id, patch)
+    supabase.from('phases').update(patch).eq('id', phase.id)
+    logActivity?.('updated phase status', phase.name + ' → ' + next, project.id, phase.name)
   }
 
   const isOverdue = phase.end_date && phase.status !== 'done' && new Date(phase.end_date + 'T23:59:59') < new Date()
