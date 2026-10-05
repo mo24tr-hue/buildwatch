@@ -3631,9 +3631,8 @@ function ProjectSummaryShare({ project, phases, doneCount, isAdmin, isCustomer, 
     setSharing(false)
   }
 
-  return (
-    <SwipeBack onBack={onClose}>
-      <div className="fixed inset-0 z-[60] bg-white flex flex-col" style={{ paddingTop: 'env(safe-area-inset-top)' }}>
+  return createPortal(
+    <div className="fixed inset-0 z-[400] bg-white flex flex-col" style={{ paddingTop: 'env(safe-area-inset-top)', paddingBottom: 'env(safe-area-inset-bottom)' }}>
         <div className="flex items-center justify-between px-4 py-3 border-b border-black gap-2">
           <button type="button" onClick={onClose} className="flex items-center gap-1 text-sm text-[#6B6E72]">
             <ChevronLeft size={16} /> Close
@@ -3714,7 +3713,8 @@ function ProjectSummaryShare({ project, phases, doneCount, isAdmin, isCustomer, 
           )}
         </div>
       </div>
-    </SwipeBack>
+    </div>,
+    document.body
   )
 }
 
