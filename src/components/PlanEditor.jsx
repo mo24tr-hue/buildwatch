@@ -53,6 +53,8 @@ export default function PlanEditor({ project, profile, isAdmin }) {
   const scroller = useRef(null)
   const drag = useRef(null)
   const view = useRef(null)
+  const content = useRef(null)
+  const zoomRef = useRef(1)
   const [draft, setDraft] = useState(null)
 
   const file = files.find((f) => f.public_url === fileUrl)
@@ -155,9 +157,18 @@ export default function PlanEditor({ project, profile, isAdmin }) {
   }
 
   const down = (e) => {
-    if (!isAdmin || tool === 'pan') return
+    if (!isAdmin || tool === 'pan' || (e.touches && e.touches.length > 1)) return
     const p = point(e)
     if (!p) return
+    if (tool === 'erase') {
+      const next = items.filter((it) => {
+        const mx = it.x2 != null ? (it.x + it.x2) / 2 : it.x
+        const my = it.y2 != null ? (it.y + it.y2) / 2 : it.y
+        return Math.hypot(mx - p.x, my - p.y) > 6
+      })
+      if (next.length !== items.length) save(next, scale)
+      return
+    }
     if (tool === 'text') {
       const label = text.trim()
       if (!label) return
@@ -216,7 +227,12 @@ export default function PlanEditor({ project, profile, isAdmin }) {
     if (e.touches.length !== 2) return
     const a = e.touches[0]
     const b = e.touches[1]
-    pinch.current = { d: Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY), z: zoom }
+    pinch.current = {
+      d: Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY),
+      z: zoomRef.current,
+      x: (a.clientX + b.clientX) / 2,
+      y: (a.clientY + b.clientY) / 2,
+    }
   }
   const onPinchMove = (e) => {
     if (!pinch.current || e.touches.length !== 2) return
@@ -224,7 +240,25 @@ export default function PlanEditor({ project, profile, isAdmin }) {
     const a = e.touches[0]
     const b = e.touches[1]
     const d = Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY)
-    setZoom(Math.min(5, Math.max(1, pinch.current.z * (d / pinch.current.d))))
+    const next = Math.min(5, Math.max(1, pinch.current.z * (d / pinch.current.d)))
+    const sc = scroller.current
+    if (!sc) {
+      zoomRef.current = next
+      setZoom(next)
+      return
+    }
+    const rect = sc.getBoundingClientRect()
+    const cx = pinch.current.x
+    const cy = pinch.current.y
+    const relX = cx - rect.left + sc.scrollLeft
+    const relY = cy - rect.top + sc.scrollTop
+    const ratio = next / (zoomRef.current || 1)
+    zoomRef.current = next
+    setZoom(next)
+    requestAnimationFrame(() => {
+      sc.scrollLeft = relX * ratio - (cx - rect.left)
+      sc.scrollTop = relY * ratio - (cy - rect.top)
+    })
   }
 
   return (
@@ -241,9 +275,9 @@ export default function PlanEditor({ project, profile, isAdmin }) {
             ))}
           </select>
           <div className="flex gap-2 mb-2 flex-wrap">
-            {['pan', 'pen', 'text', 'measure'].map((t) => (
+            {['pan', 'pen', 'text', 'measure', 'erase'].map((t) => (
               <button key={t} type="button" onClick={() => setTool(t)} className={'px-3 py-1.5 text-xs border border-black rounded ' + (tool === t ? 'bg-black text-white' : '')}>
-                {t === 'pan' ? 'Move' : t === 'pen' ? 'Mark' : t === 'text' ? 'Text' : 'Measure'}
+                {t === 'pan' ? 'Move' : t === 'pen' ? 'Mark' : t === 'text' ? 'Text' : t === 'erase' ? 'Eraser' : 'Measure'}
               </button>
             ))}
             {pageCount > 1 && (
@@ -269,7 +303,7 @@ export default function PlanEditor({ project, profile, isAdmin }) {
             onTouchMove={onPinchMove}
             onTouchEnd={() => { pinch.current = null }}
           >
-            <div style={{ width: (zoom * 100) + '%', position: 'relative' }}>
+            <div ref={content} style={{ width: (zoom * 100) + '%', position: 'relative' }}>
               {img ? <img src={img} alt="" className="w-full block select-none" draggable={false} /> : <div className="p-6 text-sm">Opening plan…</div>}
               <svg
                 ref={view}
