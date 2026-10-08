@@ -314,7 +314,7 @@ export default function PlanEditor({ project, profile, isAdmin, onBack }) {
       <button
         type="button"
         onClick={onBack}
-        className="absolute z-[90] right-3 w-16 h-16 rounded-full bg-black text-white text-3xl leading-none"
+        className="absolute z-[90] right-3 w-16 h-16 rounded-full bg-black text-white text-3xl leading-none border-2 border-white"
         style={{ top: 'max(12px, env(safe-area-inset-top))' }}
       >
         ×
@@ -331,13 +331,13 @@ export default function PlanEditor({ project, profile, isAdmin, onBack }) {
             onTouchMove={onPinchMove}
             onTouchEnd={() => { pinch.current = null }}
           >
-            <div className="min-w-full min-h-full flex items-center justify-center">
-              <div ref={content} style={{ width: sheetW, height: sheetH, position: 'relative', flex: '0 0 auto' }}>
-                {img ? <img src={img} alt="" className="w-full h-full block select-none object-contain" draggable={false} /> : <div className="p-6 text-sm text-white">Opening plan…</div>}
+            <div style={{ width: Math.max(vp.w, sheetW), height: Math.max(vp.h, sheetH), position: 'relative' }}>
+              <div ref={content} style={{ width: sheetW, height: sheetH, position: 'absolute', left: Math.max(0, (vp.w - sheetW) / 2), top: Math.max(0, (vp.h - sheetH) / 2) }}>
+                {img ? <img src={img} alt="" className="w-full h-full block select-none object-fill" draggable={false} /> : <div className="p-6 text-sm text-white">Opening plan…</div>}
                 <svg
                   ref={view}
                   className="absolute inset-0 w-full h-full"
-                  style={{ touchAction: tool === 'pan' ? 'pan-x pan-y pinch-zoom' : 'none' }}
+                  style={{ touchAction: tool === 'pan' ? 'pan-x pan-y' : 'none' }}
                   onMouseDown={down}
                   onMouseMove={move}
                   onMouseUp={up}
@@ -361,24 +361,24 @@ export default function PlanEditor({ project, profile, isAdmin, onBack }) {
               </div>
             </div>
           </div>
-          <div className="absolute left-2 z-[90] flex flex-col gap-1.5" style={{ top: 'max(12px, env(safe-area-inset-top))', maxHeight: 'calc(100% - 24px)' }}>
+          <div className="absolute left-2 right-20 z-[90] flex gap-1.5 overflow-x-auto" style={{ bottom: 'max(10px, env(safe-area-inset-bottom))' }}>
             {['pen', 'text', 'measure', 'erase'].map((t) => (
-              <button key={t} type="button" onClick={() => setTool((cur) => cur === t ? 'pan' : t)} className={'px-3 py-2 text-xs rounded-full whitespace-nowrap ' + (tool === t ? 'bg-white text-black' : 'bg-white/25 text-white')}>
+              <button key={t} type="button" onClick={() => setTool((cur) => cur === t ? 'pan' : t)} className={'px-3 py-2 text-xs rounded-full whitespace-nowrap border-2 border-white ' + (tool === t ? 'bg-white text-black' : 'bg-black text-white')}>
                 {t === 'pen' ? 'Mark' : t === 'text' ? 'Text' : t === 'erase' ? 'Eraser' : 'Measure'}
               </button>
             ))}
-            <select className="px-2 py-1.5 text-xs rounded-full bg-white/25 text-white" value={sheetScale} onChange={(e) => setSheetScale(e.target.value)}>
+            <select className="px-2 py-1.5 text-xs rounded-full bg-black text-white border-2 border-white" value={sheetScale} onChange={(e) => setSheetScale(e.target.value)}>
               {SCALES.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}
             </select>
-            <select className="px-2 py-1.5 text-xs rounded-full bg-white/25 text-white" value={sheetSize} onChange={(e) => { setSheetSize(e.target.value); const s = SHEETS.find((x) => x.id === e.target.value); if (s) pageIn.current = { w: s.w, h: s.h } }}>
+            <select className="px-2 py-1.5 text-xs rounded-full bg-black text-white border-2 border-white" value={sheetSize} onChange={(e) => { setSheetSize(e.target.value); const s = SHEETS.find((x) => x.id === e.target.value); if (s) pageIn.current = { w: s.w, h: s.h } }}>
               {SHEETS.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}
             </select>
             {pageCount > 1 && (
-              <div className="flex gap-1">
-                <button type="button" className="px-3 py-2 text-xs rounded-full bg-white/25 text-white" onClick={() => setPage((p) => Math.max(1, p - 1))}>Prev</button>
+              <>
+                <button type="button" className="px-3 py-2 text-xs rounded-full bg-black text-white border-2 border-white" onClick={() => setPage((p) => Math.max(1, p - 1))}>Prev</button>
                 <span className="text-xs text-white self-center">{page}/{pageCount}</span>
-                <button type="button" className="px-3 py-2 text-xs rounded-full bg-white/25 text-white" onClick={() => setPage((p) => Math.min(pageCount, p + 1))}>Next</button>
-              </div>
+                <button type="button" className="px-3 py-2 text-xs rounded-full bg-black text-white border-2 border-white" onClick={() => setPage((p) => Math.min(pageCount, p + 1))}>Next</button>
+              </>
             )}
           </div>
           {tool === 'text' && isAdmin && (
