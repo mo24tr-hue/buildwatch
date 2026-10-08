@@ -135,10 +135,8 @@ export default function PlanEditor({ project, profile, isAdmin, onBack }) {
       setPageCount(doc.numPages)
       const pg = await doc.getPage(Math.min(page, doc.numPages))
       const base = pg.getViewport({ scale: 1 })
-      pageIn.current = { w: base.width / 72, h: base.height / 72 }
-      const snapped = nearestSheet(pageIn.current.w, pageIn.current.h)
-      if (!dead) setSheetSize(snapped.id)
-      pageIn.current = { w: snapped.w, h: snapped.h }
+      pageIn.current = { w: 36, h: 24 }
+      if (!dead) setSheetSize('ARCH-D')
       const content = await pg.getTextContent()
       const found = []
       for (const item of content.items || []) {
@@ -223,7 +221,13 @@ export default function PlanEditor({ project, profile, isAdmin, onBack }) {
   }
 
   const down = (e) => {
-    if (!isAdmin || tool === 'pan' || (e.touches && e.touches.length > 1)) return
+    if (!isAdmin || tool === 'pan' || (e.touches && e.touches.length > 1)) {
+      if (e.touches && e.touches.length > 1) {
+        drag.current = null
+        if (tool !== 'measure' || measureStep !== 1) setDraft(null)
+      }
+      return
+    }
     const p = point(e)
     if (!p) return
     if (tool === 'erase') {
@@ -251,7 +255,7 @@ export default function PlanEditor({ project, profile, isAdmin, onBack }) {
     setDraft({ ...p, x2: p.x, y2: p.y, end: tool === 'measure' ? 'a' : 'mark' })
   }
   const move = (e) => {
-    if (!drag.current) return
+    if (!drag.current || (e.touches && e.touches.length > 1)) return
     const p = point(e)
     if (!p) return
     if (drag.current.end === 'b') {
@@ -407,31 +411,31 @@ export default function PlanEditor({ project, profile, isAdmin, onBack }) {
                   onTouchEnd={up}
                 >
                   {items.map((it) => it.type === 'text' ? (
-                    <text key={it.id} x={it.x + '%'} y={it.y + '%'} fill="#E6B800" fontSize="14" fontWeight="600">{it.text}</text>
+                    <text key={it.id} x={it.x} y={it.y} fill="#E6B800" fontSize="3" fontWeight="600">{it.text}</text>
                   ) : it.points ? (
-                    <polyline key={it.id} points={it.points.map((pt) => pt.x + ',' + pt.y).join(' ')} fill="none" stroke="#E6B800" strokeWidth="1.5" vectorEffect="non-scaling-stroke" />
+                    <polyline key={it.id} points={it.points.map((pt) => pt.x + ',' + pt.y).join(' ')} fill="none" stroke="#E6B800" strokeWidth="0.6" strokeLinecap="round" strokeLinejoin="round" />
                   ) : (
                     <g key={it.id}>
-                      <line x1={it.x + '%'} y1={it.y + '%'} x2={it.x2 + '%'} y2={it.y2 + '%'} stroke={it.type === 'dim' ? '#7EB6FF' : '#E6B800'} strokeWidth="2" />
+                      <line x1={it.x} y1={it.y} x2={it.x2} y2={it.y2} stroke={it.type === 'dim' ? '#7EB6FF' : '#E6B800'} strokeWidth="0.45" />
                       {it.type === 'dim' && (
                         <>
-                          <line x1={(it.x - (Math.abs(it.x2 - it.x) >= Math.abs(it.y2 - it.y) ? 0 : 0.55)) + '%'} y1={(it.y - (Math.abs(it.x2 - it.x) >= Math.abs(it.y2 - it.y) ? 0.55 : 0)) + '%'} x2={(it.x + (Math.abs(it.x2 - it.x) >= Math.abs(it.y2 - it.y) ? 0 : 0.55)) + '%'} y2={(it.y + (Math.abs(it.x2 - it.x) >= Math.abs(it.y2 - it.y) ? 0.55 : 0)) + '%'} stroke="#7EB6FF" strokeWidth="2" />
-                          <line x1={(it.x2 - (Math.abs(it.x2 - it.x) >= Math.abs(it.y2 - it.y) ? 0 : 0.55)) + '%'} y1={(it.y2 - (Math.abs(it.x2 - it.x) >= Math.abs(it.y2 - it.y) ? 0.55 : 0)) + '%'} x2={(it.x2 + (Math.abs(it.x2 - it.x) >= Math.abs(it.y2 - it.y) ? 0 : 0.55)) + '%'} y2={(it.y2 + (Math.abs(it.x2 - it.x) >= Math.abs(it.y2 - it.y) ? 0.55 : 0)) + '%'} stroke="#7EB6FF" strokeWidth="2" />
+                          <line x1={it.x - (Math.abs(it.x2 - it.x) >= Math.abs(it.y2 - it.y) ? 0 : 0.8)} y1={it.y - (Math.abs(it.x2 - it.x) >= Math.abs(it.y2 - it.y) ? 0.8 : 0)} x2={it.x + (Math.abs(it.x2 - it.x) >= Math.abs(it.y2 - it.y) ? 0 : 0.8)} y2={it.y + (Math.abs(it.x2 - it.x) >= Math.abs(it.y2 - it.y) ? 0.8 : 0)} stroke="#7EB6FF" strokeWidth="0.45" />
+                          <line x1={it.x2 - (Math.abs(it.x2 - it.x) >= Math.abs(it.y2 - it.y) ? 0 : 0.8)} y1={it.y2 - (Math.abs(it.x2 - it.x) >= Math.abs(it.y2 - it.y) ? 0.8 : 0)} x2={it.x2 + (Math.abs(it.x2 - it.x) >= Math.abs(it.y2 - it.y) ? 0 : 0.8)} y2={it.y2 + (Math.abs(it.x2 - it.x) >= Math.abs(it.y2 - it.y) ? 0.8 : 0)} stroke="#7EB6FF" strokeWidth="0.45" />
                         </>
                       )}
                       {it.feet != null && (
-                        <text x={((it.x + it.x2) / 2) + '%'} y={((it.y + it.y2) / 2) + '%'} fill="#7EB6FF" fontSize="12" fontWeight="700">{formatDim(it.feet)}</text>
+                        <text x={(it.x + it.x2) / 2} y={(it.y + it.y2) / 2} fill="#7EB6FF" fontSize="2.4" fontWeight="700">{formatDim(it.feet)}</text>
                       )}
                     </g>
                   ))}
                   {draft?.points && (
-                    <polyline points={draft.points.map((pt) => pt.x + ',' + pt.y).join(' ')} fill="none" stroke="#E6B800" strokeWidth="1.5" vectorEffect="non-scaling-stroke" />
+                    <polyline points={draft.points.map((pt) => pt.x + ',' + pt.y).join(' ')} fill="none" stroke="#E6B800" strokeWidth="0.6" strokeLinecap="round" strokeLinejoin="round" />
                   )}
                   {draft && !draft.points && (
                     <g>
-                      <line x1={draft.x + '%'} y1={draft.y + '%'} x2={draft.x2 + '%'} y2={draft.y2 + '%'} stroke="#7EB6FF" strokeWidth="2" />
-                      <line x1={draft.x + '%'} y1={(draft.y - 0.55) + '%'} x2={draft.x + '%'} y2={(draft.y + 0.55) + '%'} stroke="#7EB6FF" strokeWidth="2" />
-                      <line x1={draft.x2 + '%'} y1={(draft.y2 - 0.55) + '%'} x2={draft.x2 + '%'} y2={(draft.y2 + 0.55) + '%'} stroke="#7EB6FF" strokeWidth="2" />
+                      <line x1={draft.x} y1={draft.y} x2={draft.x2} y2={draft.y2} stroke="#7EB6FF" strokeWidth="0.45" />
+                      <line x1={draft.x - (Math.abs(draft.x2 - draft.x) >= Math.abs(draft.y2 - draft.y) ? 0 : 0.8)} y1={draft.y - (Math.abs(draft.x2 - draft.x) >= Math.abs(draft.y2 - draft.y) ? 0.8 : 0)} x2={draft.x + (Math.abs(draft.x2 - draft.x) >= Math.abs(draft.y2 - draft.y) ? 0 : 0.8)} y2={draft.y + (Math.abs(draft.x2 - draft.x) >= Math.abs(draft.y2 - draft.y) ? 0.8 : 0)} stroke="#7EB6FF" strokeWidth="0.45" />
+                      <line x1={draft.x2 - (Math.abs(draft.x2 - draft.x) >= Math.abs(draft.y2 - draft.y) ? 0 : 0.8)} y1={draft.y2 - (Math.abs(draft.x2 - draft.x) >= Math.abs(draft.y2 - draft.y) ? 0.8 : 0)} x2={draft.x2 + (Math.abs(draft.x2 - draft.x) >= Math.abs(draft.y2 - draft.y) ? 0 : 0.8)} y2={draft.y2 + (Math.abs(draft.x2 - draft.x) >= Math.abs(draft.y2 - draft.y) ? 0.8 : 0)} stroke="#7EB6FF" strokeWidth="0.45" />
                     </g>
                   )}
                 </svg>
@@ -445,11 +449,8 @@ export default function PlanEditor({ project, profile, isAdmin, onBack }) {
                 {t === 'pen' ? 'Mark' : t === 'text' ? 'Text' : t === 'erase' ? 'Eraser' : 'Measure'}
               </button>
             ))}
-            <select className={btn + ' max-w-[72px]'} value={sheetScale} onChange={(e) => setSheetScale(e.target.value)}>
+            <select className={btn + ' max-w-[92px]'} value={sheetScale} onChange={(e) => setSheetScale(e.target.value)}>
               {SCALES.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}
-            </select>
-            <select className={btn + ' max-w-[78px]'} value={sheetSize} onChange={(e) => { setSheetSize(e.target.value); const s = SHEETS.find((x) => x.id === e.target.value); if (s) pageIn.current = { w: s.w, h: s.h } }}>
-              {SHEETS.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}
             </select>
             {pageCount > 1 && (
               <>
@@ -472,8 +473,19 @@ export default function PlanEditor({ project, profile, isAdmin, onBack }) {
                 backgroundPosition: (-((((draft.end === 'a' ? draft.x : draft.x2) / 100) * sheetW * 2.4) - 56)) + 'px ' + (-((((draft.end === 'a' ? draft.y : draft.y2) / 100) * sheetH * 2.4) - 56)) + 'px',
               }}
             >
-              <div className="absolute left-1/2 top-1/2 w-4 h-px -ml-2 bg-[#7EB6FF]" />
-              <div className="absolute left-1/2 top-1/2 h-4 w-px -mt-2 bg-[#7EB6FF]" />
+              {tool === 'erase' ? (
+                <div className="absolute left-1/2 top-1/2 w-4 h-4 -ml-2 -mt-2 rounded-full bg-black border border-white" />
+              ) : tool === 'pen' && draft?.points ? (
+                <svg className="absolute inset-0 w-full h-full" viewBox="-18 -18 36 36">
+                  <polyline points={draft.points.slice(-24).map((pt) => ((pt.x - draft.x2) * 4) + ',' + ((pt.y - draft.y2) * 4)).join(' ')} fill="none" stroke="#E6B800" strokeWidth="1.4" />
+                  <circle cx="0" cy="0" r="1.2" fill="#E6B800" />
+                </svg>
+              ) : (
+                <>
+                  <div className="absolute left-1/2 top-1/2 w-5 h-px -ml-2.5 bg-[#7EB6FF]" />
+                  <div className="absolute left-1/2 top-1/2 h-5 w-px -mt-2.5 bg-[#7EB6FF]" />
+                </>
+              )}
             </div>
           )}
           {tool === 'text' && (

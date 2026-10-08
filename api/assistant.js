@@ -55,7 +55,7 @@ export default async function handler(req, res) {
   }
   const body = typeof req.body === 'string' ? JSON.parse(req.body || '{}') : (req.body || {})
   const messages = Array.isArray(body.messages) ? body.messages : []
-  const context = String(body.context || '').slice(0, 14000)
+  const context = String(body.context || '').slice(0, 28000)
   const focus = String(body.focus || '')
   const today = String(body.today || '')
   const role = String(body.role || 'admin')
@@ -76,7 +76,7 @@ Resolve relative dates from today and from the previous item in that same list:
 - "next Thursday" after a Monday = the Thursday after that Monday
 - "the Monday after that" = the Monday after the last date you just chose
 Return dates as YYYY-MM-DD.
-If they are only asking a question, do not call a tool. Answer in 1-3 sentences from the project list.
+If they ask for a room size or a measurement, use the plan text in the context. Quote the dimension printed on that plan. If the plan text has no size for that room, say the plan does not show that dimension.
 Never say you do not have it on file if the project is listed. If a quote is missing, say no quote is entered.
 Do not invent money or dates.
 

@@ -201,6 +201,30 @@ function saveHistory(profile, list) {
   } catch (_) {}
 }
 
+async function planTextFor(project) {
+  const files = [
+    ...(project?.project_files || []),
+    ...(project?.phases || []).flatMap((ph) => ph.phase_files || []),
+  ].filter((f) => f.public_url && /\.pdf(\?|$)/i.test(f.public_url || f.file_name || ''))
+  if (!files.length) return ''
+  try {
+    const pdfjs = await import('https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.4.168/pdf.min.mjs')
+    pdfjs.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.4.168/pdf.worker.min.mjs'
+    const doc = await pdfjs.getDocument(files[0].public_url).promise
+    const pages = Math.min(doc.numPages, 4)
+    const bits = []
+    for (let i = 1; i <= pages; i++) {
+      const pg = await doc.getPage(i)
+      const content = await pg.getTextContent()
+      const text = (content.items || []).map((it) => it.str).join(' ')
+      if (text.trim()) bits.push(text.trim())
+    }
+    return bits.join('\n').slice(0, 8000)
+  } catch {
+    return ''
+  }
+}
+
 export default function AssistantChat({ projects, profile, isAdmin, onReload, onOpenProject }) {
   const [threads, setThreads] = useState(() => loadHistory(profile))
   const [activeId, setActiveId] = useState(() => 'c' + Date.now())
@@ -317,13 +341,18 @@ export default function AssistantChat({ projects, profile, isAdmin, onReload, on
         const scopedCosts = (profile?.role === 'admin' ? costs : []).filter((c) => allowedIds.has(c.project_id))
         const scopedMeetings = (meetings || []).filter((m) => !m.project_id || allowedIds.has(m.project_id))
         const pack = buildProjectPack(projects, { costs: scopedCosts, meetings: scopedMeetings, role: profile?.role || 'admin' })
+        let planNote = ''
+        if (project && /\b(measure|size|dimension|room|kitchen|bath|bedroom|plan|sq|feet|wide|long)\b/.test(lower)) {
+          const extracted = await planTextFor(project)
+          if (extracted) planNote = `\nPlan text for ${project.address}:\n${extracted}`
+        }
         const r = await fetch('/api/assistant', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             today: ymd(new Date()),
             role: profile?.role || 'admin',
-            context: contextBlob(pack),
+            context: contextBlob(pack) + planNote,
             focus: project?.address || lastProjectRef.current?.address || '',
             messages: [...messages, { role: 'user', text }].slice(-16).map((m) => ({
               role: m.role === 'bot' ? 'assistant' : 'user',

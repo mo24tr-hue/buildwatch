@@ -4284,7 +4284,7 @@ function ProjectDetail({ project, isAdmin, canUpload, isCustomer, profile, onBac
           )}
         </div>
         <button type="button" onClick={() => setProjectPage('markup')} className="w-full mt-4 border border-black rounded-md px-4 py-3 text-left text-sm">
-          Mark up plan
+          Measure and mark
         </button>
       </SwipeBack>
     )
