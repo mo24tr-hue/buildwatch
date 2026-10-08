@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { HardHat, Plus, Image as ImageIcon, MapPin, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Camera, Trash2, Check, FileText, X, Video, Menu, Share2, Bell, Search, Copy, Archive, Printer, CalendarDays, Users, FolderOpen, DollarSign, Activity, CircleDot, Clock, ListChecks, MessageSquare } from 'lucide-react'
 import { supabase } from '../lib/supabase'
+import { enablePush } from '../lib/push'
 import { STYLES, PROJECT_STATUS, PHASE_STATUS, nextPhaseStatus, fmtDate, fmtDateTime, isFinishingPhase, FINISHING_PHASES, finishingLabel, roleLabel } from '../lib/styles'
 import AdminPanel from '../components/AdminPanel'
 import PlatformAdmin from '../components/PlatformAdmin'
@@ -1236,6 +1237,16 @@ export default function Dashboard({ session, profile, company, onCompanyUpdate, 
               <ChevronLeft size={16} /> Back
             </button>
             <h2 className="font-display text-2xl mb-4">Notifications</h2>
+            <button
+              type="button"
+              className="w-full mb-4 py-2.5 border border-black rounded text-sm"
+              onClick={async () => {
+                const result = await enablePush(profile)
+                alert(result.ok ? 'Closed-app alerts are on for this phone.' : result.reason)
+              }}
+            >
+              Enable alerts when the app is closed
+            </button>
             {notifications.length > 0 && (
               <div className="flex justify-end mb-3">
                 <button
