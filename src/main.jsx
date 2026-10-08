@@ -27,26 +27,19 @@ window.visualViewport?.addEventListener('scroll', fitScreen)
 
 const compiled = typeof __BW_BUILD__ !== 'undefined' ? String(__BW_BUILD__) : ''
 const APPLIED = 'bw_applied_build'
-const standalone =
-  (typeof window !== 'undefined' &&
-    (window.navigator.standalone === true ||
-      window.matchMedia('(display-mode: standalone)').matches))
+try { sessionStorage.removeItem('bw_reloading') } catch (_) {}
 
 async function hardReload(next) {
-  if (sessionStorage.getItem('bw_reloading') === '1') return
-  sessionStorage.setItem('bw_reloading', '1')
-  localStorage.setItem(APPLIED, next)
-  if (standalone) {
-    window.location.reload()
-    return
-  }
+  try { localStorage.setItem(APPLIED, next) } catch (_) {}
   try {
     if (window.caches) {
       const keys = await caches.keys()
       await Promise.all(keys.map((k) => caches.delete(k)))
     }
   } catch (_) {}
-  window.location.reload()
+  const url = new URL(window.location.href)
+  url.searchParams.set('v', next)
+  window.location.replace(url.toString())
 }
 
 async function checkBuild() {
