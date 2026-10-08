@@ -102,6 +102,9 @@ export default function SwipeBack({ onBack, children, className = '', disabled =
     bind()
     const rec = { el, onBack: onBackRef, disabled, fromAnywhere }
     stack.push(rec)
+    window.scrollTo(0, 0)
+    document.documentElement.scrollTop = 0
+    document.body.scrollTop = 0
     return () => {
       const i = stack.indexOf(rec)
       if (i >= 0) stack.splice(i, 1)

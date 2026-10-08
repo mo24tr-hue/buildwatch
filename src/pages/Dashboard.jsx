@@ -263,8 +263,10 @@ export default function Dashboard({ session, profile, company, onCompanyUpdate, 
   }, [profile?.company_id])
 
   useEffect(() => {
-    setHeaderCompany(company)
-  }, [company])
+    window.scrollTo(0, 0)
+    document.documentElement.scrollTop = 0
+    document.body.scrollTop = 0
+  }, [activeId, packPage, showNotifs, showAdmin, showCalendar, showWeek, showHelp, showBilling])
 
   useEffect(() => {
     refreshCompany()
@@ -1214,7 +1216,7 @@ export default function Dashboard({ session, profile, company, onCompanyUpdate, 
           Offline — showing saved jobs. Changes wait until you are back online.
         </div>
       )}
-      <main className="max-w-2xl mx-auto px-4 py-5 pb-28 w-full min-w-0 overflow-x-hidden box-border" style={{ WebkitOverflowScrolling: 'touch' }}>
+      <main className="max-w-2xl mx-auto px-4 pt-4 pb-28 w-full min-w-0 overflow-x-hidden box-border" style={{ WebkitOverflowScrolling: 'touch' }}>
         {showNotifs && (isAdmin || profile?.role === 'team') ? (
           <SwipeBack onBack={() => setShowNotifs(false)}>
             <button type="button" onClick={() => setShowNotifs(false)} className="flex items-center gap-1 text-sm text-[#6B6E72] mb-4">
@@ -3954,8 +3956,10 @@ function ProjectDetail({ project, isAdmin, canUpload, isCustomer, profile, onBac
   const phases = localPhases.length ? localPhases : (project.phases || [])
 
   useEffect(() => {
-    setLocalPhases(project.phases || [])
-  }, [project.phases])
+    window.scrollTo(0, 0)
+    document.documentElement.scrollTop = 0
+    document.body.scrollTop = 0
+  }, [projectPage, selectedPhaseId, showPeople])
   const files = project.project_files || []
   const assignedCustomers = (project.project_customers || []).map((m) => m.user_id)
   const selected = phases.find((p) => p.id === selectedPhaseId)
