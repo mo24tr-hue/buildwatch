@@ -115,7 +115,7 @@ export default function SwipeBack({ onBack, children, className = '', disabled =
       className={className}
       style={{ touchAction: 'pan-y', minHeight: '100dvh', width: '100%', position: 'relative', background: '#fff' }}
     >
-      <div aria-hidden="true" style={{ position: 'fixed', inset: 0, zIndex: 0 }} />
+      <div aria-hidden="true" style={{ position: 'fixed', inset: 0, zIndex: 0, pointerEvents: 'none' }} />
       <div style={{ position: 'relative', zIndex: 1, minHeight: '100dvh' }}>{children}</div>
     </div>
   )

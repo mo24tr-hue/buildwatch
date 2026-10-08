@@ -5612,6 +5612,7 @@ function PhaseDetail({ phase, project, isAdmin, canUpload, isCustomer, profile, 
   }
 
   const readyLabel = phase.ready_state === 'ready' ? 'Ready' : phase.ready_state === 'on_site' ? 'You’re on site' : 'Not ready'
+  const isOverdue = !!(phase.end_date && phase.status !== 'done' && new Date(phase.end_date + 'T23:59:59') < new Date())
 
 
   const savePhaseNameInside = async () => {
