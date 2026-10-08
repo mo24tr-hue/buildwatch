@@ -112,7 +112,14 @@ export default function PlanEditor({ project, profile, isAdmin, onBack }) {
   const view = useRef(null)
   const content = useRef(null)
   const zoomRef = useRef(1)
+  const lastTouch = useRef(0)
   const [draft, setDraft] = useState(null)
+  const eraseAt = (p, list) => list.filter((it) => {
+    if (it.points) return !it.points.some((pt) => Math.hypot(pt.x - p.x, pt.y - p.y) < 1.4)
+    const pts = [{ x: it.x, y: it.y }]
+    if (it.x2 != null) pts.push({ x: it.x2, y: it.y2 })
+    return !pts.some((pt) => Math.hypot(pt.x - p.x, pt.y - p.y) < 1.4)
+  })
   const [measureStep, setMeasureStep] = useState(0)
 
   const file = files.find((f) => f.public_url === fileUrl)
@@ -221,6 +228,8 @@ export default function PlanEditor({ project, profile, isAdmin, onBack }) {
   }
 
   const down = (e) => {
+    if (e.touches) lastTouch.current = Date.now()
+    if (!e.touches && Date.now() - lastTouch.current < 700) return
     if (!isAdmin || tool === 'pan' || (e.touches && e.touches.length > 1)) {
       if (e.touches && e.touches.length > 1) {
         drag.current = null
@@ -231,13 +240,10 @@ export default function PlanEditor({ project, profile, isAdmin, onBack }) {
     const p = point(e)
     if (!p) return
     if (tool === 'erase') {
-      const next = items.filter((it) => {
-        if (it.points) return !it.points.some((pt) => Math.hypot(pt.x - p.x, pt.y - p.y) < 1.6)
-        const mx = it.x2 != null ? (it.x + it.x2) / 2 : it.x
-        const my = it.y2 != null ? (it.y + it.y2) / 2 : it.y
-        return Math.hypot(mx - p.x, my - p.y) > 1.6
-      })
+      drag.current = { end: 'erase', fx: p.fx, fy: p.fy }
+      const next = eraseAt(p, items)
       if (next.length !== items.length) save(next, scale)
+      setDraft({ end: 'erase', x: p.x, y: p.y, x2: p.x, y2: p.y, fx: p.fx, fy: p.fy })
       return
     }
     if (tool === 'text') {
@@ -267,16 +273,24 @@ export default function PlanEditor({ project, profile, isAdmin, onBack }) {
       setDraft({ ...p, x2: p.x, y2: p.y, fx: p.fx, fy: p.fy, end: 'a' })
       return
     }
-    if (drag.current.end === 'mark') {
-      const points = [...(drag.current.points || []), { x: p.x, y: p.y }]
-      drag.current = { ...drag.current, points, x2: p.x, y2: p.y, fx: p.fx, fy: p.fy }
-      setDraft({ ...drag.current })
+    if (drag.current.end === 'erase') {
+      setItems((list) => eraseAt(p, list))
+      setDraft({ end: 'erase', x: p.x, y: p.y, x2: p.x, y2: p.y, fx: p.fx, fy: p.fy })
       return
     }
+    const points = [...(drag.current.points || []), { x: p.x, y: p.y }]
+    drag.current = { ...drag.current, points, x2: p.x, y2: p.y, fx: p.fx, fy: p.fy }
+    setDraft({ ...drag.current })
   }
   const up = () => {
     if (!drag.current || !draft) {
       drag.current = null
+      return
+    }
+    if (tool === 'erase') {
+      save(items, scale)
+      drag.current = null
+      setDraft(null)
       return
     }
     if (tool === 'measure' && drag.current.end === 'a') {
@@ -349,9 +363,11 @@ export default function PlanEditor({ project, profile, isAdmin, onBack }) {
   const [vp, setVp] = useState({ w: 390, h: 700 })
   useEffect(() => {
     const read = () => {
-      setVp({
-        w: Math.round(window.innerWidth),
-        h: Math.round(window.innerHeight),
+      setVp((prev) => {
+        const w = Math.round(window.innerWidth)
+        const h = Math.round(window.innerHeight)
+        if (prev && h < prev.h - 80) return { ...prev, w }
+        return { w, h }
       })
     }
     read()
@@ -401,26 +417,27 @@ export default function PlanEditor({ project, profile, isAdmin, onBack }) {
                   className="absolute inset-0 w-full h-full"
                   viewBox="0 0 100 100"
                   preserveAspectRatio="none"
-                  style={{ touchAction: tool === 'pan' ? 'pan-x pan-y' : 'none' }}
+                  style={{ touchAction: 'none', WebkitTouchCallout: 'none', WebkitUserSelect: 'none', userSelect: 'none' }}
+                  onContextMenu={(e) => e.preventDefault()}
                   onMouseDown={down}
                   onMouseMove={move}
                   onMouseUp={up}
                   onMouseLeave={up}
-                  onTouchStart={down}
-                  onTouchMove={move}
-                  onTouchEnd={up}
+                  onTouchStart={(e) => { e.preventDefault(); down(e) }}
+                  onTouchMove={(e) => { e.preventDefault(); move(e) }}
+                  onTouchEnd={(e) => { e.preventDefault(); up() }}
                 >
                   {items.map((it) => it.type === 'text' ? (
-                    <text key={it.id} x={it.x} y={it.y} fill="#E6B800" fontSize="3" fontWeight="600">{it.text}</text>
+                    <text key={it.id} x={it.x} y={it.y} fill="#16324F" fontSize="2.2" fontFamily="Montserrat, sans-serif" fontWeight="500">{it.text}</text>
                   ) : it.points ? (
-                    <polyline key={it.id} points={it.points.map((pt) => pt.x + ',' + pt.y).join(' ')} fill="none" stroke="#E6B800" strokeWidth="0.6" strokeLinecap="round" strokeLinejoin="round" />
+                    <polyline key={it.id} points={it.points.map((pt) => pt.x + ',' + pt.y).join(' ')} fill="none" stroke="#E6B800" strokeWidth="0.28" strokeLinecap="round" strokeLinejoin="round" />
                   ) : (
                     <g key={it.id}>
-                      <line x1={it.x} y1={it.y} x2={it.x2} y2={it.y2} stroke={it.type === 'dim' ? '#7EB6FF' : '#E6B800'} strokeWidth="0.45" />
+                      <line x1={it.x} y1={it.y} x2={it.x2} y2={it.y2} stroke={it.type === 'dim' ? '#7EB6FF' : '#E6B800'} strokeWidth="0.22" />
                       {it.type === 'dim' && (
                         <>
-                          <line x1={it.x - (Math.abs(it.x2 - it.x) >= Math.abs(it.y2 - it.y) ? 0 : 0.8)} y1={it.y - (Math.abs(it.x2 - it.x) >= Math.abs(it.y2 - it.y) ? 0.8 : 0)} x2={it.x + (Math.abs(it.x2 - it.x) >= Math.abs(it.y2 - it.y) ? 0 : 0.8)} y2={it.y + (Math.abs(it.x2 - it.x) >= Math.abs(it.y2 - it.y) ? 0.8 : 0)} stroke="#7EB6FF" strokeWidth="0.45" />
-                          <line x1={it.x2 - (Math.abs(it.x2 - it.x) >= Math.abs(it.y2 - it.y) ? 0 : 0.8)} y1={it.y2 - (Math.abs(it.x2 - it.x) >= Math.abs(it.y2 - it.y) ? 0.8 : 0)} x2={it.x2 + (Math.abs(it.x2 - it.x) >= Math.abs(it.y2 - it.y) ? 0 : 0.8)} y2={it.y2 + (Math.abs(it.x2 - it.x) >= Math.abs(it.y2 - it.y) ? 0.8 : 0)} stroke="#7EB6FF" strokeWidth="0.45" />
+                          <line x1={it.x - (Math.abs(it.x2 - it.x) >= Math.abs(it.y2 - it.y) ? 0 : 0.7)} y1={it.y - (Math.abs(it.x2 - it.x) >= Math.abs(it.y2 - it.y) ? 0.7 : 0)} x2={it.x + (Math.abs(it.x2 - it.x) >= Math.abs(it.y2 - it.y) ? 0 : 0.7)} y2={it.y + (Math.abs(it.x2 - it.x) >= Math.abs(it.y2 - it.y) ? 0.7 : 0)} stroke="#7EB6FF" strokeWidth="0.22" />
+                          <line x1={it.x2 - (Math.abs(it.x2 - it.x) >= Math.abs(it.y2 - it.y) ? 0 : 0.7)} y1={it.y2 - (Math.abs(it.x2 - it.x) >= Math.abs(it.y2 - it.y) ? 0.7 : 0)} x2={it.x2 + (Math.abs(it.x2 - it.x) >= Math.abs(it.y2 - it.y) ? 0 : 0.7)} y2={it.y2 + (Math.abs(it.x2 - it.x) >= Math.abs(it.y2 - it.y) ? 0.7 : 0)} stroke="#7EB6FF" strokeWidth="0.22" />
                         </>
                       )}
                       {it.feet != null && (
@@ -429,11 +446,11 @@ export default function PlanEditor({ project, profile, isAdmin, onBack }) {
                     </g>
                   ))}
                   {draft?.points && (
-                    <polyline points={draft.points.map((pt) => pt.x + ',' + pt.y).join(' ')} fill="none" stroke="#E6B800" strokeWidth="0.6" strokeLinecap="round" strokeLinejoin="round" />
+                    <polyline points={draft.points.map((pt) => pt.x + ',' + pt.y).join(' ')} fill="none" stroke="#E6B800" strokeWidth="0.28" strokeLinecap="round" strokeLinejoin="round" />
                   )}
                   {draft && !draft.points && (
                     <g>
-                      <line x1={draft.x} y1={draft.y} x2={draft.x2} y2={draft.y2} stroke="#7EB6FF" strokeWidth="0.45" />
+                      <line x1={draft.x} y1={draft.y} x2={draft.x2} y2={draft.y2} stroke="#7EB6FF" strokeWidth="0.22" />
                       <line x1={draft.x - (Math.abs(draft.x2 - draft.x) >= Math.abs(draft.y2 - draft.y) ? 0 : 0.8)} y1={draft.y - (Math.abs(draft.x2 - draft.x) >= Math.abs(draft.y2 - draft.y) ? 0.8 : 0)} x2={draft.x + (Math.abs(draft.x2 - draft.x) >= Math.abs(draft.y2 - draft.y) ? 0 : 0.8)} y2={draft.y + (Math.abs(draft.x2 - draft.x) >= Math.abs(draft.y2 - draft.y) ? 0.8 : 0)} stroke="#7EB6FF" strokeWidth="0.45" />
                       <line x1={draft.x2 - (Math.abs(draft.x2 - draft.x) >= Math.abs(draft.y2 - draft.y) ? 0 : 0.8)} y1={draft.y2 - (Math.abs(draft.x2 - draft.x) >= Math.abs(draft.y2 - draft.y) ? 0.8 : 0)} x2={draft.x2 + (Math.abs(draft.x2 - draft.x) >= Math.abs(draft.y2 - draft.y) ? 0 : 0.8)} y2={draft.y2 + (Math.abs(draft.x2 - draft.x) >= Math.abs(draft.y2 - draft.y) ? 0.8 : 0)} stroke="#7EB6FF" strokeWidth="0.45" />
                     </g>
@@ -489,7 +506,7 @@ export default function PlanEditor({ project, profile, isAdmin, onBack }) {
             </div>
           )}
           {tool === 'text' && (
-            <input className="fixed left-3 right-3 z-[220] border border-white bg-black text-white rounded px-3 py-2 text-base" style={{ bottom: 'max(12px, env(safe-area-inset-bottom))' }} placeholder="Text to place" value={text} onChange={(e) => setText(e.target.value)} />
+            <input inputMode="text" className="fixed left-3 right-3 z-[220] border border-white bg-black text-white rounded px-3 py-2 text-base" style={{ bottom: 'calc(env(safe-area-inset-bottom) + 52px)' }} placeholder="Text to place" value={text} onChange={(e) => setText(e.target.value)} />
           )}
         </>
       )}
