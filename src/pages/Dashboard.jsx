@@ -6509,28 +6509,20 @@ function PhaseDetail({ phase, project, isAdmin, canUpload, isCustomer, profile, 
       )}
 
       {showMarkup && (
-        <div className="fixed inset-0 z-[60] bg-black/95 flex flex-col">
-          <div className="flex justify-between items-center px-4 py-3 text-white" style={{ paddingTop: 'max(0.75rem, env(safe-area-inset-top))' }}>
-            <span className="text-sm">Draw on photo</span>
-            <button type="button" onClick={() => setShowMarkup(false)} className="p-2"><X size={22} /></button>
-          </div>
-          <div className="flex-1 overflow-auto flex items-center justify-center p-2">
-            <canvas
-              ref={markupCanvasRef}
-              className="max-w-full touch-none bg-black"
-              onMouseDown={(e) => markupPointer(e, 'down')}
-              onMouseMove={(e) => markupPointer(e, 'move')}
-              onMouseUp={(e) => markupPointer(e, 'up')}
-              onMouseLeave={(e) => markupPointer(e, 'up')}
-              onTouchStart={(e) => { e.preventDefault(); markupPointer(e, 'down') }}
-              onTouchMove={(e) => { e.preventDefault(); markupPointer(e, 'move') }}
-              onTouchEnd={(e) => markupPointer(e, 'up')}
-            />
-          </div>
-          <div className="p-4 flex gap-2" style={{ paddingBottom: 'max(0.75rem, env(safe-area-inset-bottom))' }}>
-            <button type="button" onClick={() => setShowMarkup(false)} className="flex-1 py-2 rounded border border-white text-white text-sm">Cancel</button>
-            <button type="button" onClick={saveMarkup} className="flex-1 py-2 rounded bg-white text-black text-sm">Save markup</button>
-          </div>
+        <div className="fixed inset-0 z-[200] bg-black">
+          <button type="button" onClick={() => setShowMarkup(false)} className="absolute z-10 right-3 w-10 h-10 rounded-full bg-black/70 text-white" style={{ top: 'max(12px, env(safe-area-inset-top))' }}>×</button>
+          <canvas
+            ref={markupCanvasRef}
+            className="absolute inset-0 w-full h-full touch-none"
+            onMouseDown={(e) => markupPointer(e, 'down')}
+            onMouseMove={(e) => markupPointer(e, 'move')}
+            onMouseUp={(e) => markupPointer(e, 'up')}
+            onMouseLeave={(e) => markupPointer(e, 'up')}
+            onTouchStart={(e) => { e.preventDefault(); markupPointer(e, 'down') }}
+            onTouchMove={(e) => { e.preventDefault(); markupPointer(e, 'move') }}
+            onTouchEnd={(e) => markupPointer(e, 'up')}
+          />
+          <button type="button" onClick={saveMarkup} className="absolute z-10 left-3 px-4 py-2 rounded-full bg-white text-black text-sm" style={{ bottom: 'max(12px, env(safe-area-inset-bottom))' }}>Save</button>
         </div>
       )}
     </SwipeBack>

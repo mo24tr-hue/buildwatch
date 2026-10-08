@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { supabase } from '../lib/supabase'
 
 const field = 'w-full border border-black rounded px-3 py-2 text-sm bg-white'
@@ -297,21 +298,31 @@ export default function PlanEditor({ project, profile, isAdmin, onBack }) {
   const chosenSheet = SHEETS.find((s) => s.id === sheetSize) || SHEETS[0]
   const [vp, setVp] = useState({ w: 390, h: 700 })
   useEffect(() => {
-    const read = () => setVp({ w: window.innerWidth, h: window.innerHeight })
+    const read = () => {
+      const vv = window.visualViewport
+      setVp({
+        w: Math.round(vv?.width || window.innerWidth),
+        h: Math.round(vv?.height || window.innerHeight),
+      })
+    }
     read()
     window.addEventListener('resize', read)
+    window.addEventListener('orientationchange', read)
     window.visualViewport?.addEventListener('resize', read)
+    window.visualViewport?.addEventListener('scroll', read)
     return () => {
       window.removeEventListener('resize', read)
+      window.removeEventListener('orientationchange', read)
       window.visualViewport?.removeEventListener('resize', read)
+      window.visualViewport?.removeEventListener('scroll', read)
     }
   }, [])
   const fit = Math.min(vp.w / chosenSheet.w, vp.h / chosenSheet.h)
-  const sheetW = chosenSheet.w * fit * zoom
-  const sheetH = chosenSheet.h * fit * zoom
+  const sheetW = Math.max(1, chosenSheet.w * fit * zoom)
+  const sheetH = Math.max(1, chosenSheet.h * fit * zoom)
 
-  return (
-    <div className="fixed inset-0 z-[80] bg-black" data-no-swipe>
+  return createPortal(
+    <div className="fixed bg-black" data-no-swipe style={{ top: 0, left: 0, width: vp.w, height: vp.h, zIndex: 200 }}>
       <button
         type="button"
         onClick={onBack}
@@ -362,40 +373,22 @@ export default function PlanEditor({ project, profile, isAdmin, onBack }) {
               </div>
             </div>
           </div>
-          <button
-            type="button"
-            onClick={() => setToolsOpen((v) => !v)}
-            className="absolute z-[90] left-3 w-10 h-10 rounded-full bg-black/70 text-white text-sm"
-            style={{ bottom: 'max(12px, env(safe-area-inset-bottom))' }}
-          >
-            {toolsOpen ? '–' : '✎'}
-          </button>
-          {toolsOpen && (
-            <div className="absolute left-14 z-[90] flex gap-1.5 overflow-x-auto max-w-[78vw]" style={{ bottom: 'max(12px, env(safe-area-inset-bottom))' }}>
-              {['pan', 'pen', 'text', 'measure', 'erase'].map((t) => (
-                <button key={t} type="button" onClick={() => setTool(t)} className={'px-3 py-2 text-xs rounded-full whitespace-nowrap ' + (tool === t ? 'bg-white text-black' : 'bg-black/70 text-white')}>
-                  {t === 'pan' ? 'Move' : t === 'pen' ? 'Mark' : t === 'text' ? 'Text' : t === 'erase' ? 'Eraser' : 'Measure'}
-                </button>
-              ))}
-              <select className="px-2 py-1.5 text-xs rounded-full bg-black/70 text-white" value={sheetScale} onChange={(e) => setSheetScale(e.target.value)}>
-                {SCALES.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}
-              </select>
-              <select className="px-2 py-1.5 text-xs rounded-full bg-black/70 text-white" value={sheetSize} onChange={(e) => { setSheetSize(e.target.value); const s = SHEETS.find((x) => x.id === e.target.value); if (s) pageIn.current = { w: s.w, h: s.h } }}>
-                {SHEETS.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}
-              </select>
-              {pageCount > 1 && (
-                <button type="button" className="px-3 py-1.5 text-xs rounded-full bg-black/70 text-white" onClick={() => setPage((p) => p >= pageCount ? 1 : p + 1)}>{page}/{pageCount}</button>
-              )}
-              {fileUrl && (
-                <a href={fileUrl} target="_blank" rel="noreferrer" className="px-3 py-2 text-xs rounded-full bg-black/70 text-white whitespace-nowrap">System markup</a>
-              )}
-            </div>
-          )}
-          {tool === 'text' && isAdmin && toolsOpen && (
-            <input className="absolute left-3 right-3 z-[90] border border-white/40 bg-black/80 text-white rounded px-3 py-2 text-sm" style={{ bottom: 'max(64px, calc(env(safe-area-inset-bottom) + 52px))' }} placeholder="Text to place" value={text} onChange={(e) => setText(e.target.value)} />
+          <div className="absolute left-2 right-16 z-[90] flex gap-1.5 overflow-x-auto" style={{ bottom: 'max(10px, env(safe-area-inset-bottom))' }}>
+            {['pan', 'pen', 'text', 'measure', 'erase'].map((t) => (
+              <button key={t} type="button" onClick={() => setTool(t)} className={'px-3 py-2 text-xs rounded-full whitespace-nowrap ' + (tool === t ? 'bg-white text-black' : 'bg-white/20 text-white')}>
+                {t === 'pan' ? 'Move' : t === 'pen' ? 'Mark' : t === 'text' ? 'Text' : t === 'erase' ? 'Eraser' : 'Measure'}
+              </button>
+            ))}
+            <select className="px-2 py-1.5 text-xs rounded-full bg-white/20 text-white" value={sheetScale} onChange={(e) => setSheetScale(e.target.value)}>
+              {SCALES.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}
+            </select>
+          </div>
+          {tool === 'text' && isAdmin && (
+            <input className="absolute left-3 right-3 z-[90] border border-white/40 bg-black/80 text-white rounded px-3 py-2 text-sm" style={{ bottom: 'max(58px, calc(env(safe-area-inset-bottom) + 46px))' }} placeholder="Text to place" value={text} onChange={(e) => setText(e.target.value)} />
           )}
         </>
       )}
-    </div>
+    </div>,
+    document.body
   )
 }
