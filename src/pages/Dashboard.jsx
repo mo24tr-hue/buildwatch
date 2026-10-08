@@ -187,7 +187,6 @@ export default function Dashboard({ session, profile, company, onCompanyUpdate, 
   }, [])
   const [loading, setLoading] = useState(true)
   const [online, setOnline] = useState(() => typeof navigator === 'undefined' || navigator.onLine)
-  const [updateAvailable, setUpdateAvailable] = useState(false)
   const [digest, setDigest] = useState([])
   const [activeId, setActiveId] = useState(null)
   const [showNew, setShowNew] = useState(false)
@@ -553,14 +552,6 @@ export default function Dashboard({ session, profile, company, onCompanyUpdate, 
     navigator.serviceWorker.getRegistration().then((reg) => {
       if (!reg) return
       reg.update().catch(() => {})
-      if (reg.waiting) setUpdateAvailable(true)
-      reg.addEventListener('updatefound', () => {
-        const nw = reg.installing
-        if (!nw) return
-        nw.addEventListener('statechange', () => {
-          if (nw.state === 'installed' && navigator.serviceWorker.controller) setUpdateAvailable(true)
-        })
-      })
     }).catch(() => {})
   }, [])
 
@@ -1221,14 +1212,6 @@ export default function Dashboard({ session, profile, company, onCompanyUpdate, 
       {!online && (
         <div className="bg-[#E9E9E7] border-b border-black text-center text-sm px-4 py-2">
           Offline — showing saved jobs. Changes wait until you are back online.
-        </div>
-      )}
-      {updateAvailable && (
-        <div className="bg-[#FFF8DB] border-b border-[#E6B800] text-center text-sm px-4 py-2">
-          New version available.{' '}
-          <button type="button" className="underline font-medium" onClick={() => window.location.reload()}>
-            Refresh
-          </button>
         </div>
       )}
       <main className="max-w-2xl mx-auto px-4 py-5 pb-28 w-full min-w-0 overflow-x-hidden box-border" style={{ WebkitOverflowScrolling: 'touch' }}>

@@ -178,8 +178,8 @@ export default function AuthScreen() {
     <div className="min-h-screen bg-white flex flex-col">
       <div className="bg-black text-white px-5 pb-8" style={{ paddingTop: 'max(2rem, env(safe-area-inset-top))' }}>
         <div className="max-w-md mx-auto text-center">
-          <h1 className="font-display text-2xl tracking-wide">Project Tracker</h1>
-          <p className="text-white/60 text-xs mt-1 uppercase tracking-widest">Multi-company construction log</p>
+          <h1 className="font-display text-3xl tracking-wide font-bold">BuildWatch</h1>
+          <p className="text-white/80 text-sm mt-2">The Project Tracker Built For Everyone</p>
         </div>
       </div>
 
