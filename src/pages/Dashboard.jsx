@@ -698,18 +698,19 @@ export default function Dashboard({ session, profile, company, onCompanyUpdate, 
     return () => clearInterval(t)
   }, [loadNotifications])
 
-  // Request browser notification permission (team + admin)
   useEffect(() => {
     if (!profile?.id) return
-    if (typeof Notification === 'undefined') return
-    if (Notification.permission === 'default') {
-      // defer slightly so UI loads first
-      const id = setTimeout(() => {
-        Notification.requestPermission().catch(() => {})
-      }, 2000)
-      return () => clearTimeout(id)
+    const run = () => { enablePush(profile).catch(() => {}) }
+    const id = setTimeout(run, 1200)
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') run()
     }
-  }, [profile?.id])
+    document.addEventListener('visibilitychange', onVisible)
+    return () => {
+      clearTimeout(id)
+      document.removeEventListener('visibilitychange', onVisible)
+    }
+  }, [profile?.id, profile?.company_id])
 
   const showLocalPush = useCallback((title, body, data = {}) => {
     try {
@@ -1237,16 +1238,6 @@ export default function Dashboard({ session, profile, company, onCompanyUpdate, 
               <ChevronLeft size={16} /> Back
             </button>
             <h2 className="font-display text-2xl mb-4">Notifications</h2>
-            <button
-              type="button"
-              className="w-full mb-4 py-2.5 border border-black rounded text-sm"
-              onClick={async () => {
-                const result = await enablePush(profile)
-                alert(result.ok ? 'Closed-app alerts are on for this phone.' : result.reason)
-              }}
-            >
-              Enable alerts when the app is closed
-            </button>
             {notifications.length > 0 && (
               <div className="flex justify-end mb-3">
                 <button
