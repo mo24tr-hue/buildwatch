@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { Analytics } from '@vercel/analytics/react'
 import { supabase } from './lib/supabase'
 import AuthScreen from './pages/AuthScreen'
 import SetupCompany from './pages/SetupCompany'
@@ -387,22 +388,35 @@ export default function App() {
   }
 
   if (!session && !loading) {
-    return <AuthScreen />
+    return (
+      <>
+        <AuthScreen />
+        <Analytics />
+      </>
+    )
   }
 
   if (!splashDone || loading || !session) {
-    return <CompanySplash company={company || peekCachedCompany()} />
+    return (
+      <>
+        <CompanySplash company={company || peekCachedCompany()} />
+        <Analytics />
+      </>
+    )
   }
 
   // Password reset link — always show set-password before dashboard
   if (passwordRecovery || isPasswordRecoveryMarked()) {
     return (
-      <SetNewPasswordScreen
-        onDone={() => {
-          clearPasswordRecoveryFlag()
-          setPasswordRecovery(false)
-        }}
-      />
+      <>
+        <SetNewPasswordScreen
+          onDone={() => {
+            clearPasswordRecoveryFlag()
+            setPasswordRecovery(false)
+          }}
+        />
+        <Analytics />
+      </>
     )
   }
 
@@ -452,44 +466,63 @@ export default function App() {
 
   if (platformOwner && !platformWorkspace) {
     return (
-      <PlatformAdmin
-        profile={profile}
-        session={session}
-        onLogout={handleLogout}
-        onOpenWorkspace={enterPlatformWorkspace}
-      />
+      <>
+        <PlatformAdmin
+          profile={profile}
+          session={session}
+          onLogout={handleLogout}
+          onOpenWorkspace={enterPlatformWorkspace}
+        />
+        <Analytics />
+      </>
     )
   }
 
   if (!profileReady && !profile?.company_id) {
-    return <CompanySplash company={company || peekCachedCompany()} />
+    return (
+      <>
+        <CompanySplash company={company || peekCachedCompany()} />
+        <Analytics />
+      </>
+    )
   }
 
   // Only show setup when we are sure profile has no company (not on a failed fetch)
   if (profileReady && profile && !profile.company_id) {
     return (
-      <SetupCompany
-        user={session.user}
-        profile={profile}
-        onDone={refreshProfile}
-      />
+      <>
+        <SetupCompany
+          user={session.user}
+          profile={profile}
+          onDone={refreshProfile}
+        />
+        <Analytics />
+      </>
     )
   }
 
   // Profile still resolving but we have cached company — stay on dashboard
   if (!profile?.company_id) {
-    return <CompanySplash company={company || peekCachedCompany()} />
+    return (
+      <>
+        <CompanySplash company={company || peekCachedCompany()} />
+        <Analytics />
+      </>
+    )
   }
 
   return (
-    <Dashboard
-      session={session}
-      profile={profile}
-      company={company}
-      onCompanyUpdate={refreshProfile}
-      onLogout={handleLogout}
-      platformOwner={platformOwner}
-      onLeavePlatformWorkspace={platformOwner ? leavePlatformWorkspace : undefined}
-    />
+    <>
+      <Dashboard
+        session={session}
+        profile={profile}
+        company={company}
+        onCompanyUpdate={refreshProfile}
+        onLogout={handleLogout}
+        platformOwner={platformOwner}
+        onLeavePlatformWorkspace={platformOwner ? leavePlatformWorkspace : undefined}
+      />
+      <Analytics />
+    </>
   )
 }
