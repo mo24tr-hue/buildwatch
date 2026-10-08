@@ -116,9 +116,9 @@ export default function SwipeBack({ onBack, children, className = '', disabled =
     <div
       ref={el}
       className={className}
-      style={{ touchAction: 'pan-y', position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 45, overflowY: 'auto', overflowX: 'hidden', background: '#fff', WebkitOverflowScrolling: 'touch' }}
+      style={{ touchAction: 'pan-y', width: '100%', position: 'relative', background: '#fff' }}
     >
-      <div style={{ position: 'relative', zIndex: 1, paddingTop: 'max(12px, env(safe-area-inset-top))', paddingBottom: '96px', paddingLeft: '16px', paddingRight: '16px' }}>{children}</div>
+      <div style={{ position: 'relative', zIndex: 1 }}>{children}</div>
     </div>
   )
 }
