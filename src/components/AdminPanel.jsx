@@ -13,7 +13,7 @@ export default function AdminPanel({ profile, company, onBack, onCompanyUpdate, 
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
   const [companyName, setCompanyName] = useState(company?.name || '')
-  const [appShareUrl, setAppShareUrl] = useState(company?.app_share_url || (typeof window !== 'undefined' ? window.location.origin : ''))
+  const [appShareUrl, setAppShareUrl] = useState(company?.app_share_url || 'https://buildwatchapp.app')
   const [logoPreview, setLogoPreview] = useState(company?.logo_url || null)
   const [headerColor, setHeaderColor] = useState(company?.header_color || '#000000')
   const [savingBrand, setSavingBrand] = useState(false)
@@ -56,7 +56,7 @@ export default function AdminPanel({ profile, company, onBack, onCompanyUpdate, 
     load()
     loadProjects()
     setCompanyName(company?.name || '')
-    setAppShareUrl(company?.app_share_url || (typeof window !== 'undefined' ? window.location.origin : ''))
+    setAppShareUrl(company?.app_share_url || 'https://buildwatchapp.app')
     setLogoPreview(company?.logo_url || null)
     setHeaderColor(company?.header_color || '#000000')
   }, [profile.company_id, company?.id, company?.header_color])
@@ -86,7 +86,6 @@ export default function AdminPanel({ profile, company, onBack, onCompanyUpdate, 
     const admins = users.filter((u) => u.role === 'admin')
     const target = users.find((u) => u.id === userId)
     if (target?.role === 'admin' && newRole !== 'admin' && admins.length <= 1) {
-      if (!confirm('This is the last contractor. Change their role anyway?')) return
     }
     await supabase.from('profiles').update({ role: newRole }).eq('id', userId)
     load()
@@ -103,7 +102,6 @@ export default function AdminPanel({ profile, company, onBack, onCompanyUpdate, 
       return
     }
     const label = target.name || target.email
-    if (!confirm('Remove ' + label + ' from this company?')) return
     const { error } = await supabase.rpc('admin_remove_user_from_company', {
       target_user_id: userId,
     })
@@ -212,7 +210,7 @@ export default function AdminPanel({ profile, company, onBack, onCompanyUpdate, 
     setAssignBusy(false)
   }
 
-  const link = (appShareUrl || '').trim() || (typeof window !== 'undefined' ? window.location.origin : '')
+  const link = (appShareUrl || '').trim() || 'https://buildwatchapp.app'
   const message =
     'Hi — here\'s the project tracker for ' + (companyName || company?.name || 'our team') + '.\n\n' +
     'Open this link on your phone:\n' + link + '\n\n' +
@@ -332,7 +330,7 @@ export default function AdminPanel({ profile, company, onBack, onCompanyUpdate, 
             <input value={headerColor || '#000000'} onChange={(e) => setHeaderColor(e.target.value)} className="flex-1 border border-black rounded px-3 py-2 text-sm font-mono" placeholder="#000000" />
           </div>
         </div>
-        <input value={appShareUrl} onChange={(e) => setAppShareUrl(e.target.value)} className="w-full border border-black rounded px-3 py-2 text-sm" placeholder="https://your-app-url.com" />
+        <input value={appShareUrl} onChange={(e) => setAppShareUrl(e.target.value)} className="w-full border border-black rounded px-3 py-2 text-sm" placeholder="https://buildwatchapp.app" />
         {error && <p className="text-xs text-[#B5533C]">{error}</p>}
         {success && <p className="text-xs text-[#3F7D58]">{success}</p>}
         <button onClick={saveBrand} disabled={savingBrand} className="w-full py-2 rounded text-sm text-white bg-black disabled:opacity-50">

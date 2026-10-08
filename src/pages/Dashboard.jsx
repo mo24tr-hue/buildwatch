@@ -5165,7 +5165,7 @@ function ProjectActivity({ projectId }) {
 }
 
 function InviteHelpGuide({ company, onBack }) {
-  const origin = typeof window !== 'undefined' ? window.location.origin : 'https://your-app.vercel.app'
+  const origin = 'https://buildwatchapp.app'
   const shareUrl = company?.app_share_url || origin
   return (
     <SwipeBack onBack={onBack}>
