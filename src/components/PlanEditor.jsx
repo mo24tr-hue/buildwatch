@@ -73,6 +73,7 @@ export default function PlanEditor({ project, profile, isAdmin, onBack }) {
   const [img, setImg] = useState('')
   const [zoom, setZoom] = useState(1)
   const [tool, setTool] = useState('pan')
+  const [toolsOpen, setToolsOpen] = useState(false)
   const [items, setItems] = useState([])
   const [scale, setScale] = useState(null)
   const [text, setText] = useState('')
@@ -122,7 +123,7 @@ export default function PlanEditor({ project, profile, isAdmin, onBack }) {
         found.push({ x, y, feet, text: item.str })
       }
       if (!dead) setSheetText(found)
-      const viewport = pg.getViewport({ scale: 1.6 })
+      const viewport = pg.getViewport({ scale: 2.4 })
       const canvas = document.createElement('canvas')
       canvas.width = viewport.width
       canvas.height = viewport.height
@@ -272,7 +273,7 @@ export default function PlanEditor({ project, profile, isAdmin, onBack }) {
     const a = e.touches[0]
     const b = e.touches[1]
     const d = Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY)
-    const next = Math.min(5, Math.max(1, pinch.current.z * (d / pinch.current.d)))
+    const next = Math.min(8, Math.max(1, pinch.current.z * (d / pinch.current.d)))
     const sc = scroller.current
     if (!sc) {
       zoomRef.current = next
@@ -294,93 +295,107 @@ export default function PlanEditor({ project, profile, isAdmin, onBack }) {
   }
 
   const chosenSheet = SHEETS.find((s) => s.id === sheetSize) || SHEETS[0]
-  const sheetW = chosenSheet.w * PX_PER_INCH * zoom
-  const sheetH = chosenSheet.h * PX_PER_INCH * zoom
+  const [vp, setVp] = useState({ w: 390, h: 700 })
+  useEffect(() => {
+    const read = () => setVp({ w: window.innerWidth, h: window.innerHeight })
+    read()
+    window.addEventListener('resize', read)
+    window.visualViewport?.addEventListener('resize', read)
+    return () => {
+      window.removeEventListener('resize', read)
+      window.visualViewport?.removeEventListener('resize', read)
+    }
+  }, [])
+  const fit = Math.min(vp.w / chosenSheet.w, vp.h / chosenSheet.h)
+  const sheetW = chosenSheet.w * fit * zoom
+  const sheetH = chosenSheet.h * fit * zoom
 
   return (
-    <div className="fixed inset-0 z-[80] bg-white flex flex-col" style={{ paddingTop: 'env(safe-area-inset-top)' }}>
-      <div className="px-4 pt-3 pb-2 border-b border-black">
-        <button type="button" onClick={onBack} className="text-sm text-[#6B6E72] mb-2">Back</button>
-        <h2 className="font-display text-2xl">Mark up plan</h2>
-      </div>
-      <div className="flex-1 overflow-hidden px-3 py-3">
+    <div className="fixed inset-0 z-[80] bg-black" data-no-swipe>
+      <button
+        type="button"
+        onClick={onBack}
+        className="absolute z-[90] right-3 w-10 h-10 rounded-full bg-black/70 text-white text-lg"
+        style={{ top: 'max(12px, env(safe-area-inset-top))' }}
+      >
+        ×
+      </button>
       {!files.length ? (
-        <p className="text-sm text-[#6B6E72]">Upload a PDF or plan image under Plans & files.</p>
+        <p className="text-sm text-white p-6">Upload a plan first.</p>
       ) : (
         <>
-          <select className={field + ' mb-2'} value={fileUrl} onChange={(e) => { setFileUrl(e.target.value); setPage(1); setZoom(1); zoomRef.current = 1 }}>
-            {files.map((f) => (
-              <option key={f.id || f.public_url} value={f.public_url}>
-                {(f.file_name || f.name || 'Plan')}{f.phase_name ? ' · ' + f.phase_name : ''}
-              </option>
-            ))}
-          </select>
-          <div className="flex gap-2 mb-2 flex-wrap">
-            {['pan', 'pen', 'text', 'measure', 'erase'].map((t) => (
-              <button key={t} type="button" onClick={() => setTool(t)} className={'px-3 py-1.5 text-xs border border-black rounded ' + (tool === t ? 'bg-black text-white' : '')}>
-                {t === 'pan' ? 'Move' : t === 'pen' ? 'Mark' : t === 'text' ? 'Text' : t === 'erase' ? 'Eraser' : 'Measure'}
-              </button>
-            ))}
-            {pageCount > 1 && (
-              <>
-                <button type="button" className="px-3 py-1.5 text-xs border border-black rounded" onClick={() => setPage((p) => Math.max(1, p - 1))}>Prev</button>
-                <span className="text-xs self-center">{page}/{pageCount}</span>
-                <button type="button" className="px-3 py-1.5 text-xs border border-black rounded" onClick={() => setPage((p) => Math.min(pageCount, p + 1))}>Next</button>
-              </>
-            )}
-            <select className="px-2 py-1.5 text-xs border border-black rounded" value={sheetSize} onChange={(e) => { setSheetSize(e.target.value); const s = SHEETS.find((x) => x.id === e.target.value); if (s) pageIn.current = { w: s.w, h: s.h } }}>
-              {SHEETS.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}
-            </select>
-            <select className="px-2 py-1.5 text-xs border border-black rounded" value={sheetScale} onChange={(e) => setSheetScale(e.target.value)}>
-              {SCALES.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}
-            </select>
-          </div>
-          {tool === 'text' && isAdmin && (
-            <input className={field + ' mb-2'} placeholder="Text to place" value={text} onChange={(e) => setText(e.target.value)} />
-          )}
           <div
             ref={scroller}
-            className="overflow-auto border border-black rounded bg-[#F5F5F5]"
-            style={{ height: 'calc(100dvh - 220px)' }}
+            className="absolute inset-0 overflow-auto bg-black"
             data-no-swipe
             onTouchStart={onPinchStart}
             onTouchMove={onPinchMove}
             onTouchEnd={() => { pinch.current = null }}
           >
-            <div ref={content} style={{ width: sheetW, height: sheetH, position: 'relative' }}>
-              {img ? <img src={img} alt="" className="w-full h-full block select-none object-fill" draggable={false} /> : <div className="p-6 text-sm">Opening plan…</div>}
-              <svg
-                ref={view}
-                className="absolute inset-0 w-full h-full"
-                style={{ touchAction: tool === 'pan' ? 'pan-x pan-y' : 'none' }}
-                onMouseDown={down}
-                onMouseMove={move}
-                onMouseUp={up}
-                onMouseLeave={up}
-                onTouchStart={down}
-                onTouchMove={move}
-                onTouchEnd={up}
-              >
-                {items.map((it) => it.type === 'text' ? (
-                  <text key={it.id} x={it.x + '%'} y={it.y + '%'} fill="#B5533C" fontSize="14" fontWeight="600">{it.text}</text>
-                ) : (
-                  <g key={it.id}>
-                    <line x1={it.x + '%'} y1={it.y + '%'} x2={it.x2 + '%'} y2={it.y2 + '%'} stroke={it.type === 'dim' ? '#16324F' : '#B5533C'} strokeWidth="2" />
-                    {it.feet != null && (
-                      <text x={((it.x + it.x2) / 2) + '%'} y={((it.y + it.y2) / 2) + '%'} fill="#16324F" fontSize="12" fontWeight="700">{it.feet} ft</text>
-                    )}
-                  </g>
-                ))}
-                {draft && <line x1={draft.x + '%'} y1={draft.y + '%'} x2={draft.x2 + '%'} y2={draft.y2 + '%'} stroke="#16324F" strokeWidth="2" />}
-              </svg>
+            <div className="min-w-full min-h-full flex items-center justify-center">
+              <div ref={content} style={{ width: sheetW, height: sheetH, position: 'relative', flex: '0 0 auto' }}>
+                {img ? <img src={img} alt="" className="w-full h-full block select-none object-contain" draggable={false} /> : <div className="p-6 text-sm text-white">Opening plan…</div>}
+                <svg
+                  ref={view}
+                  className="absolute inset-0 w-full h-full"
+                  style={{ touchAction: tool === 'pan' ? 'pan-x pan-y pinch-zoom' : 'none' }}
+                  onMouseDown={down}
+                  onMouseMove={move}
+                  onMouseUp={up}
+                  onMouseLeave={up}
+                  onTouchStart={down}
+                  onTouchMove={move}
+                  onTouchEnd={up}
+                >
+                  {items.map((it) => it.type === 'text' ? (
+                    <text key={it.id} x={it.x + '%'} y={it.y + '%'} fill="#E6B800" fontSize="14" fontWeight="600">{it.text}</text>
+                  ) : (
+                    <g key={it.id}>
+                      <line x1={it.x + '%'} y1={it.y + '%'} x2={it.x2 + '%'} y2={it.y2 + '%'} stroke={it.type === 'dim' ? '#7EB6FF' : '#E6B800'} strokeWidth="2" />
+                      {it.feet != null && (
+                        <text x={((it.x + it.x2) / 2) + '%'} y={((it.y + it.y2) / 2) + '%'} fill="#7EB6FF" fontSize="12" fontWeight="700">{it.feet} ft</text>
+                      )}
+                    </g>
+                  ))}
+                  {draft && <line x1={draft.x + '%'} y1={draft.y + '%'} x2={draft.x2 + '%'} y2={draft.y2 + '%'} stroke="#7EB6FF" strokeWidth="2" />}
+                </svg>
+              </div>
             </div>
           </div>
-          {isAdmin && items.length > 0 && (
-            <button type="button" className="mt-3 text-xs underline text-[#B5533C]" onClick={() => save([], scale)}>Clear marks on this page</button>
+          <button
+            type="button"
+            onClick={() => setToolsOpen((v) => !v)}
+            className="absolute z-[90] left-3 w-10 h-10 rounded-full bg-black/70 text-white text-sm"
+            style={{ bottom: 'max(12px, env(safe-area-inset-bottom))' }}
+          >
+            {toolsOpen ? '–' : '✎'}
+          </button>
+          {toolsOpen && (
+            <div className="absolute left-14 z-[90] flex gap-1.5 overflow-x-auto max-w-[78vw]" style={{ bottom: 'max(12px, env(safe-area-inset-bottom))' }}>
+              {['pan', 'pen', 'text', 'measure', 'erase'].map((t) => (
+                <button key={t} type="button" onClick={() => setTool(t)} className={'px-3 py-2 text-xs rounded-full whitespace-nowrap ' + (tool === t ? 'bg-white text-black' : 'bg-black/70 text-white')}>
+                  {t === 'pan' ? 'Move' : t === 'pen' ? 'Mark' : t === 'text' ? 'Text' : t === 'erase' ? 'Eraser' : 'Measure'}
+                </button>
+              ))}
+              <select className="px-2 py-1.5 text-xs rounded-full bg-black/70 text-white" value={sheetScale} onChange={(e) => setSheetScale(e.target.value)}>
+                {SCALES.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}
+              </select>
+              <select className="px-2 py-1.5 text-xs rounded-full bg-black/70 text-white" value={sheetSize} onChange={(e) => { setSheetSize(e.target.value); const s = SHEETS.find((x) => x.id === e.target.value); if (s) pageIn.current = { w: s.w, h: s.h } }}>
+                {SHEETS.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}
+              </select>
+              {pageCount > 1 && (
+                <button type="button" className="px-3 py-1.5 text-xs rounded-full bg-black/70 text-white" onClick={() => setPage((p) => p >= pageCount ? 1 : p + 1)}>{page}/{pageCount}</button>
+              )}
+              {fileUrl && (
+                <a href={fileUrl} target="_blank" rel="noreferrer" className="px-3 py-2 text-xs rounded-full bg-black/70 text-white whitespace-nowrap">System markup</a>
+              )}
+            </div>
+          )}
+          {tool === 'text' && isAdmin && toolsOpen && (
+            <input className="absolute left-3 right-3 z-[90] border border-white/40 bg-black/80 text-white rounded px-3 py-2 text-sm" style={{ bottom: 'max(64px, calc(env(safe-area-inset-bottom) + 52px))' }} placeholder="Text to place" value={text} onChange={(e) => setText(e.target.value)} />
           )}
         </>
       )}
-      </div>
     </div>
   )
 }
