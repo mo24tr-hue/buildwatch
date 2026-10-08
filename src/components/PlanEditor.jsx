@@ -8,10 +8,12 @@ function keyFor(projectId, url, page) {
   return 'bw_plan_' + projectId + '_' + page + '_' + url
 }
 
-function dist(a, b, w, h) {
-  const dx = ((a.x2 ?? a.x) - a.x) * w
-  const dy = ((a.y2 ?? a.y) - a.y) * h
-  return Math.sqrt(dx * dx + dy * dy)
+function measureFeet(line, sheet, scale) {
+  const dxIn = ((line.x2 - line.x) / 100) * sheet.w
+  const dyIn = ((line.y2 - line.y) / 100) * sheet.h
+  const paperInches = Math.hypot(dxIn, dyIn)
+  if (!scale?.inchesPerFoot || paperInches < 0.01) return null
+  return Math.round((paperInches / scale.inchesPerFoot) * 10) / 10
 }
 
 function parseFeet(raw) {
@@ -226,14 +228,13 @@ export default function PlanEditor({ project, profile, isAdmin, onBack }) {
       return
     }
     const chosen = SHEETS.find((s) => s.id === sheetSize) || SHEETS[0]
-    pageIn.current = { w: chosen.w, h: chosen.h }
-    const paperInches = dist(draft, { x: draft.x2, y: draft.y2 }, chosen.w, chosen.h)
+    const wide = chosen.w >= chosen.h
+    const shownWide = (view.current?.clientWidth || 1) >= (view.current?.clientHeight || 1)
+    const sheet = wide === shownWide ? chosen : { w: chosen.h, h: chosen.w }
+    pageIn.current = { w: sheet.w, h: sheet.h }
     const ratio = SCALES.find((s) => s.id === sheetScale) || SCALES[0]
-    let feet = null
-    if (tool === 'measure' && paperInches > 0.02) {
-      feet = Math.round((paperInches / ratio.inchesPerFoot) * 10) / 10
-    }
-    if ((tool === 'pen' && paperInches > 0) || (tool === 'measure' && feet)) {
+    const feet = tool === 'measure' ? measureFeet(draft, sheet, ratio) : null
+    if ((tool === 'pen' && Math.hypot(draft.x2 - draft.x, draft.y2 - draft.y) > 0.2) || (tool === 'measure' && feet)) {
       save([...items, {
         id: crypto.randomUUID(),
         type: tool === 'measure' ? 'dim' : 'pen',
