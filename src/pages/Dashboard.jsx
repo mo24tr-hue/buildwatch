@@ -1550,6 +1550,20 @@ export default function Dashboard({ session, profile, company, onCompanyUpdate, 
               </div>
             ) : (
               <div className="space-y-3">
+                {profile?.role === 'team' && (() => {
+                  const readyJobs = orderedProjects.filter((p) => (p.phases || []).some((ph) => ph.ready_state === 'ready'))
+                  if (!readyJobs.length) return null
+                  return (
+                    <div className="border border-black rounded-md p-3 bg-[#E1EDE4]">
+                      <div className="text-[11px] font-mono uppercase text-[#3F7D58]">Ready for you</div>
+                      {readyJobs.map((p) => (
+                        <button key={p.id} type="button" onClick={() => setActiveId(p.id)} className="block w-full text-left text-sm font-medium mt-1">
+                          {p.address}
+                        </button>
+                      ))}
+                    </div>
+                  )
+                })()}
                 {orderedProjects.map((p) => {
                   const phases = p.phases || []
                   const doneCount = phases.filter((ph) => ph.status === 'done').length
@@ -1584,6 +1598,12 @@ export default function Dashboard({ session, profile, company, onCompanyUpdate, 
                           {doneCount} of {phases.length} phases complete
                           {phases.length > 0 ? ` · ${Math.round((doneCount / phases.length) * 100)}%` : ''}
                         </div>
+                        {profile?.role === 'team' && phases.some((ph) => ph.ready_state === 'ready') && (
+                          <div className="text-[11px] font-medium text-[#3F7D58] mt-1">Ready for you</div>
+                        )}
+                        {profile?.role === 'team' && !phases.some((ph) => ph.ready_state === 'ready') && phases.some((ph) => ph.ready_state === 'on_site') && (
+                          <div className="text-[11px] font-medium mt-1">You’re on site</div>
+                        )}
                         {isCustomer && (() => {
                           const active = phases.find((ph) => ph.status === 'active')
                           const recent = (p.change_orders || []).filter((c) => ['quoted', 'pending'].includes(c.status || ''))
@@ -4504,6 +4524,8 @@ className={`bg-white border border-black rounded-md flex items-stretch overflow-
               <div className="text-sm font-medium truncate">{phase.name}</div>
               <div className="text-[11px] text-[#8A8D91] mt-0.5 flex flex-wrap gap-x-2">
                 {!isCustomer && phase.trade && <span className="font-medium text-black">{phase.trade}</span>}
+                {!isCustomer && phase.ready_state === 'ready' && <span className="font-medium text-[#3F7D58]">Ready</span>}
+                {!isCustomer && phase.ready_state === 'on_site' && <span className="font-medium">On site</span>}
                 <span>{(phase.photos || []).length} photo{(phase.photos || []).length !== 1 ? 's' : ''}</span>
               </div>
             </button>
@@ -4901,9 +4923,35 @@ function PhaseTasks({ phase, project, isAdmin, profile, onReload, logActivity })
     onReload?.()
   }
 
+  const approveToBill = async (task) => {
+    if (!isAdmin) return
+    const { error } = await supabase.from('tasks').update({ bill_status: 'approved', status: 'done', completed_at: new Date().toISOString() }).eq('id', task.id)
+    if (error) {
+      alert(error.message || 'Could not approve. Run trade-portal.sql in Supabase.')
+      return
+    }
+    try {
+      await supabase.rpc('notify_phase_team', {
+        p_company_id: profile.company_id,
+        p_project_id: project.id,
+        p_phase_id: phase.id,
+        p_title: titleCase('Approved to bill'),
+        p_body: (project.address ? project.address + '\n' : '') + 'Phase: ' + (phase.name || '—') + '\n' + (task.title || 'Task'),
+        p_kind: 'task',
+      })
+    } catch (_) {}
+    onReload?.()
+  }
+
+  const billLabel = (task) => {
+    const photos = task.task_photos || []
+    const st = task.bill_status || (photos.length ? 'photo_in' : 'asked')
+    if (st === 'approved') return 'Approved to bill'
+    if (st === 'photo_in' || photos.length) return 'Photo in'
+    return 'Asked'
+  }
   const deleteTask = async (task) => {
     if (!isAdmin) return
-    if (!confirm('Delete this task?')) return
     const photos = task.task_photos || []
     const paths = photos.map((p) => p.storage_path).filter(Boolean)
     if (paths.length) await supabase.storage.from('project-photos').remove(paths)
@@ -4927,14 +4975,16 @@ function PhaseTasks({ phase, project, isAdmin, profile, onReload, logActivity })
       })
       if (upErr) throw upErr
       const { data: pub } = supabase.storage.from('project-photos').getPublicUrl(path)
-      const { error: insErr } = await supabase.from('task_photos').insert({
+      await supabase.from('task_photos').insert({
         task_id: task.id,
         project_id: project.id,
         storage_path: path,
         public_url: pub.publicUrl,
         uploaded_by: profile.id,
       })
-      if (insErr) throw insErr
+      if ((task.bill_status || 'asked') !== 'approved') {
+        await supabase.from('tasks').update({ bill_status: 'photo_in' }).eq('id', task.id)
+      }
       // One notification only (via logActivity for team/customer)
       await logActivity?.('uploaded task photo', task.title, project.id, phase.name)
       onReload?.()
@@ -4984,11 +5034,11 @@ function PhaseTasks({ phase, project, isAdmin, profile, onReload, logActivity })
                       <span
                         className="text-[10px] font-mono uppercase px-1.5 py-0.5 rounded inline-block mt-1"
                         style={{
-                          background: task.status === 'done' ? '#E1EDE4' : '#FFF8DB',
-                          color: task.status === 'done' ? '#3F7D58' : '#8A6D00',
+                          background: billLabel(task) === 'Approved to bill' ? '#E1EDE4' : billLabel(task) === 'Photo in' ? '#FFF8DB' : '#F5F5F5',
+                          color: billLabel(task) === 'Approved to bill' ? '#3F7D58' : '#8A6D00',
                         }}
                       >
-                        {task.status}
+                        {billLabel(task)}
                       </span>
                     </>
                   )}
@@ -5027,9 +5077,9 @@ function PhaseTasks({ phase, project, isAdmin, profile, onReload, logActivity })
                     <input type="file" accept="image/*" className="hidden" disabled={uploadingId === task.id} onChange={(e) => uploadPhoto(task, e)} />
                   </label>
                 )}
-                {isAdmin && task.status !== 'done' && (
-                  <button type="button" className="text-xs text-white bg-black rounded px-3 py-1.5" onClick={() => markDone(task)}>
-                    Mark done
+                {isAdmin && billLabel(task) !== 'Approved to bill' && (
+                  <button type="button" className="text-xs text-white bg-black rounded px-3 py-1.5" onClick={() => approveToBill(task)}>
+                    Approved to bill
                   </button>
                 )}
                 {isAdmin && task.status === 'done' && (
@@ -5539,7 +5589,29 @@ function PhaseDetail({ phase, project, isAdmin, canUpload, isCustomer, profile, 
     logActivity?.('updated phase status', phase.name + ' → ' + next, project.id, phase.name)
   }
 
-  const isOverdue = phase.end_date && phase.status !== 'done' && new Date(phase.end_date + 'T23:59:59') < new Date()
+  const setReady = async (next) => {
+    if (!isAdmin) return
+    const { error } = await supabase.from('phases').update({ ready_state: next }).eq('id', phase.id)
+    if (error) {
+      alert(error.message || 'Could not update ready state. Run trade-portal.sql in Supabase.')
+      return
+    }
+    onPhasePatch?.(phase.id, { ready_state: next })
+    if (next === 'ready') {
+      try {
+        await supabase.rpc('notify_phase_team', {
+          p_company_id: profile.company_id,
+          p_project_id: project.id,
+          p_phase_id: phase.id,
+          p_title: titleCase('Ready for you'),
+          p_body: (project.address || 'Job') + '\nPhase: ' + (phase.name || '—') + (phase.start_date ? '\n' + fmtDate(phase.start_date) : ''),
+          p_kind: 'ready',
+        })
+      } catch (_) {}
+    }
+  }
+
+  const readyLabel = phase.ready_state === 'ready' ? 'Ready' : phase.ready_state === 'on_site' ? 'You’re on site' : 'Not ready'
 
 
   const savePhaseNameInside = async () => {
@@ -5993,6 +6065,64 @@ function PhaseDetail({ phase, project, isAdmin, canUpload, isCustomer, profile, 
     )
   }
 
+  if (phasePage === 'packet') {
+    const teamTotal = (project.change_orders || [])
+      .filter((c) => c.phase_id === phase.id && c.status === 'approved')
+      .reduce((s, c) => s + (Number(c.team_amount) || 0), 0)
+    return (
+      <SwipeBack onBack={() => setPhasePage(null)}>
+        <button type="button" onClick={() => setPhasePage(null)} className="flex items-center gap-1 text-sm text-[#6B6E72] mb-4">
+          <ChevronLeft size={16} /> {phase.name}
+        </button>
+        <h2 className="font-display text-2xl mb-1">Your packet</h2>
+        <p className="text-sm text-[#6B6E72] mb-4">{project.address}</p>
+        <div className="border border-black rounded-md p-4 mb-3">
+          <div className="text-[11px] font-mono uppercase text-[#6B6E72]">Ready for you</div>
+          <div className="text-lg font-medium mt-1">{readyLabel}</div>
+          <div className="text-sm text-[#6B6E72] mt-1">{fmtDate(phase.start_date) || 'No start date'} – {phase.end_date ? fmtDate(phase.end_date) : 'TBD'}</div>
+        </div>
+        <div className="border border-black rounded-md p-4 mb-3">
+          <div className="text-[11px] font-mono uppercase text-[#6B6E72] mb-2">Tasks</div>
+          {(phase.tasks || []).length === 0 ? <p className="text-sm text-[#6B6E72]">No tasks yet.</p> : (phase.tasks || []).map((task) => {
+            const photos = task.task_photos || []
+            const st = task.bill_status === 'approved' ? 'Approved to bill' : (task.bill_status === 'photo_in' || photos.length ? 'Photo in' : 'Asked')
+            return (
+              <div key={task.id} className="flex justify-between gap-2 text-sm py-1 border-b border-[#E5E5E5] last:border-0">
+                <span>{task.title}</span>
+                <span className="text-[#6B6E72] flex-shrink-0">{st}</span>
+              </div>
+            )
+          })}
+        </div>
+        <div className="border border-black rounded-md p-4 mb-3">
+          <div className="text-[11px] font-mono uppercase text-[#6B6E72] mb-2">Note</div>
+          <p className="text-sm whitespace-pre-wrap">{phase.admin_notes || 'No note yet.'}</p>
+        </div>
+        <div className="border border-black rounded-md p-4 mb-3">
+          <div className="text-[11px] font-mono uppercase text-[#6B6E72] mb-2">Plans</div>
+          {(phase.phase_files || []).length === 0 ? <p className="text-sm text-[#6B6E72]">No plan on this phase.</p> : (phase.phase_files || []).map((f) => (
+            <a key={f.id} href={f.public_url} target="_blank" rel="noreferrer" className="block text-sm underline py-1">{f.file_name || 'Plan'}</a>
+          ))}
+        </div>
+        <div className="border border-black rounded-md p-4 mb-3">
+          <div className="text-[11px] font-mono uppercase text-[#6B6E72] mb-2">Photos</div>
+          {(phase.photos || []).length === 0 ? <p className="text-sm text-[#6B6E72]">No photos yet.</p> : (
+            <div className="grid grid-cols-3 gap-2">
+              {(phase.photos || []).slice(0, 9).map((ph) => (
+                <img key={ph.id} src={ph.public_url} alt="" className="w-full h-20 object-cover rounded border border-black" />
+              ))}
+            </div>
+          )}
+        </div>
+        <div className="border border-black rounded-md p-4 mb-3">
+          <div className="text-[11px] font-mono uppercase text-[#6B6E72] mb-2">Approved extras</div>
+          <div className="text-lg font-medium">${teamTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+        </div>
+        <button type="button" className="w-full py-3 border border-black rounded text-sm" onClick={() => setPhasePage('tasks')}>Open tasks</button>
+      </SwipeBack>
+    )
+  }
+
   if (phasePage === 'tasks' && (isAdmin || canUpload) && !isCustomer) {
     return (
       <SwipeBack onBack={() => setPhasePage(null)}>
@@ -6179,6 +6309,22 @@ function PhaseDetail({ phase, project, isAdmin, canUpload, isCustomer, profile, 
       </div>
 
       <div className="space-y-2 mb-4">
+        <div className="border border-black rounded-md p-4">
+          <div className="text-[11px] font-mono uppercase text-[#6B6E72]">Ready for you</div>
+          <div className="text-lg font-medium mt-1">{readyLabel}</div>
+          {isAdmin && (
+            <div className="flex gap-2 mt-3 flex-wrap">
+              {[['not_ready', 'Not ready'], ['ready', 'Ready'], ['on_site', 'You’re on site']].map(([key, label]) => (
+                <button key={key} type="button" onClick={() => setReady(key)} className={'px-3 py-1.5 text-xs border border-black rounded ' + ((phase.ready_state || 'not_ready') === key ? 'bg-black text-white' : '')}>
+                  {label}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+        {!isAdmin && !isCustomer && (
+          <ProjectNavRow icon={<FolderOpen size={16} />} label="Your packet" onClick={() => setPhasePage('packet')} />
+        )}
         {showPhaseFiles && (
           <ProjectNavRow icon={<FolderOpen size={16} />} label="Plans & files" count={phaseFiles.length || null} onClick={() => setPhasePage('files')} />
         )}
