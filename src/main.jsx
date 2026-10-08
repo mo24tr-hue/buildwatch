@@ -27,17 +27,11 @@ window.visualViewport?.addEventListener('scroll', fitScreen)
 
 const compiled = typeof __BW_BUILD__ !== 'undefined' ? String(__BW_BUILD__) : ''
 const APPLIED = 'bw_applied_build'
-try { sessionStorage.removeItem('bw_reloading') } catch (_) {}
 
 async function hardReload(next) {
-  try { localStorage.setItem(APPLIED, next) } catch (_) {}
-  try {
-    if (window.caches) {
-      const keys = await caches.keys()
-      await Promise.all(keys.map((k) => caches.delete(k)))
-    }
-  } catch (_) {}
   const url = new URL(window.location.href)
+  if (url.searchParams.get('v') === next) return
+  try { localStorage.setItem(APPLIED, next) } catch (_) {}
   url.searchParams.set('v', next)
   window.location.replace(url.toString())
 }
@@ -49,47 +43,29 @@ async function checkBuild() {
     const data = await res.json()
     const next = String(data.v || '')
     if (!next || next === 'bootstrap') return
-    if (compiled && next === compiled) {
-      localStorage.setItem(APPLIED, next)
+    if (!compiled || next === compiled) {
+      try { localStorage.setItem(APPLIED, next) } catch (_) {}
       return
     }
     const applied = localStorage.getItem(APPLIED)
-    if (applied === next && compiled && compiled !== next) {
-      // last reload did not pick up new JS; try once more after a short wait
-    }
-    if (compiled && next !== compiled) {
-      await hardReload(next)
-      return
-    }
-    if (!compiled && applied && applied !== next) {
-      await hardReload(next)
-    }
+    if (applied === next) return
+    await hardReload(next)
   } catch (_) {}
 }
 
 if ('serviceWorker' in navigator) {
-  let reloading = false
+  let ready = false
+  setTimeout(() => { ready = true }, 4000)
   navigator.serviceWorker.addEventListener('controllerchange', () => {
-    if (reloading) return
-    reloading = true
+    if (!ready) return
+    const applied = localStorage.getItem(APPLIED)
+    if (applied && applied === compiled) return
     window.location.reload()
   })
-  navigator.serviceWorker.register('/sw.js').then((reg) => {
-    const kick = () => { if (reg.waiting) reg.waiting.postMessage({ type: 'SKIP_WAITING' }) }
-    kick()
-    reg.addEventListener('updatefound', () => {
-      const w = reg.installing
-      if (!w) return
-      w.addEventListener('statechange', () => { if (w.state === 'installed') kick() })
-    })
-    setInterval(() => { reg.update().catch(() => {}) }, 20 * 1000)
-  }).catch(() => {})
+  navigator.serviceWorker.register('/sw.js').catch(() => {})
 }
 
-checkBuild()
-setInterval(checkBuild, 15 * 1000)
+setTimeout(checkBuild, 2500)
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'visible') checkBuild()
 })
-window.addEventListener('focus', checkBuild)
-window.addEventListener('pageshow', () => checkBuild())
