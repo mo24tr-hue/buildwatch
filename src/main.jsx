@@ -26,12 +26,16 @@ window.visualViewport?.addEventListener('resize', fitScreen)
 window.visualViewport?.addEventListener('scroll', fitScreen)
 
 const compiled = typeof __BW_BUILD__ !== 'undefined' ? String(__BW_BUILD__) : ''
-const APPLIED = 'bw_applied_build'
 
 async function hardReload(next) {
   const url = new URL(window.location.href)
   if (url.searchParams.get('v') === next) return
-  try { localStorage.setItem(APPLIED, next) } catch (_) {}
+  try {
+    if (window.caches) {
+      const keys = await caches.keys()
+      await Promise.all(keys.map((k) => caches.delete(k)))
+    }
+  } catch (_) {}
   url.searchParams.set('v', next)
   window.location.replace(url.toString())
 }
@@ -42,30 +46,20 @@ async function checkBuild() {
     if (!res.ok) return
     const data = await res.json()
     const next = String(data.v || '')
-    if (!next || next === 'bootstrap') return
-    if (!compiled || next === compiled) {
-      try { localStorage.setItem(APPLIED, next) } catch (_) {}
-      return
-    }
-    const applied = localStorage.getItem(APPLIED)
-    if (applied === next) return
+    if (!next || next === 'bootstrap' || !compiled || next === compiled) return
     await hardReload(next)
   } catch (_) {}
 }
 
 if ('serviceWorker' in navigator) {
-  let ready = false
-  setTimeout(() => { ready = true }, 4000)
-  navigator.serviceWorker.addEventListener('controllerchange', () => {
-    if (!ready) return
-    const applied = localStorage.getItem(APPLIED)
-    if (applied && applied === compiled) return
-    window.location.reload()
-  })
-  navigator.serviceWorker.register('/sw.js').catch(() => {})
+  navigator.serviceWorker.register('/sw.js').then((reg) => {
+    setInterval(() => { reg.update().catch(() => {}) }, 30000)
+  }).catch(() => {})
 }
 
-setTimeout(checkBuild, 2500)
+setTimeout(checkBuild, 4000)
+setInterval(checkBuild, 30000)
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'visible') checkBuild()
 })
+window.addEventListener('pageshow', () => checkBuild())

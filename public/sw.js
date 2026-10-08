@@ -1,5 +1,5 @@
 /* PWA service worker — never cache the HTML shell. Photos live in their own cache. */
-const CACHE = 'BuildWatch-v15'
+const CACHE = 'BuildWatch-v16'
 const PHOTO_CACHE = 'BuildWatch-photos-v1'
 
 self.addEventListener('install', (event) => {

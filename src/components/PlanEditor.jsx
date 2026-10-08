@@ -288,10 +288,9 @@ export default function PlanEditor({ project, profile, isAdmin, onBack }) {
   const [vp, setVp] = useState({ w: 390, h: 700 })
   useEffect(() => {
     const read = () => {
-      const vv = window.visualViewport
       setVp({
-        w: Math.round(vv?.width || window.innerWidth),
-        h: Math.round(vv?.height || window.innerHeight),
+        w: Math.round(window.innerWidth),
+        h: Math.round(window.innerHeight),
       })
     }
     read()
@@ -309,13 +308,14 @@ export default function PlanEditor({ project, profile, isAdmin, onBack }) {
   const fit = Math.min(vp.w / chosenSheet.w, vp.h / chosenSheet.h)
   const sheetW = Math.max(1, chosenSheet.w * fit * zoom)
   const sheetH = Math.max(1, chosenSheet.h * fit * zoom)
+  const btn = 'h-9 px-3 text-xs rounded-full whitespace-nowrap border border-white bg-black text-white'
 
   return createPortal(
     <div className="fixed bg-black" data-no-swipe style={{ top: 0, left: 0, width: vp.w, height: vp.h, zIndex: 200 }}>
       <button
         type="button"
         onClick={onBack}
-        className="absolute z-[90] right-3 w-16 h-16 rounded-full bg-black text-white text-3xl leading-none border-2 border-white"
+        className="absolute z-[90] right-3 w-8 h-8 rounded-full bg-black text-white text-lg leading-none border border-white"
         style={{ top: 'max(12px, env(safe-area-inset-top))' }}
       >
         ×
@@ -362,25 +362,24 @@ export default function PlanEditor({ project, profile, isAdmin, onBack }) {
               </div>
             </div>
           </div>
-          <div className="absolute left-2 right-20 z-[90] flex gap-1.5 overflow-x-auto" style={{ bottom: 'max(10px, env(safe-area-inset-bottom))' }}>
+          <div className="absolute left-0 right-0 z-[90] flex justify-center px-2" style={{ bottom: 'max(8px, env(safe-area-inset-bottom))' }}>
+            <div className="flex gap-1.5 overflow-x-auto max-w-full">
             {['pen', 'text', 'measure', 'erase'].map((t) => (
-              <button key={t} type="button" onClick={() => setTool((cur) => cur === t ? 'pan' : t)} className={'px-3 py-2 text-xs rounded-full whitespace-nowrap border-2 border-white ' + (tool === t ? 'bg-white text-black' : 'bg-black text-white')}>
+              <button key={t} type="button" onClick={() => setTool((cur) => cur === t ? 'pan' : t)} className={btn + (tool === t ? ' !bg-white !text-black' : '')}>
                 {t === 'pen' ? 'Mark' : t === 'text' ? 'Text' : t === 'erase' ? 'Eraser' : 'Measure'}
               </button>
             ))}
-            <select className="px-2 py-1.5 text-xs rounded-full bg-black text-white border-2 border-white" value={sheetScale} onChange={(e) => setSheetScale(e.target.value)}>
+            <select className={btn} value={sheetScale} onChange={(e) => setSheetScale(e.target.value)}>
               {SCALES.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}
-            </select>
-            <select className="px-2 py-1.5 text-xs rounded-full bg-black text-white border-2 border-white" value={sheetSize} onChange={(e) => { setSheetSize(e.target.value); const s = SHEETS.find((x) => x.id === e.target.value); if (s) pageIn.current = { w: s.w, h: s.h } }}>
-              {SHEETS.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}
             </select>
             {pageCount > 1 && (
               <>
-                <button type="button" className="px-3 py-2 text-xs rounded-full bg-black text-white border-2 border-white" onClick={() => setPage((p) => Math.max(1, p - 1))}>Prev</button>
+                <button type="button" className={btn} onClick={() => setPage((p) => Math.max(1, p - 1))}>Prev</button>
                 <span className="text-xs text-white self-center">{page}/{pageCount}</span>
-                <button type="button" className="px-3 py-2 text-xs rounded-full bg-black text-white border-2 border-white" onClick={() => setPage((p) => Math.min(pageCount, p + 1))}>Next</button>
+                <button type="button" className={btn} onClick={() => setPage((p) => Math.min(pageCount, p + 1))}>Next</button>
               </>
             )}
+            </div>
           </div>
           {tool === 'text' && isAdmin && (
             <input className="absolute left-3 right-3 z-[90] border border-white/40 bg-black/80 text-white rounded px-3 py-2 text-sm" style={{ bottom: 'max(58px, calc(env(safe-area-inset-bottom) + 46px))' }} placeholder="Text to place" value={text} onChange={(e) => setText(e.target.value)} />
