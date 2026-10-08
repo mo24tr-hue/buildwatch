@@ -32,7 +32,37 @@ const SCALES = [
   { id: '1', label: '1" = 1\'', inchesPerFoot: 1 },
 ]
 
-export default function PlanEditor({ project, profile, isAdmin }) {
+const SHEETS = [
+  { id: 'ARCH-D', label: 'Arch D 24×36', w: 36, h: 24 },
+  { id: 'ARCH-C', label: 'Arch C 18×24', w: 24, h: 18 },
+  { id: 'ARCH-B', label: 'Arch B 12×18', w: 18, h: 12 },
+  { id: 'ARCH-E', label: 'Arch E 36×48', w: 48, h: 36 },
+  { id: 'ARCH-E1', label: 'Arch E1 30×42', w: 42, h: 30 },
+  { id: 'ANSI-B', label: 'Tabloid 11×17', w: 17, h: 11 },
+  { id: 'LETTER', label: 'Letter 8.5×11', w: 11, h: 8.5 },
+]
+
+function nearestSheet(w, h) {
+  if (!w || !h) return SHEETS[0]
+  const a = Math.max(w, h)
+  const b = Math.min(w, h)
+  let best = SHEETS[0]
+  let bestScore = Infinity
+  for (const s of SHEETS) {
+    const sw = Math.max(s.w, s.h)
+    const sh = Math.min(s.w, s.h)
+    const score = Math.abs(a - sw) / sw + Math.abs(b - sh) / sh
+    if (score < bestScore) {
+      best = s
+      bestScore = score
+    }
+  }
+  return bestScore < 0.12 ? best : SHEETS[0]
+}
+
+const PX_PER_INCH = 42
+
+export default function PlanEditor({ project, profile, isAdmin, onBack }) {
   const files = [
     ...(project.project_files || []),
     ...(project.phases || []).flatMap((ph) => (ph.phase_files || []).map((f) => ({ ...f, phase_name: ph.name }))),
@@ -47,6 +77,7 @@ export default function PlanEditor({ project, profile, isAdmin }) {
   const [scale, setScale] = useState(null)
   const [text, setText] = useState('')
   const [sheetScale, setSheetScale] = useState('1/8')
+  const [sheetSize, setSheetSize] = useState('ARCH-D')
   const [sheetText, setSheetText] = useState([])
   const pageIn = useRef(null)
   const pinch = useRef(null)
@@ -78,6 +109,9 @@ export default function PlanEditor({ project, profile, isAdmin }) {
       const pg = await doc.getPage(Math.min(page, doc.numPages))
       const base = pg.getViewport({ scale: 1 })
       pageIn.current = { w: base.width / 72, h: base.height / 72 }
+      const snapped = nearestSheet(pageIn.current.w, pageIn.current.h)
+      if (!dead) setSheetSize(snapped.id)
+      pageIn.current = { w: snapped.w, h: snapped.h }
       const content = await pg.getTextContent()
       const found = []
       for (const item of content.items || []) {
@@ -189,11 +223,9 @@ export default function PlanEditor({ project, profile, isAdmin }) {
       drag.current = null
       return
     }
-    const box = view.current?.getBoundingClientRect()
-    const paper = pageIn.current
-    const paperInches = box && paper
-      ? dist(draft, { x: draft.x2, y: draft.y2 }, paper.w, paper.h)
-      : 0
+    const chosen = SHEETS.find((s) => s.id === sheetSize) || SHEETS[0]
+    pageIn.current = { w: chosen.w, h: chosen.h }
+    const paperInches = dist(draft, { x: draft.x2, y: draft.y2 }, chosen.w, chosen.h)
     const ratio = SCALES.find((s) => s.id === sheetScale) || SCALES[0]
     let feet = null
     if (tool === 'measure' && paperInches > 0.02) {
@@ -261,13 +293,22 @@ export default function PlanEditor({ project, profile, isAdmin }) {
     })
   }
 
+  const chosenSheet = SHEETS.find((s) => s.id === sheetSize) || SHEETS[0]
+  const sheetW = chosenSheet.w * PX_PER_INCH * zoom
+  const sheetH = chosenSheet.h * PX_PER_INCH * zoom
+
   return (
-    <div>
+    <div className="fixed inset-0 z-[80] bg-white flex flex-col" style={{ paddingTop: 'env(safe-area-inset-top)' }}>
+      <div className="px-4 pt-3 pb-2 border-b border-black">
+        <button type="button" onClick={onBack} className="text-sm text-[#6B6E72] mb-2">Back</button>
+        <h2 className="font-display text-2xl">Mark up plan</h2>
+      </div>
+      <div className="flex-1 overflow-hidden px-3 py-3">
       {!files.length ? (
         <p className="text-sm text-[#6B6E72]">Upload a PDF or plan image under Plans & files.</p>
       ) : (
         <>
-          <select className={field + ' mb-2'} value={fileUrl} onChange={(e) => { setFileUrl(e.target.value); setPage(1); setZoom(1) }}>
+          <select className={field + ' mb-2'} value={fileUrl} onChange={(e) => { setFileUrl(e.target.value); setPage(1); setZoom(1); zoomRef.current = 1 }}>
             {files.map((f) => (
               <option key={f.id || f.public_url} value={f.public_url}>
                 {(f.file_name || f.name || 'Plan')}{f.phase_name ? ' · ' + f.phase_name : ''}
@@ -287,6 +328,9 @@ export default function PlanEditor({ project, profile, isAdmin }) {
                 <button type="button" className="px-3 py-1.5 text-xs border border-black rounded" onClick={() => setPage((p) => Math.min(pageCount, p + 1))}>Next</button>
               </>
             )}
+            <select className="px-2 py-1.5 text-xs border border-black rounded" value={sheetSize} onChange={(e) => { setSheetSize(e.target.value); const s = SHEETS.find((x) => x.id === e.target.value); if (s) pageIn.current = { w: s.w, h: s.h } }}>
+              {SHEETS.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}
+            </select>
             <select className="px-2 py-1.5 text-xs border border-black rounded" value={sheetScale} onChange={(e) => setSheetScale(e.target.value)}>
               {SCALES.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}
             </select>
@@ -294,17 +338,17 @@ export default function PlanEditor({ project, profile, isAdmin }) {
           {tool === 'text' && isAdmin && (
             <input className={field + ' mb-2'} placeholder="Text to place" value={text} onChange={(e) => setText(e.target.value)} />
           )}
-          <p className="text-[11px] text-[#6B6E72] mb-2">Pinch with two fingers to zoom. Measure uses the sheet scale. If a printed dimension is next to your line, that number is used.</p>
           <div
             ref={scroller}
-            className="overflow-auto border border-black rounded bg-[#F5F5F5] max-h-[70vh]"
+            className="overflow-auto border border-black rounded bg-[#F5F5F5]"
+            style={{ height: 'calc(100dvh - 220px)' }}
             data-no-swipe
             onTouchStart={onPinchStart}
             onTouchMove={onPinchMove}
             onTouchEnd={() => { pinch.current = null }}
           >
-            <div ref={content} style={{ width: (zoom * 100) + '%', position: 'relative' }}>
-              {img ? <img src={img} alt="" className="w-full block select-none" draggable={false} /> : <div className="p-6 text-sm">Opening plan…</div>}
+            <div ref={content} style={{ width: sheetW, height: sheetH, position: 'relative' }}>
+              {img ? <img src={img} alt="" className="w-full h-full block select-none object-fill" draggable={false} /> : <div className="p-6 text-sm">Opening plan…</div>}
               <svg
                 ref={view}
                 className="absolute inset-0 w-full h-full"
@@ -336,6 +380,7 @@ export default function PlanEditor({ project, profile, isAdmin }) {
           )}
         </>
       )}
+      </div>
     </div>
   )
 }

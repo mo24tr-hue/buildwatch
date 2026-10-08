@@ -4204,6 +4204,10 @@ function ProjectDetail({ project, isAdmin, canUpload, isCustomer, profile, onBac
     return <InspectionsPage project={project} profile={profile} isAdmin={isAdmin} onBack={() => setProjectPage(null)} />
   }
 
+  if (projectPage === 'markup') {
+    return <PlanEditor project={project} profile={profile} isAdmin={isAdmin} onBack={() => setProjectPage('files')} />
+  }
+
   if (projectPage === 'files') {
     return (
       <SwipeBack onBack={() => setProjectPage(null)}>
@@ -4275,10 +4279,9 @@ function ProjectDetail({ project, isAdmin, canUpload, isCustomer, profile, onBac
             </label>
           )}
         </div>
-        <div className="mt-6">
-          <h3 className="font-display text-xl mb-3">Mark up plan</h3>
-          <PlanEditor project={project} profile={profile} isAdmin={isAdmin} />
-        </div>
+        <button type="button" onClick={() => setProjectPage('markup')} className="w-full mt-4 border border-black rounded-md px-4 py-3 text-left text-sm">
+          Mark up plan
+        </button>
       </SwipeBack>
     )
   }
