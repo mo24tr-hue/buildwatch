@@ -7,6 +7,7 @@ export default function AuthScreen() {
   const [mode, setMode] = useState('choose') // choose | login | signup | join | reset
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [showPassword, setShowPassword] = useState(false)
   const [name, setName] = useState('')
   const [companyName, setCompanyName] = useState('')
   const [error, setError] = useState('')
@@ -267,14 +268,23 @@ export default function AuthScreen() {
                   <label className="block text-[11px] font-mono uppercase text-[#6B6E72] mb-1">
                     {mode === 'join' ? 'One-time password from admin' : 'Password'}
                   </label>
-                  <input
-                    type="password"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    required={mode !== 'reset'}
-                    className="w-full border border-black rounded px-3 py-2.5 text-sm"
-                    placeholder="••••••••"
-                  />
+                  <div className="relative">
+                    <input
+                      type={showPassword ? 'text' : 'password'}
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      required={mode !== 'reset'}
+                      className="w-full border border-black rounded px-3 py-2.5 pr-16 text-sm"
+                      placeholder="••••••••"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword((v) => !v)}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 text-xs underline text-[#6B6E72]"
+                    >
+                      {showPassword ? 'Hide' : 'View'}
+                    </button>
+                  </div>
                 </div>
                 )}
                 {mode === 'signup' && (

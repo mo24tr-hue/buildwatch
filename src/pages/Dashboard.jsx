@@ -1699,6 +1699,7 @@ function ChangePasswordPanel({ email, onBack }) {
   const [currentPassword, setCurrentPassword] = useState('')
   const [newPassword, setNewPassword] = useState('')
   const [confirm, setConfirm] = useState('')
+  const [showPasswords, setShowPasswords] = useState(false)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
   const [loading, setLoading] = useState(false)
@@ -1758,7 +1759,7 @@ function ChangePasswordPanel({ email, onBack }) {
         <div>
           <label className="block text-[11px] font-mono uppercase text-[#6B6E72] mb-1">Current password (or one-time password)</label>
           <input
-            type="password"
+            type={showPasswords ? 'text' : 'password'}
             value={currentPassword}
             onChange={(e) => setCurrentPassword(e.target.value)}
             required
@@ -1769,7 +1770,7 @@ function ChangePasswordPanel({ email, onBack }) {
         <div>
           <label className="block text-[11px] font-mono uppercase text-[#6B6E72] mb-1">New password</label>
           <input
-            type="password"
+            type={showPasswords ? 'text' : 'password'}
             value={newPassword}
             onChange={(e) => setNewPassword(e.target.value)}
             required
@@ -1782,7 +1783,7 @@ function ChangePasswordPanel({ email, onBack }) {
         <div>
           <label className="block text-[11px] font-mono uppercase text-[#6B6E72] mb-1">Confirm new password</label>
           <input
-            type="password"
+            type={showPasswords ? 'text' : 'password'}
             value={confirm}
             onChange={(e) => setConfirm(e.target.value)}
             required
@@ -1790,6 +1791,9 @@ function ChangePasswordPanel({ email, onBack }) {
             autoComplete="new-password"
           />
         </div>
+        <button type="button" onClick={() => setShowPasswords((v) => !v)} className="text-xs underline text-[#6B6E72]">
+          {showPasswords ? 'Hide passwords' : 'View passwords'}
+        </button>
         {error && <p className="text-xs text-[#B5533C]">{error}</p>}
         {success && <p className="text-xs text-[#3F7D58]">{success}</p>}
         <button

@@ -103,6 +103,7 @@ function urlLooksLikeRecovery() {
 function SetNewPasswordScreen({ onDone }) {
   const [password, setPassword] = useState('')
   const [confirm, setConfirm] = useState('')
+  const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   const [done, setDone] = useState(false)
@@ -148,7 +149,7 @@ function SetNewPasswordScreen({ onDone }) {
             <div>
               <label className="block text-[11px] font-mono uppercase text-[#6B6E72] mb-1">New password</label>
               <input
-                type="password"
+                type={showPassword ? 'text' : 'password'}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 required
@@ -161,7 +162,7 @@ function SetNewPasswordScreen({ onDone }) {
             <div>
               <label className="block text-[11px] font-mono uppercase text-[#6B6E72] mb-1">Confirm password</label>
               <input
-                type="password"
+                type={showPassword ? 'text' : 'password'}
                 value={confirm}
                 onChange={(e) => setConfirm(e.target.value)}
                 required
@@ -169,6 +170,9 @@ function SetNewPasswordScreen({ onDone }) {
                 autoComplete="new-password"
               />
             </div>
+            <button type="button" onClick={() => setShowPassword((v) => !v)} className="text-xs underline text-[#6B6E72]">
+              {showPassword ? 'Hide passwords' : 'View passwords'}
+            </button>
             {error && <p className="text-xs text-[#B5533C]">{error}</p>}
             <button
               type="submit"
