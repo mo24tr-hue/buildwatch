@@ -113,6 +113,7 @@ export default function PlanEditor({ project, profile, isAdmin, onBack }) {
   const content = useRef(null)
   const zoomRef = useRef(1)
   const [draft, setDraft] = useState(null)
+  const [measureStep, setMeasureStep] = useState(0)
 
   const file = files.find((f) => f.public_url === fileUrl)
   const isPdf = /\.pdf(\?|$)/i.test(fileUrl) || (file?.file_name || '').toLowerCase().endsWith('.pdf')
@@ -240,18 +241,37 @@ export default function PlanEditor({ project, profile, isAdmin, onBack }) {
       save([...items, { id: crypto.randomUUID(), type: 'text', ...p, text: label }], scale)
       return
     }
-    drag.current = p
-    setDraft({ ...p, x2: p.x, y2: p.y })
+    if (tool === 'measure' && measureStep === 1 && draft) {
+      drag.current = { ...draft, end: 'b' }
+      setDraft({ ...draft, x2: p.x, y2: p.y, fx: p.fx, fy: p.fy, end: 'b' })
+      return
+    }
+    drag.current = { ...p, end: tool === 'measure' ? 'a' : 'mark' }
+    setDraft({ ...p, x2: p.x, y2: p.y, end: tool === 'measure' ? 'a' : 'mark' })
   }
   const move = (e) => {
     if (!drag.current) return
     const p = point(e)
     if (!p) return
-    const locked = lockAxis(drag.current, p)
-    setDraft({ ...drag.current, ...locked, fx: p.fx, fy: p.fy })
+    if (drag.current.end === 'b') {
+      const locked = lockAxis(drag.current, p)
+      setDraft({ ...drag.current, ...locked, fx: p.fx, fy: p.fy, end: 'b' })
+      return
+    }
+    if (drag.current.end === 'a') {
+      setDraft({ ...p, x2: p.x, y2: p.y, fx: p.fx, fy: p.fy, end: 'a' })
+      return
+    }
+    setDraft({ ...drag.current, x2: p.x, y2: p.y, fx: p.fx, fy: p.fy, end: 'mark' })
   }
   const up = () => {
     if (!drag.current || !draft) {
+      drag.current = null
+      return
+    }
+    if (tool === 'measure' && drag.current.end === 'a') {
+      setMeasureStep(1)
+      setDraft({ ...draft, end: 'b' })
       drag.current = null
       return
     }
@@ -272,6 +292,7 @@ export default function PlanEditor({ project, profile, isAdmin, onBack }) {
     }
     drag.current = null
     setDraft(null)
+    setMeasureStep(0)
   }
 
   const onPinchStart = (e) => {
@@ -336,7 +357,7 @@ export default function PlanEditor({ project, profile, isAdmin, onBack }) {
   const fit = Math.min(vp.w / chosenSheet.w, vp.h / chosenSheet.h)
   const sheetW = Math.max(1, chosenSheet.w * fit * zoom)
   const sheetH = Math.max(1, chosenSheet.h * fit * zoom)
-  const btn = 'h-9 px-3 text-xs rounded-full whitespace-nowrap border border-white bg-black text-white'
+  const btn = 'h-7 px-2 text-[10px] rounded-full whitespace-nowrap border border-white bg-black text-white'
 
   return createPortal(
     <div className="fixed bg-black" data-no-swipe style={{ top: 0, left: 0, width: vp.w, height: vp.h, zIndex: 200 }}>
@@ -382,8 +403,8 @@ export default function PlanEditor({ project, profile, isAdmin, onBack }) {
                       <line x1={it.x + '%'} y1={it.y + '%'} x2={it.x2 + '%'} y2={it.y2 + '%'} stroke={it.type === 'dim' ? '#7EB6FF' : '#E6B800'} strokeWidth="2" />
                       {it.type === 'dim' && (
                         <>
-                          <line x1={(it.x - (Math.abs(it.x2 - it.x) >= Math.abs(it.y2 - it.y) ? 0 : 1.2)) + '%'} y1={(it.y - (Math.abs(it.x2 - it.x) >= Math.abs(it.y2 - it.y) ? 1.2 : 0)) + '%'} x2={(it.x + (Math.abs(it.x2 - it.x) >= Math.abs(it.y2 - it.y) ? 0 : 1.2)) + '%'} y2={(it.y + (Math.abs(it.x2 - it.x) >= Math.abs(it.y2 - it.y) ? 1.2 : 0)) + '%'} stroke="#7EB6FF" strokeWidth="2" />
-                          <line x1={(it.x2 - (Math.abs(it.x2 - it.x) >= Math.abs(it.y2 - it.y) ? 0 : 1.2)) + '%'} y1={(it.y2 - (Math.abs(it.x2 - it.x) >= Math.abs(it.y2 - it.y) ? 1.2 : 0)) + '%'} x2={(it.x2 + (Math.abs(it.x2 - it.x) >= Math.abs(it.y2 - it.y) ? 0 : 1.2)) + '%'} y2={(it.y2 + (Math.abs(it.x2 - it.x) >= Math.abs(it.y2 - it.y) ? 1.2 : 0)) + '%'} stroke="#7EB6FF" strokeWidth="2" />
+                          <line x1={(it.x - (Math.abs(it.x2 - it.x) >= Math.abs(it.y2 - it.y) ? 0 : 0.55)) + '%'} y1={(it.y - (Math.abs(it.x2 - it.x) >= Math.abs(it.y2 - it.y) ? 0.55 : 0)) + '%'} x2={(it.x + (Math.abs(it.x2 - it.x) >= Math.abs(it.y2 - it.y) ? 0 : 0.55)) + '%'} y2={(it.y + (Math.abs(it.x2 - it.x) >= Math.abs(it.y2 - it.y) ? 0.55 : 0)) + '%'} stroke="#7EB6FF" strokeWidth="2" />
+                          <line x1={(it.x2 - (Math.abs(it.x2 - it.x) >= Math.abs(it.y2 - it.y) ? 0 : 0.55)) + '%'} y1={(it.y2 - (Math.abs(it.x2 - it.x) >= Math.abs(it.y2 - it.y) ? 0.55 : 0)) + '%'} x2={(it.x2 + (Math.abs(it.x2 - it.x) >= Math.abs(it.y2 - it.y) ? 0 : 0.55)) + '%'} y2={(it.y2 + (Math.abs(it.x2 - it.x) >= Math.abs(it.y2 - it.y) ? 0.55 : 0)) + '%'} stroke="#7EB6FF" strokeWidth="2" />
                         </>
                       )}
                       {it.feet != null && (
@@ -394,8 +415,8 @@ export default function PlanEditor({ project, profile, isAdmin, onBack }) {
                   {draft && (
                     <g>
                       <line x1={draft.x + '%'} y1={draft.y + '%'} x2={draft.x2 + '%'} y2={draft.y2 + '%'} stroke="#7EB6FF" strokeWidth="2" />
-                      <line x1={draft.x + '%'} y1={(draft.y - 1.2) + '%'} x2={draft.x + '%'} y2={(draft.y + 1.2) + '%'} stroke="#7EB6FF" strokeWidth="2" />
-                      <line x1={draft.x2 + '%'} y1={(draft.y2 - 1.2) + '%'} x2={draft.x2 + '%'} y2={(draft.y2 + 1.2) + '%'} stroke="#7EB6FF" strokeWidth="2" />
+                      <line x1={draft.x + '%'} y1={(draft.y - 0.55) + '%'} x2={draft.x + '%'} y2={(draft.y + 0.55) + '%'} stroke="#7EB6FF" strokeWidth="2" />
+                      <line x1={draft.x2 + '%'} y1={(draft.y2 - 0.55) + '%'} x2={draft.x2 + '%'} y2={(draft.y2 + 0.55) + '%'} stroke="#7EB6FF" strokeWidth="2" />
                     </g>
                   )}
                 </svg>
@@ -403,7 +424,7 @@ export default function PlanEditor({ project, profile, isAdmin, onBack }) {
             </div>
           </div>
           <div className="absolute left-0 right-0 z-[90] flex justify-center px-2" style={{ bottom: 'max(8px, env(safe-area-inset-bottom))' }}>
-            <div className="flex gap-1.5 overflow-x-auto max-w-full">
+            <div className="flex flex-wrap justify-center gap-1 max-w-full">
             {['pen', 'text', 'measure', 'erase'].map((t) => (
               <button key={t} type="button" onClick={() => setTool((cur) => cur === t ? 'pan' : t)} className={btn + (tool === t ? ' !bg-white !text-black' : '')}>
                 {t === 'pen' ? 'Mark' : t === 'text' ? 'Text' : t === 'erase' ? 'Eraser' : 'Measure'}
@@ -430,7 +451,7 @@ export default function PlanEditor({ project, profile, isAdmin, onBack }) {
                 backgroundImage: 'url(' + img + ')',
                 backgroundRepeat: 'no-repeat',
                 backgroundSize: (sheetW * 2.4) + 'px ' + (sheetH * 2.4) + 'px',
-                backgroundPosition: (-((draft.x2 / 100) * sheetW * 2.4) + 56) + 'px ' + (-((draft.y2 / 100) * sheetH * 2.4) + 56) + 'px',
+                backgroundPosition: (-((((draft.end === 'a' ? draft.x : draft.x2) / 100) * sheetW * 2.4) - 56)) + 'px ' + (-((((draft.end === 'a' ? draft.y : draft.y2) / 100) * sheetH * 2.4) - 56)) + 'px',
               }}
             >
               <div className="absolute left-1/2 top-1/2 w-3 h-3 -ml-1.5 -mt-1.5 border border-white rounded-full" />
