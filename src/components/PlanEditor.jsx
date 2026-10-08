@@ -8,14 +8,36 @@ function keyFor(projectId, url, page) {
   return 'bw_plan_' + projectId + '_' + page + '_' + url
 }
 
+function formatDim(feet) {
+  if (feet == null || !Number.isFinite(feet)) return ''
+  const totalEighths = Math.round(feet * 12 * 8)
+  const sign = totalEighths < 0 ? '-' : ''
+  const abs = Math.abs(totalEighths)
+  const ft = Math.floor(abs / (12 * 8))
+  let inches = Math.floor((abs % (12 * 8)) / 8)
+  let eighths = abs % 8
+  if (eighths === 8) {
+    inches += 1
+    eighths = 0
+  }
+  const frac = eighths === 0 ? '' : eighths === 2 ? ' 1/4' : eighths === 4 ? ' 1/2' : eighths === 6 ? ' 3/4' : ' ' + eighths + '/8'
+  return sign + ft + "'-" + inches + frac + '"'
+}
+
+function lockAxis(start, p) {
+  const dx = Math.abs(p.x - start.x)
+  const dy = Math.abs(p.y - start.y)
+  if (dx >= dy) return { x2: p.x, y2: start.y }
+  return { x2: start.x, y2: p.y }
+}
+
 function measureFeet(line, sheet, scale) {
   const dxIn = ((line.x2 - line.x) / 100) * sheet.w
   const dyIn = ((line.y2 - line.y) / 100) * sheet.h
   const paperInches = Math.hypot(dxIn, dyIn)
   if (!scale?.inchesPerFoot || paperInches < 0.01) return null
-  return Math.round((paperInches / scale.inchesPerFoot) * 10) / 10
+  return paperInches / scale.inchesPerFoot
 }
-
 function parseFeet(raw) {
   const s = String(raw || '')
   const m = s.match(/(\d+)\s*'\s*-?\s*(\d+)?(?:\s*(\d+)\s*\/\s*(\d+))?\s*"?/)
@@ -188,9 +210,14 @@ export default function PlanEditor({ project, profile, isAdmin, onBack }) {
     const box = view.current?.getBoundingClientRect()
     if (!box) return null
     const src = e.touches ? e.touches[0] : e
+    const lift = e.touches ? 36 : 0
+    const x = src.clientX
+    const y = src.clientY - lift
     return {
-      x: Math.min(100, Math.max(0, ((src.clientX - box.left) / box.width) * 100)),
-      y: Math.min(100, Math.max(0, ((src.clientY - box.top) / box.height) * 100)),
+      x: Math.min(100, Math.max(0, ((x - box.left) / box.width) * 100)),
+      y: Math.min(100, Math.max(0, ((y - box.top) / box.height) * 100)),
+      fx: src.clientX,
+      fy: src.clientY,
     }
   }
 
@@ -220,7 +247,8 @@ export default function PlanEditor({ project, profile, isAdmin, onBack }) {
     if (!drag.current) return
     const p = point(e)
     if (!p) return
-    setDraft({ ...drag.current, x2: p.x, y2: p.y })
+    const locked = lockAxis(drag.current, p)
+    setDraft({ ...drag.current, ...locked, fx: p.fx, fy: p.fy })
   }
   const up = () => {
     if (!drag.current || !draft) {
@@ -352,12 +380,24 @@ export default function PlanEditor({ project, profile, isAdmin, onBack }) {
                   ) : (
                     <g key={it.id}>
                       <line x1={it.x + '%'} y1={it.y + '%'} x2={it.x2 + '%'} y2={it.y2 + '%'} stroke={it.type === 'dim' ? '#7EB6FF' : '#E6B800'} strokeWidth="2" />
+                      {it.type === 'dim' && (
+                        <>
+                          <line x1={(it.x - (Math.abs(it.x2 - it.x) >= Math.abs(it.y2 - it.y) ? 0 : 1.2)) + '%'} y1={(it.y - (Math.abs(it.x2 - it.x) >= Math.abs(it.y2 - it.y) ? 1.2 : 0)) + '%'} x2={(it.x + (Math.abs(it.x2 - it.x) >= Math.abs(it.y2 - it.y) ? 0 : 1.2)) + '%'} y2={(it.y + (Math.abs(it.x2 - it.x) >= Math.abs(it.y2 - it.y) ? 1.2 : 0)) + '%'} stroke="#7EB6FF" strokeWidth="2" />
+                          <line x1={(it.x2 - (Math.abs(it.x2 - it.x) >= Math.abs(it.y2 - it.y) ? 0 : 1.2)) + '%'} y1={(it.y2 - (Math.abs(it.x2 - it.x) >= Math.abs(it.y2 - it.y) ? 1.2 : 0)) + '%'} x2={(it.x2 + (Math.abs(it.x2 - it.x) >= Math.abs(it.y2 - it.y) ? 0 : 1.2)) + '%'} y2={(it.y2 + (Math.abs(it.x2 - it.x) >= Math.abs(it.y2 - it.y) ? 1.2 : 0)) + '%'} stroke="#7EB6FF" strokeWidth="2" />
+                        </>
+                      )}
                       {it.feet != null && (
-                        <text x={((it.x + it.x2) / 2) + '%'} y={((it.y + it.y2) / 2) + '%'} fill="#7EB6FF" fontSize="12" fontWeight="700">{it.feet} ft</text>
+                        <text x={((it.x + it.x2) / 2) + '%'} y={((it.y + it.y2) / 2) + '%'} fill="#7EB6FF" fontSize="12" fontWeight="700">{formatDim(it.feet)}</text>
                       )}
                     </g>
                   ))}
-                  {draft && <line x1={draft.x + '%'} y1={draft.y + '%'} x2={draft.x2 + '%'} y2={draft.y2 + '%'} stroke="#7EB6FF" strokeWidth="2" />}
+                  {draft && (
+                    <g>
+                      <line x1={draft.x + '%'} y1={draft.y + '%'} x2={draft.x2 + '%'} y2={draft.y2 + '%'} stroke="#7EB6FF" strokeWidth="2" />
+                      <line x1={draft.x + '%'} y1={(draft.y - 1.2) + '%'} x2={draft.x + '%'} y2={(draft.y + 1.2) + '%'} stroke="#7EB6FF" strokeWidth="2" />
+                      <line x1={draft.x2 + '%'} y1={(draft.y2 - 1.2) + '%'} x2={draft.x2 + '%'} y2={(draft.y2 + 1.2) + '%'} stroke="#7EB6FF" strokeWidth="2" />
+                    </g>
+                  )}
                 </svg>
               </div>
             </div>
@@ -381,7 +421,21 @@ export default function PlanEditor({ project, profile, isAdmin, onBack }) {
             )}
             </div>
           </div>
-          {tool === 'text' && isAdmin && (
+          {draft?.fx != null && img && (
+            <div
+              className="absolute z-[95] w-28 h-28 rounded-full border-2 border-white overflow-hidden pointer-events-none"
+              style={{
+                left: Math.max(8, Math.min(vp.w - 120, draft.fx - 56)),
+                top: Math.max(8, draft.fy - 150),
+                backgroundImage: 'url(' + img + ')',
+                backgroundRepeat: 'no-repeat',
+                backgroundSize: (sheetW * 2.4) + 'px ' + (sheetH * 2.4) + 'px',
+                backgroundPosition: (-((draft.x2 / 100) * sheetW * 2.4) + 56) + 'px ' + (-((draft.y2 / 100) * sheetH * 2.4) + 56) + 'px',
+              }}
+            >
+              <div className="absolute left-1/2 top-1/2 w-3 h-3 -ml-1.5 -mt-1.5 border border-white rounded-full" />
+            </div>
+          )}
             <input className="absolute left-3 right-3 z-[90] border border-white/40 bg-black/80 text-white rounded px-3 py-2 text-sm" style={{ bottom: 'max(58px, calc(env(safe-area-inset-bottom) + 46px))' }} placeholder="Text to place" value={text} onChange={(e) => setText(e.target.value)} />
           )}
         </>
