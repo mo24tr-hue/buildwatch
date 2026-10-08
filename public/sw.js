@@ -1,5 +1,5 @@
 /* PWA service worker — never cache the HTML shell. Photos live in their own cache. */
-const CACHE = 'BuildWatch-v12'
+const CACHE = 'BuildWatch-v14'
 const PHOTO_CACHE = 'BuildWatch-photos-v1'
 
 self.addEventListener('install', (event) => {
@@ -18,19 +18,14 @@ self.addEventListener('activate', (event) => {
 async function photoResponse(req) {
   const cache = await caches.open(PHOTO_CACHE)
   const cached = await cache.match(req)
-  const update = fetch(req)
-    .then((res) => {
-      if (res && res.ok) cache.put(req, res.clone()).catch(() => {})
-      return res
-    })
-    .catch(() => cached || null)
-  if (cached) {
-    update.catch(() => {})
-    return cached
+  if (cached) return cached
+  try {
+    const res = await fetch(req)
+    if (res && res.ok) cache.put(req, res.clone()).catch(() => {})
+    return res
+  } catch (_) {
+    return cached || new Response('', { status: 504, statusText: 'Offline' })
   }
-  const fresh = await update
-  if (fresh) return fresh
-  return new Response('', { status: 504, statusText: 'Offline' })
 }
 
 self.addEventListener('fetch', (event) => {
@@ -69,8 +64,8 @@ self.addEventListener('push', (event) => {
     if (event.data) data = { ...data, ...event.data.json() }
   } catch (_) {}
   event.waitUntil(
-    self.registration.showNotification(data.title || 'BuildWatch', {
-      body: data.body || '',
+    self.registration.showNotification('BuildWatch', {
+      body: data.body || 'Update',
       icon: '/icon-192.png',
       badge: '/icon-192.png',
       data: data,

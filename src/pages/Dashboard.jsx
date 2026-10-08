@@ -125,6 +125,38 @@ function titleCase(str) {
     .join(' ')
 }
 
+function notifSummary(action, detail) {
+  const a = (action || '').toLowerCase()
+  if (a.includes('uploaded task photo')) return 'Task photo added'
+  if (a.includes('uploaded media') || a.includes('photo')) return 'Photo added'
+  if (a.includes('created task') || a.includes('new task')) return 'New task'
+  if (a.includes('completed task') || a.includes('task done')) return 'Task done'
+  if (a.includes('approved to bill')) return 'Approved to bill'
+  if (a.includes('ready')) return 'Ready for you'
+  if (a.includes('quoted') || a.includes('offer')) return 'Change order sent'
+  if (a.includes('requested') || a.includes('trade change')) return 'Change order requested'
+  if (a.includes('accepted') || a.includes('approved change')) return 'Change order approved'
+  if (a.includes('declined') || a.includes('rejected')) return 'Change order declined'
+  if (a.includes('payment')) return 'Payment recorded'
+  if (a.includes('phase status')) return 'Phase updated'
+  if (a.includes('added phase')) return 'Phase added'
+  if (a.includes('deleted phase')) return 'Phase removed'
+  if (a.includes('file') || a.includes('plan')) return 'Plan added'
+  if (a.includes('created project')) return 'Project added'
+  if (a.includes('project status') || a.includes('updated project status')) return 'Status updated'
+  if (a.includes('invoice')) return 'Invoice added'
+  if (a.includes('cost') || a.includes('receipt')) return 'Cost updated'
+  if (a.includes('meeting')) return 'Meeting scheduled'
+  if (a.includes('inspection')) return 'Inspection updated'
+  const clean = String(detail || '').split('\n')[0].split('—')[0].trim()
+  return clean ? titleCase(clean).slice(0, 42) : titleCase(action || 'Update')
+}
+
+function notifLine(address, summary) {
+  if (address && summary) return address + ' — ' + summary
+  return address || summary || 'Update'
+}
+
 function formatStyleLabel(style) {
 
   if (!style) return '—'
@@ -569,13 +601,9 @@ export default function Dashboard({ session, profile, company, onCompanyUpdate, 
       project_id: pid,
     })
 
-    const notifTitle = titleCase(action)
-    const who = profile.name || profile.email || 'User'
-    const bodyParts = []
-    if (whereLine) bodyParts.push(whereLine)
-    if (detail) bodyParts.push(who + ': ' + detail)
-    else bodyParts.push(who)
-    const notifBody = bodyParts.join('\n')
+    const notifTitle = 'BuildWatch'
+    const summary = notifSummary(action, detail)
+    const notifBody = notifLine(projectLabel, summary)
     const a = (action || '').toLowerCase()
 
     // Notify company admins for non-admin actions (photos, CO requests, etc.)
@@ -603,7 +631,7 @@ export default function Dashboard({ session, profile, company, onCompanyUpdate, 
             p_company_id: profile.company_id,
             p_project_id: pid,
             p_title: notifTitle,
-            p_body: [whereLine, detail].filter(Boolean).join('\n') || detail || '',
+            p_body: notifLine(projectLabel, summary),
             p_kind: action,
           })
         } catch (_) {}
@@ -686,15 +714,12 @@ export default function Dashboard({ session, profile, company, onCompanyUpdate, 
     try {
       if (typeof Notification === 'undefined') return
       if (Notification.permission !== 'granted') return
+      const line = body && body.includes('—') ? body : notifLine(data.address, notifSummary(title, body))
+      const payload = { type: 'show-notification', title: 'BuildWatch', body: line, data }
       if (navigator.serviceWorker?.controller) {
-        navigator.serviceWorker.controller.postMessage({
-          type: 'show-notification',
-          title,
-          body,
-          data,
-        })
+        navigator.serviceWorker.controller.postMessage(payload)
       } else {
-        new Notification(title, { body, icon: '/icon-192.png', data })
+        new Notification('BuildWatch', { body: line, icon: '/icon-192.png', data })
       }
     } catch (_) {}
   }, [])
@@ -1271,19 +1296,13 @@ export default function Dashboard({ session, profile, company, onCompanyUpdate, 
                         }
                       }}
                     >
-                      <div className="text-sm font-medium">{titleCase(n.title)}</div>
+                      <div className="text-sm font-semibold">BuildWatch</div>
                       {(() => {
                         const proj = projects.find((p) => p.id === n.project_id)
-                        const projLine = proj?.address || null
+                        const address = proj?.address || null
+                        const summary = n.body && n.body.includes('—') ? n.body.split('—').slice(1).join('—').trim() : notifSummary(n.title, n.body)
                         return (
-                          <>
-                            {projLine && (
-                              <div className="text-xs text-[#16324F] mt-0.5 font-medium">{projLine}</div>
-                            )}
-                            {n.body && (
-                              <div className="text-xs text-[#6B6E72] mt-0.5 whitespace-pre-wrap">{n.body}</div>
-                            )}
-                          </>
+                          <div className="text-xs text-[#6B6E72] mt-0.5">{notifLine(address, summary)}</div>
                         )
                       })()}
                       <div className="text-[10px] font-mono text-[#8A8D91] mt-1">{fmtDateTime(n.created_at)}</div>
@@ -4892,8 +4911,8 @@ function PhaseTasks({ phase, project, isAdmin, profile, onReload, logActivity })
       await supabase.rpc('notify_project_team', {
         p_company_id: profile.company_id,
         p_project_id: project.id,
-        p_title: titleCase('New task'),
-        p_body: (project.address ? project.address + '\n' : '') + 'Phase: ' + (phase.name || '—') + '\n' + title.trim(),
+        p_title: 'BuildWatch',
+        p_body: (project.address || 'Job') + ' — New task',
         p_kind: 'task',
       })
     } catch (_) {}
@@ -4935,8 +4954,8 @@ function PhaseTasks({ phase, project, isAdmin, profile, onReload, logActivity })
         p_company_id: profile.company_id,
         p_project_id: project.id,
         p_phase_id: phase.id,
-        p_title: titleCase('Approved to bill'),
-        p_body: (project.address ? project.address + '\n' : '') + 'Phase: ' + (phase.name || '—') + '\n' + (task.title || 'Task'),
+        p_title: 'BuildWatch',
+        p_body: (project.address || 'Job') + ' — Approved to bill',
         p_kind: 'task',
       })
     } catch (_) {}
@@ -5226,8 +5245,8 @@ function QuoteReplyForm({ changeOrder, profile, logActivity, onDone }) {
       await supabase.rpc('notify_project_customers', {
         p_company_id: profile.company_id,
         p_project_id: changeOrder.project_id,
-        p_title: titleCase('Change order quote'),
-        p_body: changeOrder.title + ' — $' + totalN.toFixed(2),
+        p_title: 'BuildWatch',
+        p_body: (project.address || 'Job') + ' — Change order sent',
         p_kind: 'change_order_quote',
       })
     } catch (_) {}
@@ -5356,8 +5375,8 @@ function ChangeOrderForm({ project, profile, isAdmin, isTeam = false, onDone, lo
           await supabase.rpc('notify_project_customers', {
             p_company_id: profile.company_id,
             p_project_id: project.id,
-            p_title: titleCase('Change order offer'),
-            p_body: (project.address ? project.address + '\n' : '') + (phaseId ? 'Phase: ' + (phases.find((ph) => ph.id === phaseId)?.name || '') + '\n' : '') + title.trim() + ' — $' + amountNum.toFixed(2),
+            p_title: 'BuildWatch',
+            p_body: (project.address || 'Job') + ' — Change order sent',
             p_kind: 'change_order_offer',
           })
         } catch (_) {}
@@ -5603,8 +5622,8 @@ function PhaseDetail({ phase, project, isAdmin, canUpload, isCustomer, profile, 
           p_company_id: profile.company_id,
           p_project_id: project.id,
           p_phase_id: phase.id,
-          p_title: titleCase('Ready for you'),
-          p_body: (project.address || 'Job') + '\nPhase: ' + (phase.name || '—') + (phase.start_date ? '\n' + fmtDate(phase.start_date) : ''),
+          p_title: 'BuildWatch',
+          p_body: (project.address || 'Job') + ' — Ready for you',
           p_kind: 'ready',
         })
       } catch (_) {}
