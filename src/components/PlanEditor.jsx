@@ -228,9 +228,10 @@ export default function PlanEditor({ project, profile, isAdmin, onBack }) {
     if (!p) return
     if (tool === 'erase') {
       const next = items.filter((it) => {
+        if (it.points) return !it.points.some((pt) => Math.hypot(pt.x - p.x, pt.y - p.y) < 1.6)
         const mx = it.x2 != null ? (it.x + it.x2) / 2 : it.x
         const my = it.y2 != null ? (it.y + it.y2) / 2 : it.y
-        return Math.hypot(mx - p.x, my - p.y) > 6
+        return Math.hypot(mx - p.x, my - p.y) > 1.6
       })
       if (next.length !== items.length) save(next, scale)
       return
@@ -246,7 +247,7 @@ export default function PlanEditor({ project, profile, isAdmin, onBack }) {
       setDraft({ ...draft, x2: p.x, y2: p.y, fx: p.fx, fy: p.fy, end: 'b' })
       return
     }
-    drag.current = { ...p, end: tool === 'measure' ? 'a' : 'mark' }
+    drag.current = { ...p, end: tool === 'measure' ? 'a' : 'mark', points: [{ x: p.x, y: p.y }] }
     setDraft({ ...p, x2: p.x, y2: p.y, end: tool === 'measure' ? 'a' : 'mark' })
   }
   const move = (e) => {
@@ -262,7 +263,12 @@ export default function PlanEditor({ project, profile, isAdmin, onBack }) {
       setDraft({ ...p, x2: p.x, y2: p.y, fx: p.fx, fy: p.fy, end: 'a' })
       return
     }
-    setDraft({ ...drag.current, x2: p.x, y2: p.y, fx: p.fx, fy: p.fy, end: 'mark' })
+    if (drag.current.end === 'mark') {
+      const points = [...(drag.current.points || []), { x: p.x, y: p.y }]
+      drag.current = { ...drag.current, points, x2: p.x, y2: p.y, fx: p.fx, fy: p.fy }
+      setDraft({ ...drag.current })
+      return
+    }
   }
   const up = () => {
     if (!drag.current || !draft) {
@@ -282,12 +288,14 @@ export default function PlanEditor({ project, profile, isAdmin, onBack }) {
     pageIn.current = { w: sheet.w, h: sheet.h }
     const ratio = SCALES.find((s) => s.id === sheetScale) || SCALES[0]
     const feet = tool === 'measure' ? measureFeet(draft, sheet, ratio) : null
-    if ((tool === 'pen' && Math.hypot(draft.x2 - draft.x, draft.y2 - draft.y) > 0.2) || (tool === 'measure' && feet)) {
+    if (tool === 'pen' && (draft.points || []).length > 1) {
+      save([...items, { id: crypto.randomUUID(), type: 'pen', points: draft.points }], scale)
+    } else if (tool === 'measure' && feet) {
       save([...items, {
         id: crypto.randomUUID(),
-        type: tool === 'measure' ? 'dim' : 'pen',
+        type: 'dim',
         x: draft.x, y: draft.y, x2: draft.x2, y2: draft.y2,
-        feet: tool === 'measure' ? feet : null,
+        feet,
       }], scale)
     }
     drag.current = null
@@ -387,6 +395,8 @@ export default function PlanEditor({ project, profile, isAdmin, onBack }) {
                 <svg
                   ref={view}
                   className="absolute inset-0 w-full h-full"
+                  viewBox="0 0 100 100"
+                  preserveAspectRatio="none"
                   style={{ touchAction: tool === 'pan' ? 'pan-x pan-y' : 'none' }}
                   onMouseDown={down}
                   onMouseMove={move}
@@ -398,6 +408,8 @@ export default function PlanEditor({ project, profile, isAdmin, onBack }) {
                 >
                   {items.map((it) => it.type === 'text' ? (
                     <text key={it.id} x={it.x + '%'} y={it.y + '%'} fill="#E6B800" fontSize="14" fontWeight="600">{it.text}</text>
+                  ) : it.points ? (
+                    <polyline key={it.id} points={it.points.map((pt) => pt.x + ',' + pt.y).join(' ')} fill="none" stroke="#E6B800" strokeWidth="1.5" vectorEffect="non-scaling-stroke" />
                   ) : (
                     <g key={it.id}>
                       <line x1={it.x + '%'} y1={it.y + '%'} x2={it.x2 + '%'} y2={it.y2 + '%'} stroke={it.type === 'dim' ? '#7EB6FF' : '#E6B800'} strokeWidth="2" />
@@ -412,7 +424,10 @@ export default function PlanEditor({ project, profile, isAdmin, onBack }) {
                       )}
                     </g>
                   ))}
-                  {draft && (
+                  {draft?.points && (
+                    <polyline points={draft.points.map((pt) => pt.x + ',' + pt.y).join(' ')} fill="none" stroke="#E6B800" strokeWidth="1.5" vectorEffect="non-scaling-stroke" />
+                  )}
+                  {draft && !draft.points && (
                     <g>
                       <line x1={draft.x + '%'} y1={draft.y + '%'} x2={draft.x2 + '%'} y2={draft.y2 + '%'} stroke="#7EB6FF" strokeWidth="2" />
                       <line x1={draft.x + '%'} y1={(draft.y - 0.55) + '%'} x2={draft.x + '%'} y2={(draft.y + 0.55) + '%'} stroke="#7EB6FF" strokeWidth="2" />
@@ -430,8 +445,11 @@ export default function PlanEditor({ project, profile, isAdmin, onBack }) {
                 {t === 'pen' ? 'Mark' : t === 'text' ? 'Text' : t === 'erase' ? 'Eraser' : 'Measure'}
               </button>
             ))}
-            <select className={btn} value={sheetScale} onChange={(e) => setSheetScale(e.target.value)}>
+            <select className={btn + ' max-w-[72px]'} value={sheetScale} onChange={(e) => setSheetScale(e.target.value)}>
               {SCALES.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}
+            </select>
+            <select className={btn + ' max-w-[78px]'} value={sheetSize} onChange={(e) => { setSheetSize(e.target.value); const s = SHEETS.find((x) => x.id === e.target.value); if (s) pageIn.current = { w: s.w, h: s.h } }}>
+              {SHEETS.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}
             </select>
             {pageCount > 1 && (
               <>
@@ -454,10 +472,12 @@ export default function PlanEditor({ project, profile, isAdmin, onBack }) {
                 backgroundPosition: (-((((draft.end === 'a' ? draft.x : draft.x2) / 100) * sheetW * 2.4) - 56)) + 'px ' + (-((((draft.end === 'a' ? draft.y : draft.y2) / 100) * sheetH * 2.4) - 56)) + 'px',
               }}
             >
-              <div className="absolute left-1/2 top-1/2 w-3 h-3 -ml-1.5 -mt-1.5 border border-white rounded-full" />
+              <div className="absolute left-1/2 top-1/2 w-4 h-px -ml-2 bg-[#7EB6FF]" />
+              <div className="absolute left-1/2 top-1/2 h-4 w-px -mt-2 bg-[#7EB6FF]" />
             </div>
           )}
-            <input className="absolute left-3 right-3 z-[90] border border-white/40 bg-black/80 text-white rounded px-3 py-2 text-sm" style={{ bottom: 'max(58px, calc(env(safe-area-inset-bottom) + 46px))' }} placeholder="Text to place" value={text} onChange={(e) => setText(e.target.value)} />
+          {tool === 'text' && (
+            <input className="fixed left-3 right-3 z-[220] border border-white bg-black text-white rounded px-3 py-2 text-base" style={{ bottom: 'max(12px, env(safe-area-inset-bottom))' }} placeholder="Text to place" value={text} onChange={(e) => setText(e.target.value)} />
           )}
         </>
       )}
