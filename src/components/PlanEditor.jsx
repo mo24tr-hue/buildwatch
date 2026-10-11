@@ -87,7 +87,7 @@ function nearestSheet(w, h) {
 
 const PX_PER_INCH = 42
 
-export default function PlanEditor({ project, profile, isAdmin, onBack }) {
+export default function PlanEditor({ project, profile, isAdmin, isTeam, onBack }) {
   const files = [
     ...(project.project_files || []),
     ...(project.phases || []).flatMap((ph) => (ph.phase_files || []).map((f) => ({ ...f, phase_name: ph.name }))),
@@ -136,6 +136,9 @@ export default function PlanEditor({ project, profile, isAdmin, onBack }) {
     return next
   }
   const [measureStep, setMeasureStep] = useState(0)
+  useEffect(() => {
+    if (isTeam) setTool('measure')
+  }, [isTeam])
 
   const file = files.find((f) => f.public_url === fileUrl)
   const isPdf = /\.pdf(\?|$)/i.test(fileUrl) || (file?.file_name || '').toLowerCase().endsWith('.pdf')
@@ -245,7 +248,7 @@ export default function PlanEditor({ project, profile, isAdmin, onBack }) {
   const down = (e) => {
     if (e.touches) lastTouch.current = Date.now()
     if (!e.touches && Date.now() - lastTouch.current < 700) return
-    if (!isAdmin || tool === 'pan' || (e.touches && e.touches.length > 1)) {
+    if (!(isAdmin || isTeam) || tool === 'pan' || (e.touches && e.touches.length > 1)) {
       if (e.touches && e.touches.length > 1) {
         drag.current = null
         if (tool !== 'measure' || measureStep !== 1) setDraft(null)
@@ -327,7 +330,7 @@ export default function PlanEditor({ project, profile, isAdmin, onBack }) {
     const feet = tool === 'measure' ? measureFeet(draft, sheet, ratio) : null
     if (tool === 'pen' && (draft.points || []).length > 1) {
       save([...items, { id: crypto.randomUUID(), type: 'pen', points: draft.points }], scale)
-    } else if (tool === 'measure' && feet) {
+    } else if (tool === 'measure' && feet && isAdmin) {
       save([...items, {
         id: crypto.randomUUID(),
         type: 'dim',
@@ -540,7 +543,7 @@ export default function PlanEditor({ project, profile, isAdmin, onBack }) {
           </div>
           <div className="absolute left-0 right-0 z-[90] flex justify-center px-2" style={{ bottom: 'max(8px, env(safe-area-inset-bottom))' }}>
             <div className="flex flex-wrap justify-center gap-1 max-w-full">
-            {['pen', 'erase', 'text', 'measure'].map((t) => (
+            {(isTeam ? ['measure'] : ['pen', 'erase', 'text', 'measure']).map((t) => (
               <button key={t} type="button" onClick={() => setTool((cur) => cur === t ? 'pan' : t)} className={btn + (tool === t ? ' !bg-white !text-black' : '')}>
                 {t === 'pen' ? 'Mark' : t === 'text' ? 'Text' : t === 'erase' ? 'Eraser' : 'Measure'}
               </button>

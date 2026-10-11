@@ -4204,8 +4204,8 @@ function ProjectDetail({ project, isAdmin, canUpload, isCustomer, profile, onBac
     return <InspectionsPage project={project} profile={profile} isAdmin={isAdmin} onBack={() => setProjectPage(null)} />
   }
 
-  if (projectPage === 'markup') {
-    return <PlanEditor project={project} profile={profile} isAdmin={isAdmin} onBack={() => setProjectPage('files')} />
+  if (projectPage === 'markup' && profile?.role !== 'customer') {
+    return <PlanEditor project={project} profile={profile} isAdmin={isAdmin} isTeam={profile?.role === 'team'} onBack={() => setProjectPage('files')} />
   }
 
   if (projectPage === 'files') {
@@ -4279,9 +4279,11 @@ function ProjectDetail({ project, isAdmin, canUpload, isCustomer, profile, onBac
             </label>
           )}
         </div>
-        <button type="button" onClick={() => setProjectPage('markup')} className="w-full mt-4 border border-black rounded-md px-4 py-3 text-center text-sm">
-          Measure and mark
-        </button>
+        {profile?.role !== 'customer' && (
+          <button type="button" onClick={() => setProjectPage('markup')} className="w-full mt-4 border border-black rounded-md px-4 py-3 text-center text-sm">
+            {profile?.role === 'team' ? 'Measure' : 'Measure and mark'}
+          </button>
+        )}
       </SwipeBack>
     )
   }
