@@ -107,6 +107,8 @@ export default function PlanEditor({ project, profile, isAdmin, onBack }) {
   const [sheetText, setSheetText] = useState([])
   const pageIn = useRef(null)
   const pinch = useRef(null)
+  const panRef = useRef({ x: 0, y: 0 })
+  const [pan, setPan] = useState({ x: 0, y: 0 })
   const scroller = useRef(null)
   const drag = useRef(null)
   const view = useRef(null)
@@ -326,41 +328,66 @@ export default function PlanEditor({ project, profile, isAdmin, onBack }) {
   }
 
   const onPinchStart = (e) => {
-    if (e.touches.length !== 2) return
-    const a = e.touches[0]
-    const b = e.touches[1]
-    pinch.current = {
-      d: Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY),
-      z: zoomRef.current,
-      x: (a.clientX + b.clientX) / 2,
-      y: (a.clientY + b.clientY) / 2,
+    if (e.touches.length === 2) {
+      drag.current = null
+      const a = e.touches[0]
+      const b = e.touches[1]
+      pinch.current = {
+        d: Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY) || 1,
+        z: zoomRef.current,
+        mx: (a.clientX + b.clientX) / 2,
+        my: (a.clientY + b.clientY) / 2,
+        px: panRef.current.x,
+        py: panRef.current.y,
+      }
+      return
+    }
+    if (e.touches.length === 1 && tool === 'pan') {
+      pinch.current = {
+        pan: true,
+        x: e.touches[0].clientX,
+        y: e.touches[0].clientY,
+        px: panRef.current.x,
+        py: panRef.current.y,
+      }
     }
   }
+  const paint = (z, x, y) => {
+    const el = content.current
+    if (!el) return
+    el.style.transform = `translate3d(${x}px, ${y}px, 0) scale(${z})`
+  }
   const onPinchMove = (e) => {
-    if (!pinch.current || e.touches.length !== 2) return
+    if (!pinch.current) return
+    if (pinch.current.pan && e.touches.length === 1) {
+      e.preventDefault()
+      const x = pinch.current.px + (e.touches[0].clientX - pinch.current.x)
+      const y = pinch.current.py + (e.touches[0].clientY - pinch.current.y)
+      panRef.current = { x, y }
+      paint(zoomRef.current, x, y)
+      return
+    }
+    if (e.touches.length !== 2 || pinch.current.pan) return
     e.preventDefault()
     const a = e.touches[0]
     const b = e.touches[1]
-    const d = Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY)
+    const d = Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY) || 1
     const next = Math.min(8, Math.max(1, pinch.current.z * (d / pinch.current.d)))
-    const sc = scroller.current
-    if (!sc) {
-      zoomRef.current = next
-      setZoom(next)
-      return
-    }
-    const rect = sc.getBoundingClientRect()
-    const cx = pinch.current.x
-    const cy = pinch.current.y
-    const relX = cx - rect.left + sc.scrollLeft
-    const relY = cy - rect.top + sc.scrollTop
-    const ratio = next / (zoomRef.current || 1)
+    const mx = (a.clientX + b.clientX) / 2
+    const my = (a.clientY + b.clientY) / 2
+    const contentX = (pinch.current.mx - pinch.current.px) / pinch.current.z
+    const contentY = (pinch.current.my - pinch.current.py) / pinch.current.z
+    const x = mx - contentX * next
+    const y = my - contentY * next
     zoomRef.current = next
-    setZoom(next)
-    requestAnimationFrame(() => {
-      sc.scrollLeft = relX * ratio - (cx - rect.left)
-      sc.scrollTop = relY * ratio - (cy - rect.top)
-    })
+    panRef.current = { x, y }
+    paint(next, x, y)
+  }
+  const onPinchEnd = () => {
+    if (!pinch.current) return
+    pinch.current = null
+    setZoom(zoomRef.current)
+    setPan({ ...panRef.current })
   }
 
   const chosenSheet = SHEETS.find((s) => s.id === sheetSize) || SHEETS[0]
@@ -387,8 +414,17 @@ export default function PlanEditor({ project, profile, isAdmin, onBack }) {
     }
   }, [])
   const fit = Math.min(vp.w / chosenSheet.w, vp.h / chosenSheet.h)
-  const sheetW = Math.max(1, chosenSheet.w * fit * zoom)
-  const sheetH = Math.max(1, chosenSheet.h * fit * zoom)
+  const sheetW = Math.max(1, chosenSheet.w * fit)
+  const sheetH = Math.max(1, chosenSheet.h * fit)
+  useEffect(() => {
+    const x = Math.max(0, (vp.w - sheetW) / 2)
+    const y = Math.max(0, (vp.h - sheetH) / 2)
+    panRef.current = { x, y }
+    zoomRef.current = 1
+    setPan({ x, y })
+    setZoom(1)
+    if (content.current) content.current.style.transform = `translate3d(${x}px, ${y}px, 0) scale(1)`
+  }, [vp.w, vp.h, sheetSize, fileUrl, page])
   const btn = 'h-7 px-2 text-[10px] rounded-full whitespace-nowrap border border-white bg-black text-white'
 
   return createPortal(
@@ -407,14 +443,28 @@ export default function PlanEditor({ project, profile, isAdmin, onBack }) {
         <>
           <div
             ref={scroller}
-            className="absolute inset-0 overflow-auto bg-black"
+            className="absolute inset-0 overflow-hidden bg-black"
             data-no-swipe
+            style={{ touchAction: 'none' }}
             onTouchStart={onPinchStart}
             onTouchMove={onPinchMove}
-            onTouchEnd={() => { pinch.current = null }}
+            onTouchEnd={onPinchEnd}
+            onTouchCancel={onPinchEnd}
           >
-            <div style={{ width: Math.max(vp.w, sheetW), height: Math.max(vp.h, sheetH), position: 'relative' }}>
-              <div ref={content} style={{ width: sheetW, height: sheetH, position: 'absolute', left: Math.max(0, (vp.w - sheetW) / 2), top: Math.max(0, (vp.h - sheetH) / 2) }}>
+            <div style={{ width: vp.w, height: vp.h, position: 'relative' }}>
+              <div
+                ref={content}
+                style={{
+                  width: sheetW,
+                  height: sheetH,
+                  position: 'absolute',
+                  left: 0,
+                  top: 0,
+                  transform: `translate3d(${pan.x}px, ${pan.y}px, 0) scale(${zoom})`,
+                  transformOrigin: '0 0',
+                  willChange: 'transform',
+                }}
+              >
                 {img ? <img src={img} alt="" className="w-full h-full block select-none object-fill" draggable={false} /> : <div className="p-6 text-sm text-white">Opening plan…</div>}
                 <svg
                   ref={view}
