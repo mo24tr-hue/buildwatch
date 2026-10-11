@@ -53,8 +53,12 @@ export function buildProjectPack(projects, extras = {}) {
         if (ph.start_date) bits.push('start ' + ph.start_date)
         if (ph.end_date) bits.push('end ' + ph.end_date)
         if (isAdmin && ph.trade) bits.push('trade ' + ph.trade)
+        if (isAdmin && ph.admin_notes) bits.push('notes ' + ph.admin_notes)
         return bits.join(', ')
       }),
+      ...(p.project_files || []).map((f) => 'Plan file ' + (f.file_name || 'file')),
+      p.start_date ? 'Project start ' + p.start_date : null,
+      p.end_date ? 'Project end ' + p.end_date : null,
       ...(!isTeam ? approved.map((c) => `Change order approved ${c.title || c.note || ''} ${c.amount != null ? money(c.amount) : ''}`) : approved.map((c) => `Change order on your phase ${c.title || c.note || ''} ${c.status}`)),
       ...cos.filter((c) => ['pending', 'quoted'].includes(c.status || '')).map((c) => `Open change order ${c.title || c.note || ''} ${c.status}`),
       ...(isAdmin ? costLines : []),

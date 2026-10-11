@@ -60,7 +60,20 @@ export function DirectoryPage({ profile, onBack }) {
   const add = async (e) => {
     e.preventDefault()
     if (!form.name.trim()) return
-    await supabase.from('directory_contacts').insert({ ...form, name: form.name.trim(), company_id: profile.company_id })
+    const { error } = await supabase.from('directory_contacts').insert({
+      company_id: profile.company_id,
+      name: form.name.trim(),
+      kind: form.kind === 'customer' ? 'customer' : 'trade',
+      trade: form.trade || null,
+      phone: form.phone || null,
+      email: form.email || null,
+      insurance_expires: form.insurance_expires || null,
+      notes: form.notes || null,
+    })
+    if (error) {
+      alert(error.message || 'Could not save contact')
+      return
+    }
     setForm({ name: '', kind: 'trade', trade: '', phone: '', email: '', insurance_expires: '', notes: '' })
     load()
   }
@@ -76,7 +89,7 @@ export function DirectoryPage({ profile, onBack }) {
         <div className="grid grid-cols-2 gap-2 min-w-0">
           <select className={field} value={form.kind} onChange={(e) => setForm({ ...form, kind: e.target.value })}>
             <option value="trade">Trade</option>
-            <option value="supplier">Supplier</option>
+            <option value="customer">Customer</option>
           </select>
           <input className={field} placeholder="Trade / type" value={form.trade} onChange={(e) => setForm({ ...form, trade: e.target.value })} />
         </div>
@@ -430,23 +443,31 @@ export function WeekBoard({ projects, onOpenProject, onBack, hideBack }) {
     return d.toISOString().slice(0, 10)
   })
   const rows = (projects || []).map((p) => {
-    const phases = (p.phases || []).filter((ph) => ph.status === 'active' || (ph.start_date && days.includes(ph.start_date)))
-    const meetings = []
+    const phases = (p.phases || []).filter((ph) => {
+      if (ph.start_date && days.includes(ph.start_date)) return true
+      if (ph.end_date && days.includes(ph.end_date)) return true
+      return false
+    })
     return { p, phases }
-  }).filter((r) => r.phases.length || r.p.status === 'active')
+  }).filter((r) => r.phases.length)
   return (
     <Page onBack={hideBack ? undefined : onBack}>
       {!hideBack && <Back onBack={onBack} title="This week" />}
-      {hideBack && <h2 className="font-display text-2xl mb-4">This week</h2>}
+      {hideBack && (
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="font-display text-2xl">This week</h2>
+          {onBack && <button type="button" className="text-sm underline" onClick={onBack}>Done</button>}
+        </div>
+      )}
       <div className="space-y-3">
         {rows.map(({ p, phases }) => (
           <button key={p.id} type="button" className="w-full max-w-full min-w-0 box-border text-left border border-black rounded-md p-3" onClick={() => onOpenProject?.(p.id)}>
             <div className="font-medium text-sm">{p.address}</div>
-            {phases.length ? phases.map((ph) => (
+            {phases.map((ph) => (
               <div key={ph.id} className="text-xs mt-1">
-                {ph.name} · {ph.status === 'active' ? 'in progress' : 'starts'} {ph.start_date ? fmtDate(ph.start_date) : ''}
+                {ph.name} · {ph.start_date && days.includes(ph.start_date) ? 'starts ' + fmtDate(ph.start_date) : 'ends ' + fmtDate(ph.end_date)}
               </div>
-            )) : <div className="text-xs text-[#6B6E72] mt-1">Job in progress</div>}
+            ))}
           </button>
         ))}
         {!rows.length && <p className="text-sm text-[#6B6E72]">Nothing scheduled this week.</p>}
@@ -460,38 +481,95 @@ export function EstimatesPage({ profile, onBack, onOpenProject }) {
   const [title, setTitle] = useState('')
   const [address, setAddress] = useState('')
   const [style, setStyle] = useState('remodel')
-  const [line, setLine] = useState('')
-  const [amt, setAmt] = useState('')
   const [openId, setOpenId] = useState(null)
   const [lines, setLines] = useState([])
+  const [newPhase, setNewPhase] = useState('')
+  const [overhead, setOverhead] = useState('')
   const load = async () => {
-    const { data } = await supabase.from('estimates').select('*').eq('company_id', profile.company_id).order('created_at', { ascending: false })
+    const { data, error } = await supabase.from('estimates').select('*').eq('company_id', profile.company_id).order('created_at', { ascending: false })
+    if (error) alert(error.message)
     setRows(data || [])
   }
   const loadLines = async (id) => {
     const { data } = await supabase.from('estimate_lines').select('*').eq('estimate_id', id).order('sort_order')
     setLines(data || [])
+    const oh = (data || []).find((l) => /^overhead$/i.test(l.label || ''))
+    setOverhead(oh?.amount != null ? String(oh.amount) : '')
   }
   useEffect(() => { load() }, [profile.company_id])
   const add = async (e) => {
     e.preventDefault()
     if (!title.trim()) return
-    await supabase.from('estimates').insert({ company_id: profile.company_id, title: title.trim(), address: address.trim() || null, style, status: 'draft' })
-    setTitle(''); setAddress('')
+    const { data, error } = await supabase.from('estimates').insert({
+      company_id: profile.company_id,
+      title: title.trim(),
+      address: address.trim() || null,
+      style,
+      status: 'draft',
+    }).select().single()
+    if (error || !data) {
+      alert(error?.message || 'Could not create estimate')
+      return
+    }
+    const names = (STYLES[style] || STYLES.remodel).phases
+    if (names.length) {
+      await supabase.from('estimate_lines').insert(names.map((name, i) => ({
+        estimate_id: data.id,
+        label: name,
+        amount: null,
+        sort_order: i,
+      })))
+    }
+    setTitle('')
+    setAddress('')
+    setOpenId(data.id)
     load()
+    loadLines(data.id)
   }
-  const addLine = async (e) => {
+  const setAmount = async (row, value) => {
+    const amount = value === '' ? null : Number(value)
+    setLines((list) => list.map((l) => (l.id === row.id ? { ...l, amount } : l)))
+    await supabase.from('estimate_lines').update({ amount }).eq('id', row.id)
+  }
+  const addPhaseLine = async (e) => {
     e.preventDefault()
-    if (!openId || !line.trim()) return
-    await supabase.from('estimate_lines').insert({ estimate_id: openId, label: line.trim(), amount: amt === '' ? null : Number(amt), sort_order: lines.length })
-    setLine(''); setAmt('')
+    if (!openId || !newPhase.trim()) return
+    await supabase.from('estimate_lines').insert({
+      estimate_id: openId,
+      label: newPhase.trim(),
+      amount: null,
+      sort_order: lines.length,
+    })
+    setNewPhase('')
     loadLines(openId)
+  }
+  const saveOverhead = async () => {
+    if (!openId) return
+    const amount = overhead === '' ? null : Number(overhead)
+    const existing = lines.find((l) => /^overhead$/i.test(l.label || ''))
+    if (existing) {
+      await supabase.from('estimate_lines').update({ amount }).eq('id', existing.id)
+    } else {
+      await supabase.from('estimate_lines').insert({ estimate_id: openId, label: 'Overhead', amount, sort_order: 1000 })
+    }
+    loadLines(openId)
+  }
+  const removeLine = async (id) => {
+    await supabase.from('estimate_lines').delete().eq('id', id)
+    loadLines(openId)
+  }
+  const removeEstimate = async (est) => {
+    if (!confirm('Delete this estimate?')) return
+    await supabase.from('estimate_lines').delete().eq('estimate_id', est.id)
+    await supabase.from('estimates').delete().eq('id', est.id)
+    setOpenId(null)
+    load()
   }
   const convert = async (est) => {
     const { data: linesData } = await supabase.from('estimate_lines').select('*').eq('estimate_id', est.id)
-    const total = (linesData || []).reduce((s, l) => s + (Number(l.amount) || 0), 0)
+    const phaseLines = (linesData || []).filter((l) => !/^overhead$/i.test(l.label || ''))
+    const total = phaseLines.reduce((s, l) => s + (Number(l.amount) || 0), 0)
     const styleKey = STYLES[est.style] ? est.style : 'remodel'
-    const phaseNames = STYLES[styleKey].phases
     const { data: project, error } = await supabase.from('projects').insert({
       company_id: profile.company_id,
       address: est.address || est.title,
@@ -499,15 +577,93 @@ export function EstimatesPage({ profile, onBack, onOpenProject }) {
       status: 'planning',
       base_cost: total || null,
     }).select().single()
-    if (error || !project) return
-    await supabase.from('phases').insert(phaseNames.map((name, i) => ({ project_id: project.id, name, sort_order: i, status: 'pending' })))
+    if (error || !project) {
+      alert(error?.message || 'Could not create project')
+      return
+    }
+    const { data: phases } = await supabase.from('phases').insert(phaseLines.map((l, i) => ({
+      project_id: project.id,
+      name: l.label,
+      sort_order: i,
+      status: 'pending',
+    }))).select()
+    for (const l of phaseLines) {
+      const ph = (phases || []).find((p) => p.name === l.label)
+      if (!ph || l.amount == null) continue
+      await supabase.from('project_job_costs').insert({
+        project_id: project.id,
+        company_id: profile.company_id,
+        phase_id: ph.id,
+        kind: 'phase',
+        quoted_amount: Number(l.amount),
+        amount: Number(l.amount),
+      })
+    }
+    const oh = (linesData || []).find((l) => /^overhead$/i.test(l.label || ''))
+    if (oh?.amount) {
+      await supabase.from('project_job_costs').insert({
+        project_id: project.id,
+        company_id: profile.company_id,
+        kind: 'overhead',
+        amount: Number(oh.amount),
+        note: 'Overhead from estimate',
+      })
+    }
     await supabase.from('estimates').update({ status: 'converted', project_id: project.id }).eq('id', est.id)
     load()
     onOpenProject?.(project.id)
   }
+  const open = rows.find((r) => r.id === openId)
+  const phaseLines = lines.filter((l) => !/^overhead$/i.test(l.label || ''))
+  const phaseTotal = phaseLines.reduce((s, l) => s + (Number(l.amount) || 0), 0)
+  const ohAmt = Number(overhead) || 0
+  const profit = phaseTotal - ohAmt
+  if (open) {
+    return (
+      <Page onBack={() => setOpenId(null)}>
+        <Back onBack={() => setOpenId(null)} title={open.title} />
+        <div className="text-xs text-[#6B6E72] mb-3">{open.address || 'No address'} · {STYLES[open.style]?.label || open.style}</div>
+        <div className="space-y-2 mb-4">
+          {phaseLines.map((l) => (
+            <div key={l.id} className="border border-black rounded-md p-3">
+              <div className="flex justify-between gap-2 items-center">
+                <div className="text-sm font-medium truncate">{l.label}</div>
+                <button type="button" className="text-[#B5533C]" onClick={() => removeLine(l.id)}><Trash2 size={14} /></button>
+              </div>
+              <input className={field + ' mt-2'} inputMode="decimal" placeholder="Rough cost" value={l.amount ?? ''} onChange={(e) => setAmount(l, e.target.value)} />
+            </div>
+          ))}
+        </div>
+        {open.status !== 'converted' && (
+          <form onSubmit={addPhaseLine} className="flex gap-2 mb-4">
+            <input className={'flex-1 ' + field} placeholder="Add phase" value={newPhase} onChange={(e) => setNewPhase(e.target.value)} />
+            <button type="submit" className="px-3 border border-black rounded"><Plus size={14} /></button>
+          </form>
+        )}
+        <div className="border border-black rounded-md p-3 space-y-2 mb-4">
+          <label className="block text-[11px] font-mono uppercase text-[#6B6E72]">Overhead</label>
+          <input className={field} inputMode="decimal" placeholder="Insurance, license, fees" value={overhead} onChange={(e) => setOverhead(e.target.value)} onBlur={saveOverhead} />
+          <div className="flex justify-between text-sm"><span>Phase costs</span><span>{money(phaseTotal)}</span></div>
+          <div className="flex justify-between text-sm"><span>Overhead</span><span>{money(ohAmt)}</span></div>
+          <div className="flex justify-between text-sm font-medium border-t border-black/20 pt-2"><span>Estimated profit</span><span>{money(profit)}</span></div>
+        </div>
+        {open.status !== 'converted' && (
+          <div className="space-y-2">
+            <button type="button" className="w-full py-2.5 bg-black text-white rounded text-sm" onClick={() => convert(open)}>Turn into project</button>
+            <button type="button" className="w-full py-2.5 border border-black rounded text-sm" onClick={() => removeEstimate(open)}>Delete estimate</button>
+          </div>
+        )}
+      </Page>
+    )
+  }
   return (
     <Page onBack={onBack}>
-      <Back onBack={onBack} title="Estimates" />
+      <div className="mb-4">
+        <button type="button" onClick={onBack} className="flex items-center gap-1 text-sm text-[#6B6E72] mb-2">
+          <ChevronLeft size={16} /> Back
+        </button>
+        <h2 className="font-display text-2xl">Estimates</h2>
+      </div>
       <form onSubmit={add} className="w-full max-w-full min-w-0 box-border border border-black rounded-md p-3 space-y-2 mb-4">
         <input className={field} placeholder="Estimate title" value={title} onChange={(e) => setTitle(e.target.value)} />
         <input className={field} placeholder="Address" value={address} onChange={(e) => setAddress(e.target.value)} />
@@ -518,40 +674,15 @@ export function EstimatesPage({ profile, onBack, onOpenProject }) {
       </form>
       <div className="space-y-2">
         {rows.map((r) => (
-          <div key={r.id} className="w-full max-w-full min-w-0 box-border border border-black rounded-md p-3">
-            <button type="button" className="w-full text-left" onClick={() => { setOpenId(r.id === openId ? null : r.id); if (r.id !== openId) loadLines(r.id) }}>
-              <div className="font-medium text-sm">{r.title}</div>
-              <div className="text-xs text-[#6B6E72]">{r.address || ''} · {r.status}</div>
-            </button>
-            {openId === r.id && (
-              <div className="mt-3 space-y-2">
-                {lines.map((l) => (
-                  <div key={l.id} className="flex justify-between text-sm">
-                    <span>{l.label}</span><span>{money(l.amount)}</span>
-                  </div>
-                ))}
-                {r.status !== 'converted' && (
-                  <form onSubmit={addLine} className="flex gap-2">
-                    <input className={"flex-1 " + field} placeholder="Line" value={line} onChange={(e) => setLine(e.target.value)} />
-                    <input className={"w-24 min-w-0 " + field} placeholder="$" value={amt} onChange={(e) => setAmt(e.target.value)} />
-                    <button type="submit" className="px-2 border border-black rounded"><Plus size={14} /></button>
-                  </form>
-                )}
-                {r.status !== 'converted' && (
-                  <button type="button" className="w-full py-2 bg-black text-white rounded text-sm" onClick={() => convert(r)}>Turn into project</button>
-                )}
-                {r.project_id && (
-                  <button type="button" className="w-full py-2 border border-black rounded text-sm" onClick={() => onOpenProject?.(r.project_id)}>Open project</button>
-                )}
-              </div>
-            )}
-          </div>
+          <button key={r.id} type="button" className="w-full text-left border border-black rounded-md p-3" onClick={() => { setOpenId(r.id); loadLines(r.id) }}>
+            <div className="font-medium text-sm">{r.title}</div>
+            <div className="text-xs text-[#6B6E72]">{r.address || ''} · {r.status}</div>
+          </button>
         ))}
       </div>
     </Page>
   )
 }
-
 export function PlanMarkupPage({ project, profile, isAdmin, onBack }) {
   return (
     <Page onBack={onBack}>
@@ -801,7 +932,7 @@ export function SetupWizard({ profile, company, onDone, onOpenNewProject, onOpen
   ]
   const s = steps[step] || steps[0]
   return (
-    <Page onBack={onBack}>
+    <Page>
       <div className="text-[11px] font-mono uppercase text-[#6B6E72] mb-1">Setup {step + 1} of {steps.length}</div>
       <h2 className="font-display text-2xl mb-3">{s.title}</h2>
       {s.body}

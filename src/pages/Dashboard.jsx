@@ -1400,32 +1400,17 @@ export default function Dashboard({ session, profile, company, onCompanyUpdate, 
             }}
           />
         ) : showWeek && isAdmin ? (
-          <div>
-            <WeekBoard
-              projects={projects}
-              hideBack
-              onOpenProject={(id) => {
-                setShowWeek(false)
-                setShowCalendar(false)
-                setShowAdmin(false)
-                setHomeTab('projects')
-                setActiveId(id)
-              }}
-            />
-            <div className="mt-8">
-              <ThisWeekView
-                digest={digest}
-                projects={projects}
-                onBack={() => goTab('projects')}
-                hideBack
-                onOpenProject={(id) => {
-                  setShowWeek(false)
-                  setHomeTab('projects')
-                  setActiveId(id)
-                }}
-              />
-            </div>
-          </div>
+          <WeekBoard
+            projects={projects}
+            onBack={() => goTab('projects')}
+            onOpenProject={(id) => {
+              setShowWeek(false)
+              setShowCalendar(false)
+              setShowAdmin(false)
+              setHomeTab('projects')
+              setActiveId(id)
+            }}
+          />
         ) : showAdmin && isAdmin ? (
           <AdminPanel
             profile={profile}
@@ -2828,14 +2813,15 @@ function ProjectJobCostsPanel({ project, profile, onReload, logActivity, mode })
             <label className="block text-[11px] font-mono uppercase text-[#6B6E72]">Amount</label>
             <input type="number" inputMode="decimal" min="0" step="0.01" value={extraAmt} onChange={(e) => setExtraAmt(e.target.value)} className="w-full border border-black rounded px-3 py-2 text-sm" placeholder="0.00" />
             <label className="block text-[11px] font-mono uppercase text-[#6B6E72]">Note</label>
-            <input value={extraNote} onChange={(e) => setExtraNote(e.target.value)} className="w-full border border-black rounded px-3 py-2 text-sm" placeholder="Dumpster, permit, lumber…" />
+            <input value={extraNote} onChange={(e) => setExtraNote(e.target.value)} className="w-full border border-black rounded px-3 py-2 text-sm" placeholder="Dumpster, overhead, license, insurance…" />
             <div className="flex gap-2">
               <button type="button" disabled={saving} onClick={() => addExtra()} className="flex-1 py-2.5 rounded bg-black text-white text-sm disabled:opacity-50">Add cost</button>
-              <label className="flex-1 py-2.5 rounded border border-black text-sm text-center cursor-pointer">
-                {saving ? 'Uploading…' : 'Add receipt photo'}
-                <input type="file" accept="image/*" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; if (f) addExtra({ file: f }) }} />
-              </label>
+              <button type="button" disabled={saving} onClick={() => { setExtraNote((n) => n || 'Overhead'); addExtra() }} className="flex-1 py-2.5 rounded border border-black text-sm disabled:opacity-50">Add overhead</button>
             </div>
+            <label className="w-full py-2.5 rounded border border-black text-sm text-center cursor-pointer block">
+              {saving ? 'Uploading…' : 'Add receipt photo'}
+              <input type="file" accept="image/*" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; if (f) addExtra({ file: f }) }} />
+            </label>
           </div>
           {rows.filter((r) => r.kind === 'extra' || r.kind === 'receipt').map((r) => (
             <div key={r.id} className="bg-white border border-black rounded-md p-3 flex gap-3">
@@ -4283,7 +4269,7 @@ function ProjectDetail({ project, isAdmin, canUpload, isCustomer, profile, onBac
             </label>
           )}
         </div>
-        <button type="button" onClick={() => setProjectPage('markup')} className="w-full mt-4 border border-black rounded-md px-4 py-3 text-left text-sm">
+        <button type="button" onClick={() => setProjectPage('markup')} className="w-full mt-4 border border-black rounded-md px-4 py-3 text-center text-sm">
           Measure and mark
         </button>
       </SwipeBack>
@@ -4590,14 +4576,26 @@ className={`bg-white border border-black rounded-md flex items-stretch overflow-
             return (
               <div
                 key={'fin-' + phase.id}
-                className="bg-white border border-black rounded-md flex items-stretch overflow-hidden"
+                className={`bg-white border border-black rounded-md flex items-stretch overflow-hidden ${dragIdx === globalIdx ? 'opacity-60' : ''}`}
               >
-                <div
-                  className="w-9 flex items-center justify-center font-mono text-xs text-white flex-shrink-0"
-                  style={{ background: (PHASE_STATUS[phase.status] || PHASE_STATUS.pending).color }}
-                >
-                  {fi + 1}
-                </div>
+                {isAdmin && (
+                  <div
+                    onPointerDown={(e) => onPhasePointerDown(e, globalIdx)}
+                    onPointerMove={onPhasePointerMove}
+                    onPointerUp={onPhasePointerUp}
+                    onPointerCancel={onPhasePointerUp}
+                    className="w-11 flex flex-col items-center justify-center gap-0.5 text-white flex-shrink-0 cursor-grab select-none touch-none"
+                    style={{ background: (PHASE_STATUS[phase.status] || PHASE_STATUS.pending).color, touchAction: 'none' }}
+                  >
+                    <span className="text-sm leading-none opacity-90">⋮⋮</span>
+                    <span className="font-mono text-xs">{fi + 1}</span>
+                  </div>
+                )}
+                {!isAdmin && (
+                  <div className="w-9 flex items-center justify-center font-mono text-xs text-white flex-shrink-0" style={{ background: (PHASE_STATUS[phase.status] || PHASE_STATUS.pending).color }}>
+                    {fi + 1}
+                  </div>
+                )}
                 <button
                   type="button"
                   className="flex-1 text-left px-3 py-3 min-w-0"
@@ -5758,8 +5756,8 @@ function PhaseDetail({ phase, project, isAdmin, canUpload, isCustomer, profile, 
         continue
       }
       const isVideo = (file.type || '').startsWith('video/')
-      // Shrink phone photos so grids load quickly (videos left as-is)
-      const uploadFile = isVideo ? file : await compressImageFile(file)
+      const isHeic = /heic|heif/i.test(file.type || '') || /\.heic$|\.heif$/i.test(file.name || '')
+      const uploadFile = isVideo || isHeic ? file : await compressImageFile(file)
       const safeName = (uploadFile.name || file.name || (isVideo ? 'video.mp4' : 'photo.jpg')).replace(/[^a-zA-Z0-9._-]/g, '_')
       const path =
         String(profile.company_id) +
@@ -5773,21 +5771,20 @@ function PhaseDetail({ phase, project, isAdmin, canUpload, isCustomer, profile, 
         Math.random().toString(36).slice(2, 6) +
         '-' +
         safeName
-      const contentType = uploadFile.type || file.type || (isVideo ? 'video/mp4' : 'image/jpeg')
+      const contentType = isHeic ? 'image/jpeg' : (uploadFile.type || file.type || (isVideo ? 'video/mp4' : 'image/jpeg'))
       try {
         let upErr = null
-        // Prefer raw bytes — more reliable on iOS / HEIC / large files than File object quirks
         try {
           const bytes = await uploadFile.arrayBuffer()
           const res = await supabase.storage.from('project-photos').upload(path, bytes, {
-            upsert: true,
+            upsert: false,
             contentType,
             cacheControl: '31536000',
           })
           upErr = res.error
         } catch (inner) {
           const res2 = await supabase.storage.from('project-photos').upload(path, uploadFile, {
-            upsert: true,
+            upsert: false,
             contentType,
             cacheControl: '31536000',
           })
@@ -5798,16 +5795,21 @@ function PhaseDetail({ phase, project, isAdmin, canUpload, isCustomer, profile, 
           continue
         }
         const { data: pub } = supabase.storage.from('project-photos').getPublicUrl(path)
-        const { error: insErr } = await supabase.from('photos').insert({
+        let insErr = null
+        const baseRow = {
           phase_id: phase.id,
           project_id: project.id,
           storage_path: path,
           public_url: pub.publicUrl,
           caption: cap,
-          tag: tag,
-          media_type: isVideo ? 'video' : 'image',
           uploaded_by: profile.id,
-        })
+        }
+        let ins = await supabase.from('photos').insert({ ...baseRow, tag, media_type: isVideo ? 'video' : 'image' })
+        insErr = ins.error
+        if (insErr && /column|schema/i.test(insErr.message || '')) {
+          ins = await supabase.from('photos').insert(baseRow)
+          insErr = ins.error
+        }
         if (insErr) {
           errors.push((insErr.message || 'Could not save photo record') + ' (database)')
           continue
