@@ -1,4 +1,5 @@
 import { useEffect, useState, useRef } from 'react'
+import { createPortal } from 'react-dom'
 import { ChevronLeft, Plus, Trash2 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { STYLES, fmtDate } from '../lib/styles'
@@ -125,18 +126,20 @@ export function DirectoryPage({ profile, onBack }) {
         })}
         {!rows.length && <p className="text-sm text-[#6B6E72]">No contacts yet.</p>}
       </div>
-      {openContact && (
-        <div className="fixed inset-0 z-[80] bg-black/40 flex items-end" onClick={() => setOpenContact(null)}>
-          <div className="w-full bg-white rounded-t-xl p-4 space-y-2" onClick={(e) => e.stopPropagation()}>
-            <div className="font-medium">{openContact.name}</div>
-            {openContact.phone && <a className="block w-full py-2.5 border border-black rounded text-center text-sm" href={'tel:' + String(openContact.phone).replace(/[^\d+]/g, '')}>Call</a>}
-            {openContact.phone && <a className="block w-full py-2.5 border border-black rounded text-center text-sm" href={'sms:' + String(openContact.phone).replace(/[^\d+]/g, '')}>Message</a>}
-            {openContact.phone && <a className="block w-full py-2.5 border border-black rounded text-center text-sm" href={'https://wa.me/' + String(openContact.phone).replace(/[^\d]/g, '')}>WhatsApp message</a>}
-            {openContact.phone && <a className="block w-full py-2.5 border border-black rounded text-center text-sm" href={'https://wa.me/' + String(openContact.phone).replace(/[^\d]/g, '')}>WhatsApp call</a>}
-            {openContact.email && <a className="block w-full py-2.5 border border-black rounded text-center text-sm" href={'mailto:' + openContact.email}>Email</a>}
-            <button type="button" className="w-full py-2.5 text-sm" onClick={() => setOpenContact(null)}>Close</button>
+      {openContact && createPortal(
+        <div className="fixed inset-0 z-[300] bg-black/40 flex items-end" onClick={() => setOpenContact(null)}>
+          <div className="w-full bg-white rounded-t-2xl p-4 space-y-2 max-h-[80vh] overflow-y-auto" style={{ paddingBottom: 'max(16px, env(safe-area-inset-bottom))' }} onClick={(e) => e.stopPropagation()}>
+            <div className="font-display text-xl mb-1">{openContact.name}</div>
+            {openContact.phone && <a className="block w-full py-3 border border-black rounded text-center text-sm" href={'tel:' + String(openContact.phone).replace(/[^\d+]/g, '')}>Call</a>}
+            {openContact.phone && <a className="block w-full py-3 border border-black rounded text-center text-sm" href={'sms:' + String(openContact.phone).replace(/[^\d+]/g, '')}>Message</a>}
+            {openContact.phone && <a className="block w-full py-3 border border-black rounded text-center text-sm" href={'https://wa.me/' + String(openContact.phone).replace(/[^\d]/g, '')}>WhatsApp message</a>}
+            {openContact.phone && <a className="block w-full py-3 border border-black rounded text-center text-sm" href={'https://wa.me/' + String(openContact.phone).replace(/[^\d]/g, '')}>WhatsApp call</a>}
+            {openContact.email && <a className="block w-full py-3 border border-black rounded text-center text-sm" href={'mailto:' + openContact.email}>Email</a>}
+            {!openContact.phone && !openContact.email && <p className="text-sm text-[#6B6E72]">No phone or email on this contact.</p>}
+            <button type="button" className="w-full py-3 text-sm border border-black rounded" onClick={() => setOpenContact(null)}>Close</button>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </Page>
   )
