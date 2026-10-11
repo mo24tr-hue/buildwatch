@@ -176,7 +176,7 @@ export default function PlanEditor({ project, profile, isAdmin, onBack }) {
       await pg.render({ canvasContext: canvas.getContext('2d'), viewport }).promise
       if (!dead) setImg(canvas.toDataURL('image/jpeg', 0.95))
     }
-    loadPage().catch(() => setImg(''))
+    loadPage().catch(() => { if (!dead) setImg('error') })
     return () => { dead = true }
   }, [fileUrl, page, isPdf])
 
@@ -478,7 +478,7 @@ export default function PlanEditor({ project, profile, isAdmin, onBack }) {
                   willChange: 'transform',
                 }}
               >
-                {img ? <img src={img} alt="" className="w-full h-full block select-none object-contain" draggable={false} style={{ imageRendering: 'auto' }} /> : <div className="p-6 text-sm text-white">Opening plan…</div>}
+                {img && img !== 'error' ? <img src={img} alt="" className="w-full h-full block select-none object-contain" draggable={false} style={{ imageRendering: 'auto' }} /> : <div className="p-6 text-sm text-white">{img === 'error' ? 'Could not open this plan. Try again or upload a smaller PDF.' : 'Opening plan…'}</div>}
                 <svg
                   ref={view}
                   className="absolute inset-0 w-full h-full"
