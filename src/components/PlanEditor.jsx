@@ -116,12 +116,25 @@ export default function PlanEditor({ project, profile, isAdmin, onBack }) {
   const zoomRef = useRef(1)
   const lastTouch = useRef(0)
   const [draft, setDraft] = useState(null)
-  const eraseAt = (p, list) => list.filter((it) => {
-    if (it.points) return !it.points.some((pt) => Math.hypot(pt.x - p.x, pt.y - p.y) < 1.4)
-    const pts = [{ x: it.x, y: it.y }]
-    if (it.x2 != null) pts.push({ x: it.x2, y: it.y2 })
-    return !pts.some((pt) => Math.hypot(pt.x - p.x, pt.y - p.y) < 1.4)
-  })
+  const eraseAt = (p, list) => {
+    const next = []
+    for (const it of list) {
+      if (!it.points) {
+        next.push(it)
+        continue
+      }
+      const groups = [[]]
+      for (const pt of it.points) {
+        if (Math.hypot(pt.x - p.x, pt.y - p.y) < 1.2) {
+          if (groups[groups.length - 1].length) groups.push([])
+        } else {
+          groups[groups.length - 1].push(pt)
+        }
+      }
+      groups.filter((g) => g.length > 1).forEach((g) => next.push({ ...it, id: crypto.randomUUID(), points: g }))
+    }
+    return next
+  }
   const [measureStep, setMeasureStep] = useState(0)
 
   const file = files.find((f) => f.public_url === fileUrl)
@@ -156,12 +169,12 @@ export default function PlanEditor({ project, profile, isAdmin, onBack }) {
         found.push({ x, y, feet, text: item.str })
       }
       if (!dead) setSheetText(found)
-      const viewport = pg.getViewport({ scale: 2.4 })
+      const viewport = pg.getViewport({ scale: 4 })
       const canvas = document.createElement('canvas')
       canvas.width = viewport.width
       canvas.height = viewport.height
       await pg.render({ canvasContext: canvas.getContext('2d'), viewport }).promise
-      if (!dead) setImg(canvas.toDataURL('image/jpeg', 0.85))
+      if (!dead) setImg(canvas.toDataURL('image/jpeg', 0.95))
     }
     loadPage().catch(() => setImg(''))
     return () => { dead = true }
@@ -465,7 +478,7 @@ export default function PlanEditor({ project, profile, isAdmin, onBack }) {
                   willChange: 'transform',
                 }}
               >
-                {img ? <img src={img} alt="" className="w-full h-full block select-none object-fill" draggable={false} /> : <div className="p-6 text-sm text-white">Opening plan…</div>}
+                {img ? <img src={img} alt="" className="w-full h-full block select-none object-contain" draggable={false} style={{ imageRendering: 'auto' }} /> : <div className="p-6 text-sm text-white">Opening plan…</div>}
                 <svg
                   ref={view}
                   className="absolute inset-0 w-full h-full"
@@ -482,7 +495,13 @@ export default function PlanEditor({ project, profile, isAdmin, onBack }) {
                   onTouchEnd={(e) => { if (tool !== 'pan') e.preventDefault(); up() }}
                 >
                   {items.map((it) => it.type === 'text' ? (
-                    <text key={it.id} x={it.x} y={it.y} fill="#16324F" fontSize="2.2" fontFamily="Montserrat, sans-serif" fontWeight="500">{it.text}</text>
+                    <g key={it.id}>
+                      <text x={it.x} y={it.y} fill="#16324F" fontSize="1.8" fontFamily="Montserrat, sans-serif" fontWeight="500">{it.text}</text>
+                      <g onClick={() => save(items.filter((x) => x.id !== it.id), scale)}>
+                        <circle cx={it.x + 1.6} cy={it.y - 1.4} r="1.1" fill="#fff" stroke="#000" strokeWidth="0.15" />
+                        <text x={it.x + 1.6} y={it.y - 1.1} textAnchor="middle" fontSize="1.2" fill="#000">×</text>
+                      </g>
+                    </g>
                   ) : it.points ? (
                     <polyline key={it.id} points={it.points.map((pt) => pt.x + ',' + pt.y).join(' ')} fill="none" stroke="#E6B800" strokeWidth="0.28" strokeLinecap="round" strokeLinejoin="round" />
                   ) : (
@@ -495,7 +514,13 @@ export default function PlanEditor({ project, profile, isAdmin, onBack }) {
                         </>
                       )}
                       {it.feet != null && (
-                        <text x={(it.x + it.x2) / 2} y={(it.y + it.y2) / 2} fill="#7EB6FF" fontSize="2.4" fontWeight="700">{formatDim(it.feet)}</text>
+                        <g>
+                          <text x={(it.x + it.x2) / 2} y={(it.y + it.y2) / 2} fill="#16324F" fontSize="1.5" fontFamily="Montserrat, sans-serif" fontWeight="600">{formatDim(it.feet)}</text>
+                          <g onClick={() => save(items.filter((x) => x.id !== it.id), scale)}>
+                            <circle cx={((it.x + it.x2) / 2) + 2.2} cy={((it.y + it.y2) / 2) - 1.2} r="1" fill="#fff" stroke="#000" strokeWidth="0.15" />
+                            <text x={((it.x + it.x2) / 2) + 2.2} y={((it.y + it.y2) / 2) - 0.9} textAnchor="middle" fontSize="1.1" fill="#000">×</text>
+                          </g>
+                        </g>
                       )}
                     </g>
                   ))}
@@ -515,7 +540,7 @@ export default function PlanEditor({ project, profile, isAdmin, onBack }) {
           </div>
           <div className="absolute left-0 right-0 z-[90] flex justify-center px-2" style={{ bottom: 'max(8px, env(safe-area-inset-bottom))' }}>
             <div className="flex flex-wrap justify-center gap-1 max-w-full">
-            {['pen', 'text', 'measure', 'erase'].map((t) => (
+            {['pen', 'erase', 'text', 'measure'].map((t) => (
               <button key={t} type="button" onClick={() => setTool((cur) => cur === t ? 'pan' : t)} className={btn + (tool === t ? ' !bg-white !text-black' : '')}>
                 {t === 'pen' ? 'Mark' : t === 'text' ? 'Text' : t === 'erase' ? 'Eraser' : 'Measure'}
               </button>

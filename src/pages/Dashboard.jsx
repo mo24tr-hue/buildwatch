@@ -1035,6 +1035,9 @@ export default function Dashboard({ session, profile, company, onCompanyUpdate, 
                       onClick={() => {
                         setMenuOpen(false)
                         setShowWeek(true)
+                        setPackPage(null)
+                        setShowSetup(false)
+                        setShowHelp(false)
                         setHomeTab('week')
                         setShowCalendar(false)
                         setShowAdmin(false)
@@ -1057,6 +1060,8 @@ export default function Dashboard({ session, profile, company, onCompanyUpdate, 
                         setMenuOpen(false)
                         setPackPage('directory')
                         setShowWeek(false)
+                        setShowSetup(false)
+                        setShowHelp(false)
                         setShowCalendar(false)
                         setShowAdmin(false)
                         setActiveId(null)
@@ -1073,6 +1078,8 @@ export default function Dashboard({ session, profile, company, onCompanyUpdate, 
                         setMenuOpen(false)
                         setPackPage('estimates')
                         setShowWeek(false)
+                        setShowSetup(false)
+                        setShowHelp(false)
                         setShowCalendar(false)
                         setShowAdmin(false)
                         setActiveId(null)
@@ -1088,6 +1095,9 @@ export default function Dashboard({ session, profile, company, onCompanyUpdate, 
                       onClick={() => {
                         setMenuOpen(false)
                         setShowSetup(true)
+                        setPackPage(null)
+                        setShowWeek(false)
+                        setShowHelp(false)
                       }}
                     >
                       Setup guide

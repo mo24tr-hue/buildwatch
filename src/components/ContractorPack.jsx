@@ -29,11 +29,11 @@ function Back({ onBack, title }) {
     return <h2 className="font-display text-xl mb-3 min-w-0">{title}</h2>
   }
   return (
-    <div className="flex items-center gap-2 mb-4 min-w-0">
-      <button type="button" onClick={onBack} className="flex items-center gap-1 text-sm text-[#6B6E72] flex-shrink-0">
+    <div className="mb-4 min-w-0">
+      <button type="button" onClick={onBack} className="flex items-center gap-1 text-sm text-[#6B6E72] mb-2">
         <ChevronLeft size={16} /> Back
       </button>
-      <h2 className="font-display text-2xl flex-1 min-w-0 truncate">{title}</h2>
+      <h2 className="font-display text-2xl truncate">{title}</h2>
     </div>
   )
 }
@@ -51,6 +51,7 @@ function coiFlag(date) {
 
 export function DirectoryPage({ profile, onBack }) {
   const [rows, setRows] = useState([])
+  const [openContact, setOpenContact] = useState(null)
   const [form, setForm] = useState({ name: '', kind: 'trade', trade: '', phone: '', email: '', insurance_expires: '', notes: '' })
   const load = async () => {
     const { data } = await supabase.from('directory_contacts').select('*').eq('company_id', profile.company_id).order('name')
@@ -104,7 +105,7 @@ export function DirectoryPage({ profile, onBack }) {
         {rows.map((r) => {
           const flag = coiFlag(r.insurance_expires)
           return (
-            <div key={r.id} className="w-full max-w-full min-w-0 box-border border border-black rounded-md p-3">
+            <button key={r.id} type="button" className="w-full text-left max-w-full min-w-0 box-border border border-black rounded-md p-3" onClick={() => setOpenContact(r)}>
               <div className="flex justify-between gap-2">
                 <div>
                   <div className="font-medium text-sm">{r.name}</div>
@@ -117,13 +118,26 @@ export function DirectoryPage({ profile, onBack }) {
                     </div>
                   )}
                 </div>
-                <button type="button" onClick={() => remove(r.id)} className="p-1"><Trash2 size={14} /></button>
+                <button type="button" onClick={(e) => { e.stopPropagation(); remove(r.id) }} className="p-1"><Trash2 size={14} /></button>
               </div>
-            </div>
+            </button>
           )
         })}
         {!rows.length && <p className="text-sm text-[#6B6E72]">No contacts yet.</p>}
       </div>
+      {openContact && (
+        <div className="fixed inset-0 z-[80] bg-black/40 flex items-end" onClick={() => setOpenContact(null)}>
+          <div className="w-full bg-white rounded-t-xl p-4 space-y-2" onClick={(e) => e.stopPropagation()}>
+            <div className="font-medium">{openContact.name}</div>
+            {openContact.phone && <a className="block w-full py-2.5 border border-black rounded text-center text-sm" href={'tel:' + String(openContact.phone).replace(/[^\d+]/g, '')}>Call</a>}
+            {openContact.phone && <a className="block w-full py-2.5 border border-black rounded text-center text-sm" href={'sms:' + String(openContact.phone).replace(/[^\d+]/g, '')}>Message</a>}
+            {openContact.phone && <a className="block w-full py-2.5 border border-black rounded text-center text-sm" href={'https://wa.me/' + String(openContact.phone).replace(/[^\d]/g, '')}>WhatsApp message</a>}
+            {openContact.phone && <a className="block w-full py-2.5 border border-black rounded text-center text-sm" href={'https://wa.me/' + String(openContact.phone).replace(/[^\d]/g, '')}>WhatsApp call</a>}
+            {openContact.email && <a className="block w-full py-2.5 border border-black rounded text-center text-sm" href={'mailto:' + openContact.email}>Email</a>}
+            <button type="button" className="w-full py-2.5 text-sm" onClick={() => setOpenContact(null)}>Close</button>
+          </div>
+        </div>
+      )}
     </Page>
   )
 }
@@ -500,31 +514,39 @@ export function EstimatesPage({ profile, onBack, onOpenProject }) {
   const add = async (e) => {
     e.preventDefault()
     if (!title.trim()) return
-    const { data, error } = await supabase.from('estimates').insert({
+    const { error } = await supabase.from('estimates').insert({
       company_id: profile.company_id,
       title: title.trim(),
       address: address.trim() || null,
       style,
       status: 'draft',
-    }).select().single()
-    if (error || !data) {
-      alert(error?.message || 'Could not create estimate')
+    })
+    if (error) {
+      alert(error.message || 'Could not create estimate')
+      return
+    }
+    const { data } = await supabase.from('estimates').select('*').eq('company_id', profile.company_id).order('created_at', { ascending: false }).limit(1)
+    const created = data?.[0]
+    if (!created) {
+      alert('Estimate saved, but it did not reload. Close and open Estimates.')
+      load()
       return
     }
     const names = (STYLES[style] || STYLES.remodel).phases
     if (names.length) {
-      await supabase.from('estimate_lines').insert(names.map((name, i) => ({
-        estimate_id: data.id,
+      const { error: lineErr } = await supabase.from('estimate_lines').insert(names.map((name, i) => ({
+        estimate_id: created.id,
         label: name,
         amount: null,
         sort_order: i,
       })))
+      if (lineErr) alert(lineErr.message || 'Estimate saved, but phases did not.')
     }
     setTitle('')
     setAddress('')
-    setOpenId(data.id)
+    setOpenId(created.id)
     load()
-    loadLines(data.id)
+    loadLines(created.id)
   }
   const setAmount = async (row, value) => {
     const amount = value === '' ? null : Number(value)
@@ -933,7 +955,10 @@ export function SetupWizard({ profile, company, onDone, onOpenNewProject, onOpen
   const s = steps[step] || steps[0]
   return (
     <Page>
-      <div className="text-[11px] font-mono uppercase text-[#6B6E72] mb-1">Setup {step + 1} of {steps.length}</div>
+      <div className="flex justify-between items-center mb-3">
+        <div className="text-[11px] font-mono uppercase text-[#6B6E72]">Setup {step + 1} of {steps.length}</div>
+        <button type="button" className="text-sm underline" onClick={finish}>Exit</button>
+      </div>
       <h2 className="font-display text-2xl mb-3">{s.title}</h2>
       {s.body}
     </Page>
