@@ -187,14 +187,18 @@ function forceScrollTop() {
       document.documentElement.scrollTop = 0
       document.body.scrollTop = 0
       if (document.scrollingElement) document.scrollingElement.scrollTop = 0
+      document.querySelectorAll('.overflow-auto, .overflow-y-auto, .overflow-scroll, .overflow-y-scroll').forEach((el) => {
+        try { el.scrollTop = 0 } catch (_) {}
+      })
+      const top = document.getElementById('phase-top')
+      if (top && typeof top.scrollIntoView === 'function') {
+        top.scrollIntoView({ block: 'start', inline: 'nearest' })
+      }
     } catch (_) {}
   }
   go()
   if (typeof requestAnimationFrame === 'function') requestAnimationFrame(go)
-  setTimeout(go, 0)
-  setTimeout(go, 40)
-  setTimeout(go, 120)
-  setTimeout(go, 300)
+  ;[0, 16, 40, 80, 150, 300, 600].forEach((ms) => setTimeout(go, ms))
 }
 
 const recentPhaseWrites = {}
@@ -5709,6 +5713,9 @@ function PhaseDetail({ phase, project, isAdmin, canUpload, isCustomer, profile, 
 
   useEffect(() => {
     forceScrollTop()
+    const t = setInterval(forceScrollTop, 100)
+    const stop = setTimeout(() => clearInterval(t), 700)
+    return () => { clearInterval(t); clearTimeout(stop) }
   }, [phase.id, phasePage])
 
   useEffect(() => {
@@ -6372,6 +6379,7 @@ function PhaseDetail({ phase, project, isAdmin, canUpload, isCustomer, profile, 
 
   return (
     <SwipeBack onBack={onBack} disabled={lightboxIdx != null || showMarkup}>
+            <div id="phase-top" />
             <button onClick={onBack} className="flex items-center gap-1 text-sm text-[#6B6E72] mb-4">
         <ChevronLeft size={16} /> All phases
       </button>
