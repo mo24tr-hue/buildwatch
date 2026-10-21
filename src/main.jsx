@@ -26,8 +26,13 @@ window.visualViewport?.addEventListener('resize', fitScreen)
 window.visualViewport?.addEventListener('scroll', fitScreen)
 
 const compiled = typeof __BW_BUILD__ !== 'undefined' ? String(__BW_BUILD__) : ''
+const RELOAD_KEY = 'bw_reloaded_for'
 
 async function hardReload(next) {
+  try {
+    if (sessionStorage.getItem(RELOAD_KEY) === next) return
+    sessionStorage.setItem(RELOAD_KEY, next)
+  } catch (_) {}
   const url = new URL(window.location.href)
   if (url.searchParams.get('v') === next) return
   try {
@@ -47,19 +52,23 @@ async function checkBuild() {
     const data = await res.json()
     const next = String(data.v || '')
     if (!next || next === 'bootstrap' || !compiled || next === compiled) return
+    try {
+      if (sessionStorage.getItem(RELOAD_KEY) === next) return
+    } catch (_) {}
+    const url = new URL(window.location.href)
+    if (url.searchParams.get('v') === next) return
     await hardReload(next)
   } catch (_) {}
 }
 
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('/sw.js').then((reg) => {
-    setInterval(() => { reg.update().catch(() => {}) }, 30000)
+    setInterval(() => { reg.update().catch(() => {}) }, 60000)
   }).catch(() => {})
 }
 
-setTimeout(checkBuild, 4000)
-setInterval(checkBuild, 30000)
+setTimeout(checkBuild, 8000)
+setInterval(checkBuild, 60000)
 document.addEventListener('visibilitychange', () => {
-  if (document.visibilityState === 'visible') checkBuild()
+  if (document.visibilityState === 'visible') setTimeout(checkBuild, 1500)
 })
-window.addEventListener('pageshow', () => checkBuild())
