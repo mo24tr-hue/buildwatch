@@ -180,6 +180,23 @@ function fmtMeetTime(t) {
   return `${h}:${mStr || '00'} ${ampm}`
 }
 
+function forceScrollTop() {
+  const go = () => {
+    try {
+      window.scrollTo(0, 0)
+      document.documentElement.scrollTop = 0
+      document.body.scrollTop = 0
+      if (document.scrollingElement) document.scrollingElement.scrollTop = 0
+    } catch (_) {}
+  }
+  go()
+  if (typeof requestAnimationFrame === 'function') requestAnimationFrame(go)
+  setTimeout(go, 0)
+  setTimeout(go, 40)
+  setTimeout(go, 120)
+  setTimeout(go, 300)
+}
+
 const recentPhaseWrites = {}
 function rememberPhaseWrite(id, patch) {
   recentPhaseWrites[id] = { ...patch, at: Date.now() }
@@ -232,6 +249,7 @@ export default function Dashboard({ session, profile, company, onCompanyUpdate, 
   const [showArchived, setShowArchived] = useState(false)
   const [notifications, setNotifications] = useState([])
   const [showNotifs, setShowNotifs] = useState(false)
+  const [showNeeds, setShowNeeds] = useState(false)
   const [packPage, setPackPage] = useState(null)
   const [showSetup, setShowSetup] = useState(false)
   const [touched, setTouched] = useState({})
@@ -255,6 +273,7 @@ export default function Dashboard({ session, profile, company, onCompanyUpdate, 
     setShowHelp(false)
     setShowBilling(false)
     setShowNotifs(false)
+    setShowNeeds(false)
     setShowNew(false)
     setActiveId(null)
     setMenuOpen(false)
@@ -279,10 +298,8 @@ export default function Dashboard({ session, profile, company, onCompanyUpdate, 
   }, [profile?.company_id])
 
   useEffect(() => {
-    window.scrollTo(0, 0)
-    document.documentElement.scrollTop = 0
-    document.body.scrollTop = 0
-  }, [activeId, packPage, showNotifs, showAdmin, showCalendar, showWeek, showHelp, showBilling])
+    forceScrollTop()
+  }, [activeId, packPage, showNotifs, showNeeds, showAdmin, showCalendar, showWeek, showHelp, showBilling])
 
   useEffect(() => {
     refreshCompany()
@@ -939,6 +956,26 @@ export default function Dashboard({ session, profile, company, onCompanyUpdate, 
     await loadProjects()
   }
 
+  const needsItems = (() => {
+    if (!isAdmin) return []
+    const today = new Date().toISOString().slice(0, 10)
+    const items = []
+    projects.forEach((pr) => {
+      if (pr.archived) return
+      ;(pr.change_orders || []).forEach((c) => {
+        if (['pending', 'quoted'].includes(c.status || '')) {
+          items.push({ id: 'co-' + c.id, label: pr.address + ' · change order', projectId: pr.id })
+        }
+      })
+      ;(pr.phases || []).forEach((ph) => {
+        if (ph.start_date === today && ph.status !== 'done') {
+          items.push({ id: 'ph-' + ph.id, label: pr.address + ' · ' + (ph.name || 'Phase') + ' starts today', projectId: pr.id })
+        }
+      })
+    })
+    return items
+  })()
+
   return (
     <div className="min-h-screen bg-white">
       <header
@@ -968,6 +1005,7 @@ export default function Dashboard({ session, profile, company, onCompanyUpdate, 
               goTab('projects')
               setActiveId(null)
               setShowNotifs(false)
+              setShowNeeds(false)
               setShowNew(false)
               setShowPassword(false)
               setShowHelp(false)
@@ -1042,6 +1080,34 @@ export default function Dashboard({ session, profile, company, onCompanyUpdate, 
                       }}
                     >
                       Platform
+                    </button>
+                  )}
+                  {isAdmin && (
+                    <button
+                      type="button"
+                      className="w-full text-left px-3 py-2.5 text-sm hover:bg-[#F5F5F5] flex items-center justify-between gap-2"
+                      onClick={() => {
+                        setMenuOpen(false)
+                        setShowNeeds(true)
+                        setShowWeek(false)
+                        setPackPage(null)
+                        setShowSetup(false)
+                        setShowHelp(false)
+                        setShowCalendar(false)
+                        setShowAdmin(false)
+                        setShowPassword(false)
+                        setShowPlatform(false)
+                        setShowFeedback(false)
+                        setShowNotifs(false)
+                        setActiveId(null)
+                        setShowNew(false)
+                        forceScrollTop()
+                      }}
+                    >
+                      <span>Needs you</span>
+                      {needsItems.length > 0 && (
+                        <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-black text-white">{needsItems.length}</span>
+                      )}
                     </button>
                   )}
                   {isAdmin && (
@@ -1243,7 +1309,34 @@ export default function Dashboard({ session, profile, company, onCompanyUpdate, 
         </div>
       )}
       <main className="max-w-2xl mx-auto px-4 pt-4 pb-28 w-full min-w-0 overflow-x-hidden box-border" style={{ WebkitOverflowScrolling: 'touch' }}>
-        {showNotifs && (isAdmin || profile?.role === 'team') ? (
+        {showNeeds && isAdmin ? (
+          <SwipeBack onBack={() => setShowNeeds(false)}>
+            <button type="button" onClick={() => setShowNeeds(false)} className="flex items-center gap-1 text-sm text-[#6B6E72] mb-4">
+              <ChevronLeft size={16} /> Back
+            </button>
+            <h2 className="font-display text-2xl mb-4">Needs you</h2>
+            {needsItems.length === 0 ? (
+              <p className="text-sm text-[#6B6E72]">Nothing waiting on you.</p>
+            ) : (
+              <div className="space-y-2">
+                {needsItems.map((it) => (
+                  <button
+                    key={it.id}
+                    type="button"
+                    className="w-full text-left border border-black rounded-md p-3 text-sm"
+                    onClick={() => {
+                      setShowNeeds(false)
+                      setActiveId(it.projectId)
+                      forceScrollTop()
+                    }}
+                  >
+                    {it.label}
+                  </button>
+                ))}
+              </div>
+            )}
+          </SwipeBack>
+        ) : showNotifs && (isAdmin || profile?.role === 'team') ? (
           <SwipeBack onBack={() => setShowNotifs(false)}>
             <button type="button" onClick={() => setShowNotifs(false)} className="flex items-center gap-1 text-sm text-[#6B6E72] mb-4">
               <ChevronLeft size={16} /> Back
@@ -1491,30 +1584,6 @@ export default function Dashboard({ session, profile, company, onCompanyUpdate, 
                 <button type="button" className="underline flex-shrink-0" onClick={() => { setWhatsNew(false); try { localStorage.setItem('bw_whats_new', '2026-09-22') } catch {} }}>Got it</button>
               </div>
             )}
-            {isAdmin && (() => {
-              const today = new Date().toISOString().slice(0, 10)
-              const items = []
-              projects.forEach((pr) => {
-                if (pr.archived) return
-                ;(pr.change_orders || []).forEach((c) => {
-                  if (['pending', 'quoted'].includes(c.status || '')) items.push({ id: 'co-' + c.id, label: pr.address + ' · change order', projectId: pr.id })
-                })
-                ;(pr.phases || []).forEach((ph) => {
-                  if (ph.start_date === today && ph.status !== 'done') items.push({ id: 'ph-' + ph.id, label: pr.address + ' · ' + (ph.name || 'Phase') + ' starts today', projectId: pr.id })
-                })
-              })
-              if (!items.length) return null
-              return (
-                <div className="mb-4 border border-black rounded-md p-3">
-                  <div className="text-[11px] font-mono uppercase text-[#6B6E72] mb-2">Needs you</div>
-                  <div className="space-y-1">
-                    {items.slice(0, 6).map((it) => (
-                      <button key={it.id} type="button" className="w-full text-left text-sm py-1" onClick={() => setActiveId(it.projectId)}>{it.label}</button>
-                    ))}
-                  </div>
-                </div>
-              )
-            })()}
         {!isCustomer && (
           <div className="mb-4 space-y-2">
             <div className="relative">
@@ -1641,7 +1710,7 @@ export default function Dashboard({ session, profile, company, onCompanyUpdate, 
         )}
       </main>
 
-      {!showNotifs && !showPlatform && !showFeedback && !showPassword && !showHelp && !showSetup && !packPage && (
+      {!showNotifs && !showNeeds && !showPlatform && !showFeedback && !showPassword && !showHelp && !showSetup && !packPage && (
         <nav
           data-no-swipe
           className="fixed bottom-0 left-0 right-0 z-40 bg-white border-t border-black"
@@ -3968,9 +4037,7 @@ function ProjectDetail({ project, isAdmin, canUpload, isCustomer, profile, onBac
   const phases = localPhases.length ? localPhases : (project.phases || [])
 
   useEffect(() => {
-    window.scrollTo(0, 0)
-    document.documentElement.scrollTop = 0
-    document.body.scrollTop = 0
+    forceScrollTop()
   }, [projectPage, selectedPhaseId, showPeople])
   const files = project.project_files || []
   const assignedCustomers = (project.project_customers || []).map((m) => m.user_id)
@@ -4564,7 +4631,7 @@ className={`bg-white border border-black rounded-md flex items-stretch overflow-
             <button
               type="button"
               className="flex-1 text-left px-3 py-3 min-w-0"
-              onClick={() => setSelectedPhaseId(phase.id)}
+              onClick={() => { setSelectedPhaseId(phase.id); forceScrollTop() }}
             >
               <div className="text-sm font-medium truncate">{phase.name}</div>
               <div className="text-[11px] text-[#8A8D91] mt-0.5 flex flex-wrap gap-x-2">
@@ -4643,7 +4710,7 @@ className={`bg-white border border-black rounded-md flex items-stretch overflow-
                 <button
                   type="button"
                   className="flex-1 text-left px-3 py-3 min-w-0"
-                  onClick={() => setSelectedPhaseId(phase.id)}
+                  onClick={() => { setSelectedPhaseId(phase.id); forceScrollTop() }}
                 >
                   <div className="text-sm font-medium truncate">{finishingLabel(phase.name)}</div>
                   <div className="text-[11px] text-[#8A8D91] mt-0.5">
@@ -5610,12 +5677,25 @@ function PhaseDetail({ phase, project, isAdmin, canUpload, isCustomer, profile, 
   const [showMarkup, setShowMarkup] = useState(false)
   const [phasePage, setPhasePage] = useState(null)
   const [pendingPreviews, setPendingPreviews] = useState([])
+  const [localUploads, setLocalUploads] = useState([])
   const [undoPhoto, setUndoPhoto] = useState(null)
   const undoTimer = useRef(null)
   const markupCanvasRef = useRef(null)
   const markupDrawing = useRef(false)
   const touchX = useRef(null)
-  const photos = (phase.photos || []).slice().sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0)).filter((p) => p.id !== undoPhoto?.id)
+  const serverPhotos = (phase.photos || []).slice().sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0)).filter((p) => p.id !== undoPhoto?.id)
+  const knownUrls = new Set(serverPhotos.map((p) => p.public_url).filter(Boolean))
+  const pendingCards = localUploads
+    .filter((u) => !u.public_url || !knownUrls.has(u.public_url))
+    .map((u) => ({
+      id: u.id,
+      public_url: u.src || u.public_url,
+      caption: u.caption,
+      tag: u.tag,
+      uploading: u.status === 'uploading',
+      local: true,
+    }))
+  const photos = [...pendingCards, ...serverPhotos]
   const phaseFiles = phase.phase_files || []
   const showPhaseFiles = isAdmin || (!isCustomer && canUpload)
 
@@ -5626,6 +5706,16 @@ function PhaseDetail({ phase, project, isAdmin, canUpload, isCustomer, profile, 
     setPhaseEnd(phase.end_date || '')
     setAdminNotes(phase.admin_notes || '')
   }, [phase.id, phase.trade, phase.name, phase.start_date, phase.end_date, phase.admin_notes])
+
+  useEffect(() => {
+    forceScrollTop()
+  }, [phase.id, phasePage])
+
+  useEffect(() => {
+    const known = new Set((phase.photos || []).map((p) => p.public_url).filter(Boolean))
+    if (!known.size) return
+    setLocalUploads((prev) => prev.filter((u) => !u.public_url || !known.has(u.public_url)))
+  }, [phase.photos])
 
   const savePhaseDates = async () => {
     if (!isAdmin) return
@@ -5799,17 +5889,30 @@ function PhaseDetail({ phase, project, isAdmin, canUpload, isCustomer, profile, 
     }
 
     setUploading(true)
-    setPendingPreviews(files.filter((f) => (f.type || '').startsWith('image/')).map((f) => URL.createObjectURL(f)))
     const cap = caption || null
     const tag = photoTag || null
     setCaption('')
 
+    const locals = files.map((file, i) => ({
+      id: 'local-' + Date.now() + '-' + i + '-' + Math.random().toString(36).slice(2, 6),
+      src: (file.type || '').startsWith('image/') || /heic|heif/i.test(file.type || file.name || '') ? URL.createObjectURL(file) : null,
+      public_url: null,
+      status: 'uploading',
+      caption: cap,
+      tag,
+      file,
+    }))
+    setLocalUploads((prev) => [...locals, ...prev])
+    setPendingPreviews(locals.map((l) => l.src).filter(Boolean))
+
     let ok = 0
     const errors = []
 
-    for (const file of files) {
+    for (const local of locals) {
+      const file = local.file
       if (!file.size) {
         errors.push('Empty file skipped')
+        setLocalUploads((prev) => prev.filter((u) => u.id !== local.id))
         continue
       }
       const isVideo = (file.type || '').startsWith('video/')
@@ -5849,6 +5952,7 @@ function PhaseDetail({ phase, project, isAdmin, canUpload, isCustomer, profile, 
         }
         if (upErr) {
           errors.push((upErr.message || String(upErr)) + ' (storage)')
+          setLocalUploads((prev) => prev.filter((u) => u.id !== local.id))
           continue
         }
         const { data: pub } = supabase.storage.from('project-photos').getPublicUrl(path)
@@ -5861,20 +5965,36 @@ function PhaseDetail({ phase, project, isAdmin, canUpload, isCustomer, profile, 
           caption: cap,
           uploaded_by: profile.id,
         }
-        let ins = await supabase.from('photos').insert({ ...baseRow, tag, media_type: isVideo ? 'video' : 'image' })
+        let ins = await supabase.from('photos').insert({ ...baseRow, tag, media_type: isVideo ? 'video' : 'image' }).select('*').maybeSingle()
         insErr = ins.error
         if (insErr && /column|schema/i.test(insErr.message || '')) {
-          ins = await supabase.from('photos').insert(baseRow)
+          ins = await supabase.from('photos').insert(baseRow).select('*').maybeSingle()
           insErr = ins.error
         }
         if (insErr) {
           errors.push((insErr.message || 'Could not save photo record') + ' (database)')
+          setLocalUploads((prev) => prev.filter((u) => u.id !== local.id))
           continue
         }
+        const saved = ins.data || {
+          id: local.id,
+          ...baseRow,
+          tag,
+          media_type: isVideo ? 'video' : 'image',
+          created_at: new Date().toISOString(),
+        }
+        setLocalUploads((prev) => prev.map((u) => u.id === local.id ? { ...u, public_url: pub.publicUrl, status: 'done', saved } : u))
+        onPhasePatch?.(phase.id, {
+          photos: [
+            saved,
+            ...((phase.photos || []).filter((p) => p.public_url !== pub.publicUrl && p.id !== saved.id)),
+          ],
+        })
         ok++
       } catch (err) {
         console.error(err)
         errors.push(err.message || 'Upload failed')
+        setLocalUploads((prev) => prev.filter((u) => u.id !== local.id))
       }
     }
 
@@ -6468,7 +6588,7 @@ function PhaseDetail({ phase, project, isAdmin, canUpload, isCustomer, profile, 
 
       {uploading && (
         <div className="text-xs text-[#8A6D00] bg-[#FFF8DB] border border-[#E6B800] rounded px-3 py-2 mb-3">
-          Uploading in background — you can leave this phase
+          Uploading — photo stays here until it saves
         </div>
       )}
       {photos.length === 0 ? (
@@ -6477,6 +6597,9 @@ function PhaseDetail({ phase, project, isAdmin, canUpload, isCustomer, profile, 
         <div className="grid grid-cols-2 gap-3">
           {photos.map((p, idx) => (
             <div key={p.id} className="bg-white border border-black rounded-md overflow-hidden relative">
+              {p.uploading && (
+                <div className="absolute top-2 left-2 z-10 text-[10px] font-mono uppercase bg-black/70 text-white px-1.5 py-0.5 rounded">Uploading</div>
+              )}
               <button type="button" className="w-full block text-left" onClick={() => setLightboxIdx(idx)}>
                 {p.media_type === 'video' ? (
                   <div className="w-full h-32 bg-black flex items-center justify-center text-white">
@@ -6490,10 +6613,12 @@ function PhaseDetail({ phase, project, isAdmin, canUpload, isCustomer, profile, 
                 <div className="flex justify-between items-center gap-1">
                   <span className="text-[10px] font-mono text-[#6B6E72]">{fmtDate(p.taken_at || p.created_at)}</span>
                   <div className="flex items-center gap-0.5">
-                    <button type="button" onClick={() => shareMedia(p)} className="p-1.5 text-black" title="Share">
-                      <Share2 size={14} />
-                    </button>
-                    {isAdmin && (
+                    {!p.local && (
+                      <button type="button" onClick={() => shareMedia(p)} className="p-1.5 text-black" title="Share">
+                        <Share2 size={14} />
+                      </button>
+                    )}
+                    {isAdmin && !p.local && (
                       <button type="button" onClick={() => deletePhoto(p)} className="text-[#B5533C] p-1.5">
                         <Trash2 size={12} />
                       </button>
