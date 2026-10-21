@@ -197,6 +197,8 @@ function applyRecentPhaseWrites(list) {
   }))
 }
 export default function Dashboard({ session, profile, company, onCompanyUpdate, onLogout, platformOwner = false, onLeavePlatformWorkspace }) {
+  const [projects, setProjects] = useState([])
+  const patchProject = useCallback((id, mutator) => {
     setProjects((prev) => prev.map((p) => (p.id === id ? mutator(p) : p)))
   }, [])
   const [loading, setLoading] = useState(true)
