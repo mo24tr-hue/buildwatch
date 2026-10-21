@@ -180,9 +180,23 @@ function fmtMeetTime(t) {
   return `${h}:${mStr || '00'} ${ampm}`
 }
 
+const recentPhaseWrites = {}
+function rememberPhaseWrite(id, patch) {
+  recentPhaseWrites[id] = { ...patch, at: Date.now() }
+}
+function applyRecentPhaseWrites(list) {
+  const now = Date.now()
+  return (list || []).map((p) => ({
+    ...p,
+    phases: (p.phases || []).map((ph) => {
+      const held = recentPhaseWrites[ph.id]
+      if (!held || now - held.at > 12000) return ph
+      const { at, ...patch } = held
+      return { ...ph, ...patch }
+    }),
+  }))
+}
 export default function Dashboard({ session, profile, company, onCompanyUpdate, onLogout, platformOwner = false, onLeavePlatformWorkspace }) {
-  const [projects, setProjects] = useState([])
-  const patchProject = useCallback((id, mutator) => {
     setProjects((prev) => prev.map((p) => (p.id === id ? mutator(p) : p)))
   }, [])
   const [loading, setLoading] = useState(true)
@@ -406,7 +420,7 @@ export default function Dashboard({ session, profile, company, onCompanyUpdate, 
           Promise.all(dueIds.map((id) => supabase.from('phases').update({ status: 'active' }).eq('id', id))).catch(() => {})
         }
       }
-      setProjects(list)
+      setProjects(applyRecentPhaseWrites(list))
       try {
         if (profile?.company_id) {
           localStorage.setItem('bw_projects_cache_' + profile.company_id, JSON.stringify({ at: Date.now(), list }))
@@ -3968,7 +3982,13 @@ function ProjectDetail({ project, isAdmin, canUpload, isCustomer, profile, onBac
   }, [project.id, project.address, project.start_date, project.end_date, project.cover_photo_url])
 
   useEffect(() => {
-    setLocalPhases(project.phases || [])
+    const now = Date.now()
+    setLocalPhases((project.phases || []).map((ph) => {
+      const held = recentPhaseWrites[ph.id]
+      if (!held || now - held.at > 8000) return ph
+      const { at, ...patch } = held
+      return { ...ph, ...patch }
+    }))
   }, [project.id, project.phases])
 
   useEffect(() => {
@@ -3992,6 +4012,7 @@ function ProjectDetail({ project, isAdmin, canUpload, isCustomer, profile, onBac
         onBack={() => setSelectedPhaseId(null)}
         onReload={onReload}
         onPhasePatch={(phaseId, patch) => {
+          rememberPhaseWrite(phaseId, patch)
           setLocalPhases((prev) => prev.map((ph) => (ph.id === phaseId ? { ...ph, ...patch } : ph)))
           onPatch?.(project.id, (p) => ({
             ...p,
@@ -4043,6 +4064,7 @@ function ProjectDetail({ project, isAdmin, canUpload, isCustomer, profile, onBac
       alert(error.message || 'Could not update phase status')
       return
     }
+    rememberPhaseWrite(phase.id, patch)
     setLocalPhases((prev) => prev.map((ph) => (ph.id === phase.id ? { ...ph, ...patch } : ph)))
     onPatch?.(project.id, (p) => ({
       ...p,
@@ -4627,7 +4649,15 @@ className={`bg-white border border-black rounded-md flex items-stretch overflow-
                   </div>
                 </button>
                 <div className="px-2 flex items-center border-l border-black/20">
-                  {phase.status === 'done' ? (
+                  {isAdmin ? (
+                    <button type="button" onClick={() => cyclePhase(phase)} className="px-1 py-2" title="Change status">
+                      {phase.status === 'done' ? (
+                        <Check size={16} className="text-[#3F7D58]" />
+                      ) : (
+                        <div className="w-2.5 h-2.5 rounded-full" style={{ background: (PHASE_STATUS[phase.status] || PHASE_STATUS.pending).color }} />
+                      )}
+                    </button>
+                  ) : phase.status === 'done' ? (
                     <Check size={16} className="text-[#3F7D58]" />
                   ) : (
                     <div className="w-2.5 h-2.5 rounded-full" style={{ background: (PHASE_STATUS[phase.status] || PHASE_STATUS.pending).color }} />
@@ -5617,12 +5647,13 @@ function PhaseDetail({ phase, project, isAdmin, canUpload, isCustomer, profile, 
       patch.start_date = null
       patch.end_date = null
     }
-    const { error } = await supabase.from('phases').update(patch).eq('id', phase.id)
+    const { data: saved, error } = await supabase.from('phases').update(patch).eq('id', phase.id).select('id, status, start_date, end_date').maybeSingle()
     if (error) {
       alert(error.message || 'Could not update phase status')
       return
     }
-    onPhasePatch?.(phase.id, patch)
+    const confirmed = saved ? { status: saved.status, start_date: saved.start_date, end_date: saved.end_date } : patch
+    onPhasePatch?.(phase.id, confirmed)
     logActivity?.('updated phase status', phase.name + ' → ' + next, project.id, phase.name)
   }
 
