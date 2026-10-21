@@ -3968,6 +3968,10 @@ function ProjectDetail({ project, isAdmin, canUpload, isCustomer, profile, onBac
   }, [project.id, project.address, project.start_date, project.end_date, project.cover_photo_url])
 
   useEffect(() => {
+    setLocalPhases(project.phases || [])
+  }, [project.id, project.phases])
+
+  useEffect(() => {
     if (!isAdmin || !profile?.company_id) return
     supabase
       .from('profiles')
@@ -4020,7 +4024,7 @@ function ProjectDetail({ project, isAdmin, canUpload, isCustomer, profile, onBac
     logActivity('updated project status', status)
   }
 
-  const cyclePhase = (phase) => {
+  const cyclePhase = async (phase) => {
     if (!isAdmin) return
     const next = nextPhaseStatus(phase.status)
     const today = new Date().toISOString().slice(0, 10)
@@ -4034,12 +4038,16 @@ function ProjectDetail({ project, isAdmin, canUpload, isCustomer, profile, onBac
       patch.start_date = null
       patch.end_date = null
     }
+    const { error } = await supabase.from('phases').update(patch).eq('id', phase.id)
+    if (error) {
+      alert(error.message || 'Could not update phase status')
+      return
+    }
     setLocalPhases((prev) => prev.map((ph) => (ph.id === phase.id ? { ...ph, ...patch } : ph)))
     onPatch?.(project.id, (p) => ({
       ...p,
       phases: (p.phases || []).map((ph) => (ph.id === phase.id ? { ...ph, ...patch } : ph)),
     }))
-    supabase.from('phases').update(patch).eq('id', phase.id)
     logActivity('updated phase status', phase.name + ' → ' + next, project.id, phase.name)
   }
 
@@ -5596,7 +5604,7 @@ function PhaseDetail({ phase, project, isAdmin, canUpload, isCustomer, profile, 
     onReload()
   }
 
-  const setPhaseStatus = (next) => {
+  const setPhaseStatus = async (next) => {
     if (!isAdmin) return
     const today = new Date().toISOString().slice(0, 10)
     const patch = { status: next }
@@ -5609,8 +5617,12 @@ function PhaseDetail({ phase, project, isAdmin, canUpload, isCustomer, profile, 
       patch.start_date = null
       patch.end_date = null
     }
+    const { error } = await supabase.from('phases').update(patch).eq('id', phase.id)
+    if (error) {
+      alert(error.message || 'Could not update phase status')
+      return
+    }
     onPhasePatch?.(phase.id, patch)
-    supabase.from('phases').update(patch).eq('id', phase.id)
     logActivity?.('updated phase status', phase.name + ' → ' + next, project.id, phase.name)
   }
 
