@@ -200,6 +200,23 @@ function forceScrollTop() {
 }
 
 const recentPhaseWrites = {}
+const recentDeletedPhotos = {}
+function rememberDeletedPhoto(id) {
+  if (id) recentDeletedPhotos[id] = Date.now()
+}
+function forgetDeletedPhoto(id) {
+  if (id) delete recentDeletedPhotos[id]
+}
+function isDeletedPhoto(id) {
+  if (!id) return false
+  const at = recentDeletedPhotos[id]
+  if (!at) return false
+  if (Date.now() - at > 30000) {
+    delete recentDeletedPhotos[id]
+    return false
+  }
+  return true
+}
 function rememberPhaseWrite(id, patch) {
   recentPhaseWrites[id] = { ...patch, at: Date.now() }
 }
@@ -386,7 +403,7 @@ export default function Dashboard({ session, profile, company, onCompanyUpdate, 
                 const nested = Array.isArray(ph.photos) ? ph.photos : []
                 // prefer direct query results; merge unique by id
                 const map = new Map()
-                ;[...nested, ...fromPhase].forEach((x) => { if (x?.id) map.set(x.id, x) })
+                ;[...nested, ...fromPhase].forEach((x) => { if (x?.id && !isDeletedPhoto(x.id)) map.set(x.id, x) })
                 return { ...ph, photos: Array.from(map.values()) }
               }),
             }))
@@ -5684,10 +5701,11 @@ function PhaseDetail({ phase, project, isAdmin, canUpload, isCustomer, profile, 
   const markupCanvasRef = useRef(null)
   const markupDrawing = useRef(false)
   const touchX = useRef(null)
-  const serverPhotos = (phase.photos || []).slice().sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0)).filter((p) => p.id !== undoPhoto?.id)
+  const serverPhotos = (phase.photos || []).slice().sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0)).filter((p) => p.id !== undoPhoto?.id && !isDeletedPhoto(p.id))
   const knownUrls = new Set(serverPhotos.map((p) => p.public_url).filter(Boolean))
   const pendingCards = localUploads
     .filter((u) => {
+      if (isDeletedPhoto(u.id) || isDeletedPhoto(u.saved?.id)) return false
       if (u.public_url && knownUrls.has(u.public_url)) return false
       if (u.src && knownUrls.has(u.src)) return false
       return true
@@ -6094,15 +6112,25 @@ function PhaseDetail({ phase, project, isAdmin, canUpload, isCustomer, profile, 
   }
 
   const deletePhoto = async (photo) => {
-    if (!isAdmin) return
+    if (!isAdmin || !photo) return
     setLightboxIdx(null)
+    rememberDeletedPhoto(photo.id)
+    setLocalUploads((prev) => prev.filter((u) => u.id !== photo.id && u.saved?.id !== photo.id && u.public_url !== photo.public_url))
+    onPhasePatch?.(phase.id, {
+      photos: (phase.photos || []).filter((p) => p.id !== photo.id),
+    })
     setUndoPhoto(photo)
     if (undoTimer.current) clearTimeout(undoTimer.current)
     undoTimer.current = setTimeout(async () => {
       try {
         if (photo.storage_path) await supabase.storage.from('project-photos').remove([photo.storage_path])
-        await supabase.from('photos').delete().eq('id', photo.id)
+        const { error } = await supabase.from('photos').delete().eq('id', photo.id)
+        if (error) throw error
       } catch (err) {
+        forgetDeletedPhoto(photo.id)
+        onPhasePatch?.(phase.id, {
+          photos: [photo, ...((phase.photos || []).filter((p) => p.id !== photo.id))],
+        })
         alert(err.message || 'Could not delete')
       }
       setUndoPhoto(null)
@@ -6579,7 +6607,14 @@ function PhaseDetail({ phase, project, isAdmin, canUpload, isCustomer, profile, 
       {undoPhoto && (
         <div className="mb-3 border border-black rounded px-3 py-2 text-sm flex justify-between gap-2">
           <span>Photo removed</span>
-          <button type="button" className="underline" onClick={() => { if (undoTimer.current) clearTimeout(undoTimer.current); setUndoPhoto(null) }}>Undo</button>
+          <button type="button" className="underline" onClick={() => {
+            if (undoTimer.current) clearTimeout(undoTimer.current)
+            forgetDeletedPhoto(undoPhoto.id)
+            onPhasePatch?.(phase.id, {
+              photos: [undoPhoto, ...((phase.photos || []).filter((p) => p.id !== undoPhoto.id))],
+            })
+            setUndoPhoto(null)
+          }}>Undo</button>
         </div>
       )}
 
