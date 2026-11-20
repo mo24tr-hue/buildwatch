@@ -5678,7 +5678,6 @@ function PhaseDetail({ phase, project, isAdmin, canUpload, isCustomer, profile, 
   const [uploadingPhaseFile, setUploadingPhaseFile] = useState(false)
   const [showMarkup, setShowMarkup] = useState(false)
   const [phasePage, setPhasePage] = useState(null)
-  const [pendingPreviews, setPendingPreviews] = useState([])
   const [localUploads, setLocalUploads] = useState([])
   const [undoPhoto, setUndoPhoto] = useState(null)
   const undoTimer = useRef(null)
@@ -5688,7 +5687,11 @@ function PhaseDetail({ phase, project, isAdmin, canUpload, isCustomer, profile, 
   const serverPhotos = (phase.photos || []).slice().sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0)).filter((p) => p.id !== undoPhoto?.id)
   const knownUrls = new Set(serverPhotos.map((p) => p.public_url).filter(Boolean))
   const pendingCards = localUploads
-    .filter((u) => !u.public_url || !knownUrls.has(u.public_url))
+    .filter((u) => {
+      if (u.public_url && knownUrls.has(u.public_url)) return false
+      if (u.src && knownUrls.has(u.src)) return false
+      return true
+    })
     .map((u) => ({
       id: u.id,
       public_url: u.src || u.public_url,
@@ -5905,7 +5908,6 @@ function PhaseDetail({ phase, project, isAdmin, canUpload, isCustomer, profile, 
       file,
     }))
     setLocalUploads((prev) => [...locals, ...prev])
-    setPendingPreviews(locals.map((l) => l.src).filter(Boolean))
 
     let ok = 0
     const errors = []
@@ -6001,7 +6003,6 @@ function PhaseDetail({ phase, project, isAdmin, canUpload, isCustomer, profile, 
     }
 
     setUploading(false)
-    setPendingPreviews([])
     if (ok) {
       await logActivity('uploaded media', ok + ' file' + (ok > 1 ? 's' : ''), project.id, phase.name)
       onReload()
@@ -6572,13 +6573,6 @@ function PhaseDetail({ phase, project, isAdmin, canUpload, isCustomer, profile, 
               />
             </label>
           </div>
-          {pendingPreviews.length > 0 && (
-            <div className="grid grid-cols-3 gap-2 mt-3">
-              {pendingPreviews.map((src) => (
-                <img key={src} src={src} alt="" className="w-full h-20 object-cover rounded border border-black opacity-80" />
-              ))}
-            </div>
-          )}
         </div>
       )}
 
