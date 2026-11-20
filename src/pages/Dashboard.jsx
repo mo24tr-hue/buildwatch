@@ -220,17 +220,29 @@ function isDeletedPhoto(id) {
 function rememberPhaseWrite(id, patch) {
   recentPhaseWrites[id] = { ...patch, at: Date.now() }
 }
+const recentProjectWrites = {}
+function rememberProjectWrite(id, patch) {
+  recentProjectWrites[id] = { ...patch, at: Date.now() }
+}
 function applyRecentPhaseWrites(list) {
   const now = Date.now()
-  return (list || []).map((p) => ({
-    ...p,
-    phases: (p.phases || []).map((ph) => {
-      const held = recentPhaseWrites[ph.id]
-      if (!held || now - held.at > 12000) return ph
-      const { at, ...patch } = held
-      return { ...ph, ...patch }
-    }),
-  }))
+  return (list || []).map((p) => {
+    const heldP = recentProjectWrites[p.id]
+    let next = p
+    if (heldP && now - heldP.at <= 15000) {
+      const { at, ...patch } = heldP
+      next = { ...p, ...patch }
+    }
+    return {
+      ...next,
+      phases: (next.phases || []).map((ph) => {
+        const held = recentPhaseWrites[ph.id]
+        if (!held || now - held.at > 12000) return ph
+        const { at, ...patch } = held
+        return { ...ph, ...patch }
+      }),
+    }
+  })
 }
 export default function Dashboard({ session, profile, company, onCompanyUpdate, onLogout, platformOwner = false, onLeavePlatformWorkspace }) {
   const [projects, setProjects] = useState([])
@@ -4126,10 +4138,17 @@ function ProjectDetail({ project, isAdmin, canUpload, isCustomer, profile, onBac
 
   const doneCount = phases.filter((p) => p.status === 'done').length
 
-  const setStatus = (status) => {
+  const setStatus = async (status) => {
     if (!isAdmin) return
+    rememberProjectWrite(project.id, { status })
     onPatch?.(project.id, (p) => ({ ...p, status }))
-    supabase.from('projects').update({ status }).eq('id', project.id)
+    const { error } = await supabase.from('projects').update({ status }).eq('id', project.id)
+    if (error) {
+      delete recentProjectWrites[project.id]
+      alert(error.message || 'Could not update project status')
+      onReload?.()
+      return
+    }
     logActivity('updated project status', status)
   }
 
