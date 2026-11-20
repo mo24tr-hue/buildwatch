@@ -187,9 +187,6 @@ function forceScrollTop() {
       document.documentElement.scrollTop = 0
       document.body.scrollTop = 0
       if (document.scrollingElement) document.scrollingElement.scrollTop = 0
-      document.querySelectorAll('.overflow-auto, .overflow-y-auto, .overflow-scroll, .overflow-y-scroll').forEach((el) => {
-        try { el.scrollTop = 0 } catch (_) {}
-      })
       const top = document.getElementById('phase-top')
       if (top && typeof top.scrollIntoView === 'function') {
         top.scrollIntoView({ block: 'start', inline: 'nearest' })
@@ -198,7 +195,8 @@ function forceScrollTop() {
   }
   go()
   if (typeof requestAnimationFrame === 'function') requestAnimationFrame(go)
-  ;[0, 16, 40, 80, 150, 300, 600].forEach((ms) => setTimeout(go, ms))
+  setTimeout(go, 50)
+  setTimeout(go, 200)
 }
 
 const recentPhaseWrites = {}
@@ -5713,9 +5711,6 @@ function PhaseDetail({ phase, project, isAdmin, canUpload, isCustomer, profile, 
 
   useEffect(() => {
     forceScrollTop()
-    const t = setInterval(forceScrollTop, 100)
-    const stop = setTimeout(() => clearInterval(t), 700)
-    return () => { clearInterval(t); clearTimeout(stop) }
   }, [phase.id, phasePage])
 
   useEffect(() => {
